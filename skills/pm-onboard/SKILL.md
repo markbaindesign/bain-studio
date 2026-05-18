@@ -127,21 +127,19 @@ Create any missing files:
 
 ```bash
 python3 - <<'EOF'
-import os, json
+import json
 from pathlib import Path
-from dotenv import load_dotenv
-load_dotenv(Path("~/.claude/studio/.env").expanduser())
-field_gid = os.getenv("ASANA_LOCAL_ID_FIELD_GID", "")
 ids_file = Path(".claude/asana-ids.json")
 ids_file.parent.mkdir(exist_ok=True)
 if not ids_file.exists():
     ids_file.write_text(json.dumps({
-        "custom_field_gid": field_gid,
+        "custom_field_gid": None,
+        "last_synced_field_gid": None,
         "tasks": {},
         "next_seq": 1,
         "posted_progress": {}
     }, indent=2))
-    print(f"asana-ids.json written (field GID: {field_gid or 'NOT SET — check .env'})")
+    print("asana-ids.json written")
 else:
     print("asana-ids.json already exists — skipping")
 EOF
@@ -165,43 +163,15 @@ mkdir -p .claude/adr
 
 ---
 
-## Step 6 — Check and add Asana custom field
+## Step 6 — Set up Asana custom fields
 
-Check whether the "Local ID" custom field is already attached to the project, then add it if not:
+Create and attach the "Local ID" and "Last Synced" custom fields for the project:
 
 ```bash
-python3 - <<'EOF'
-import os, requests
-from dotenv import load_dotenv
-load_dotenv(os.path.expanduser("~/.claude/studio/.env"))
-token = os.environ["ASANA_PAT"]
-gid = "{GID}"
-field_gid = os.environ["ASANA_LOCAL_ID_FIELD_GID"]
-
-# Check if already attached
-r = requests.get(
-    f"https://app.asana.com/api/1.0/projects/{gid}/custom_field_settings",
-    headers={"Authorization": f"Bearer {token}"}
-)
-fields = [f["custom_field"]["gid"] for f in r.json().get("data", [])]
-if field_gid in fields:
-    print("Local ID custom field already present — skipping.")
-else:
-    r = requests.post(
-        f"https://app.asana.com/api/1.0/projects/{gid}/addCustomFieldSetting",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"data": {"custom_field": field_gid, "is_important": False}}
-    )
-    if r.status_code in (200, 201):
-        print("Custom field added.")
-    else:
-        print(f"Warning: {r.status_code} {r.text}")
-EOF
+python3 ~/.claude/studio/sync.py --setup --project {PREFIX}
 ```
 
-Replace `{GID}` with the actual `ASANA_PROJECT_GID`.
-
-In **update mode**, always run this check — it's safe to run on an already-configured project.
+Replace `{PREFIX}` with the actual `ASANA_TASK_PREFIX`. This is safe to re-run — fields already configured are skipped.
 
 ---
 

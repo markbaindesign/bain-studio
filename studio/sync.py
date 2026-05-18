@@ -28,7 +28,7 @@ import sys
 import json
 import requests
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
@@ -43,7 +43,7 @@ ASSIGNEE_NAME  = os.getenv("STUDIO_ASSIGNEE_NAME", "Bot")
 TODAY         = date.today().isoformat()
 BASE_URL      = "https://app.asana.com/api/1.0"
 
-SKIP_PREFIXES = {"PIPE"}  # projects with their own sync scripts
+SKIP_PREFIXES = set()
 
 JUNK_PATTERNS = re.compile(r"^- |😍|📰|\[Product Update\]", re.IGNORECASE)
 PLAIN_CHECK   = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
@@ -186,8 +186,10 @@ def _put(path, payload):
 
 def load_ids(proj: ProjectConfig) -> dict:
     if proj.ids_file.exists():
-        return json.loads(proj.ids_file.read_text())
-    return {"custom_field_gid": None, "tasks": {}, "next_seq": 1, "posted_progress": {}}
+        data = json.loads(proj.ids_file.read_text())
+        data.setdefault("last_synced_field_gid", None)
+        return data
+    return {"custom_field_gid": None, "last_synced_field_gid": None, "tasks": {}, "next_seq": 1, "posted_progress": {}}
 
 
 def save_ids(proj: ProjectConfig, state: dict, dry_run=False):
@@ -207,27 +209,82 @@ def _next_lid(state: dict, prefix: str) -> str:
 # Custom field
 # ---------------------------------------------------------------------------
 
-SHARED_FIELD_GID = os.getenv("ASANA_LOCAL_ID_FIELD_GID", "")
+SHARED_FIELD_GID       = os.getenv("ASANA_LOCAL_ID_FIELD_GID", "")
+LAST_SYNCED_FIELD_GID  = os.getenv("ASANA_LAST_SYNCED_FIELD_GID", "")
+
+
+def _create_and_attach_field(proj: ProjectConfig, field_name: str, env_var: str) -> str:
+    log.info(f"  Creating '{field_name}' custom field in workspace...")
+    resp = _post("/custom_fields", {"data": {
+        "name": field_name,
+        "resource_subtype": "text",
+        "workspace": WORKSPACE_GID,
+    }})
+    field_gid = resp["data"]["gid"]
+    log.info(f"  Created {field_gid} — add {env_var}={field_gid} to .env to reuse across projects")
+    try:
+        _post(f"/projects/{proj.gid}/addCustomFieldSetting", {"data": {
+            "custom_field": field_gid, "is_important": True,
+        }})
+    except Exception as e:
+        err = str(e).lower()
+        if "already" not in err and "403" not in err and "forbidden" not in err:
+            log.warning(f"  Could not attach '{field_name}' field: {e}")
+    return field_gid
+
+
+def setup_project_fields(proj: ProjectConfig, dry_run=False):
+    """Create and attach custom fields for a project. Called by --setup mode."""
+    log.info(f"\n[{proj.prefix}] {proj.name} — field setup")
+    log.info(f"  Path: {proj.root}")
+    state = load_ids(proj)
+    proj.claude_dir.mkdir(exist_ok=True)
+
+    fields = [
+        ("custom_field_gid",      "Local ID",    SHARED_FIELD_GID,       "ASANA_LOCAL_ID_FIELD_GID"),
+        ("last_synced_field_gid", "Last Synced", LAST_SYNCED_FIELD_GID,  "ASANA_LAST_SYNCED_FIELD_GID"),
+    ]
+    for state_key, name, env_gid, env_var in fields:
+        if state.get(state_key):
+            log.info(f"  {name}: already set ({state[state_key]})")
+            continue
+        if dry_run:
+            log.info(f"  [DRY-RUN] Would create/attach '{name}' field")
+            continue
+        if env_gid:
+            log.info(f"  {name}: attaching from env ({env_gid})...")
+            try:
+                _post(f"/projects/{proj.gid}/addCustomFieldSetting", {"data": {
+                    "custom_field": env_gid, "is_important": True,
+                }})
+                log.info(f"  {name}: attached {env_gid}")
+            except Exception as e:
+                err = str(e).lower()
+                if "already" in err or "403" in err or "forbidden" in err:
+                    log.info(f"  {name}: {env_gid} already attached")
+                else:
+                    log.warning(f"  {name}: could not attach {env_gid}: {e}")
+            state[state_key] = env_gid
+        else:
+            state[state_key] = _create_and_attach_field(proj, name, env_var)
+
+    save_ids(proj, state, dry_run)
+    if not dry_run:
+        log.info(f"  Saved → {proj.ids_file}")
 
 
 def ensure_custom_field(proj: ProjectConfig, state: dict, dry_run=False) -> str:
-    if state.get("custom_field_gid"):
-        return state["custom_field_gid"]
-    if dry_run:
-        state["custom_field_gid"] = SHARED_FIELD_GID
-        return SHARED_FIELD_GID
-    log.info(f"  [{proj.prefix}] Attaching 'Local ID' field to project...")
-    try:
-        _post(f"/projects/{proj.gid}/addCustomFieldSetting", {"data": {
-            "custom_field": SHARED_FIELD_GID, "is_important": True,
-        }})
-    except Exception as e:
-        # Field may already be attached — that's fine
-        if "already" not in str(e).lower():
-            log.warning(f"  [{proj.prefix}] Note: could not attach field: {e}")
-    state["custom_field_gid"] = SHARED_FIELD_GID
-    save_ids(proj, state)
-    return SHARED_FIELD_GID
+    gid = state.get("custom_field_gid") or ""
+    if not gid and not dry_run:
+        log.warning(f"  [{proj.prefix}] Local ID field not configured — run: python3 sync.py --setup --project {proj.prefix}")
+    return gid
+
+
+def ensure_last_synced_field(proj: ProjectConfig, state: dict) -> str:
+    gid = state.get("last_synced_field_gid") or ""
+    if not gid:
+        log.warning(f"  [{proj.prefix}] Last Synced field not configured — run: python3 sync.py --setup --project {proj.prefix}")
+    return gid
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +349,21 @@ def assign_ids(proj: ProjectConfig, tasks: list, state: dict, field_gid: str, dr
     if assigned:
         log.info(f"  [{proj.prefix}] Assigned {assigned} new Local ID(s).")
     return state
+
+
+# ---------------------------------------------------------------------------
+# Last Synced stamping
+# ---------------------------------------------------------------------------
+
+def stamp_last_synced(proj: ProjectConfig, tasks: list, field_gid: str, dry_run=False):
+    if not field_gid or dry_run:
+        return
+    now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    for t in tasks:
+        try:
+            _put(f"/tasks/{t['gid']}", {"data": {"custom_fields": {field_gid: now}}})
+        except Exception as e:
+            log.warning(f"  [{proj.prefix}] Could not stamp Last Synced on {t['gid']}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -418,8 +490,9 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
     log.info(f"  GID:  {proj.gid}")
     try:
         proj.claude_dir.mkdir(exist_ok=True)
-        state     = load_ids(proj)
-        field_gid = ensure_custom_field(proj, state, dry_run)
+        state             = load_ids(proj)
+        field_gid         = ensure_custom_field(proj, state, dry_run)
+        last_synced_gid   = ensure_last_synced_field(proj, state)
 
         tasks = fetch_tasks(proj, field_gid)
         log.info(f"  {len(tasks)} task(s) assigned to {ASSIGNEE_NAME}.")
@@ -431,6 +504,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
         carried = parse_existing_mirror(proj)
         state   = assign_ids(proj, tasks, state, field_gid, dry_run)
+        stamp_last_synced(proj, tasks, last_synced_gid, dry_run)
 
         posted_progress = state.get("posted_progress", {})
         commented = 0
@@ -508,7 +582,9 @@ def write_registry(projects: list, results: dict):
 def main():
     parser = argparse.ArgumentParser(description="Studio Asana sync")
     parser.add_argument("--project", metavar="PREFIX",
-                        help="Sync a single project by its ASANA_TASK_PREFIX (e.g. MCF)")
+                        help="Target a single project by its ASANA_TASK_PREFIX (e.g. MCF)")
+    parser.add_argument("--setup", action="store_true",
+                        help="Create and attach custom fields, write GIDs to asana-ids.json, then exit")
     parser.add_argument("--dry-run", action="store_true",
                         help="Discover and preview — no writes to mirrors or Asana")
     args = parser.parse_args()
@@ -519,6 +595,19 @@ def main():
     if not WORKSPACE_GID or not BAINBOT_GID:
         log.error("ERROR: ASANA_WORKSPACE_GID and ASANA_BAINBOT_GID must be set in .env")
         sys.exit(2)
+
+    if args.setup:
+        suffix = " [DRY-RUN]" if args.dry_run else ""
+        log.info(f"=== Field setup{suffix} ===")
+        projects = discover_projects(filter_prefix=args.project)
+        if not projects:
+            label = f"prefix '{args.project}'" if args.project else "any project"
+            log.error(f"No projects discovered matching {label}.")
+            sys.exit(1)
+        for proj in projects:
+            setup_project_fields(proj, dry_run=args.dry_run)
+        log.info("\n=== Setup done ===")
+        sys.exit(0)
 
     suffix = " [DRY-RUN]" if args.dry_run else ""
     log.info(f"=== Studio sync started{suffix} ===")
