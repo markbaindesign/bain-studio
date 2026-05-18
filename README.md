@@ -12,7 +12,7 @@ Claude Code skills and sync tooling for Asana-based studio project management.
 ### 1. Clone
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/bain-studio ~/dev/bain-studio
+git clone https://github.com/markbain/bain-studio ~/dev/bain-studio
 ```
 
 ### 2. Symlink skills individually
@@ -69,4 +69,4 @@ ASANA_PROJECT_NAME: My Client Project
 
 ## Related
 
-- [bain-skills](https://github.com/YOUR_USERNAME/bain-skills) — generic Claude Code skills
+- [bain-skills](https://github.com/markbain/bain-skills) — generic Claude Code skills
