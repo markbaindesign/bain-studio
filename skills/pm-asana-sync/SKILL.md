@@ -1,5 +1,5 @@
 ---
-name: asana-sync
+name: pm-asana-sync
 description: Sync the assignee's Asana tasks to a local offline mirror. For the current project, runs the studio sync script to update .claude/asana-mirror.md, then reads and summarises the result. Use at the start of any work session or when asked to sync.
 allowed-tools: [Read, Bash]
 ---

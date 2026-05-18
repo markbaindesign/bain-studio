@@ -1,5 +1,5 @@
 ---
-name: retro
+name: pm-retro
 description: Run a session retrospective. Extracts what was learned and routes each learning to the right place -- CLAUDE.md, rules, skills, docs, or ADRs. Invoke at the end of any working session.
 ---
 

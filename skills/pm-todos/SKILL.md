@@ -1,5 +1,5 @@
 ---
-name: project-todos
+name: pm-todos
 description: Manage project todos from Claude's output. Use when the user says "create tasks", "add to todo", "update the todo list", "push to asana", "what's next", or "add these to the backlog". Writes prioritised tasks to TODO.md in the current project and optionally syncs to Asana. Also use to read and report what's next when the user asks.
 argument-hint: [asana | todo | both]
 allowed-tools: [Bash, Read, Write, Edit]
@@ -117,7 +117,7 @@ curl -s -X POST "https://app.asana.com/api/1.0/sections/{TODO_SECTION_GID}/addTa
 curl -s -X POST "https://app.asana.com/api/1.0/tasks/{TASK_GID}/stories" \
   -H "Authorization: Bearer $ASANA_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"data\": {\"text\": \"Created by Claude Code on $(date '+%Y-%m-%d') via the project-todos skill.\"}}"
+  -d "{\"data\": {\"text\": \"Created by Claude Code on $(date '+%Y-%m-%d') via the pm-todos skill.\"}}"
 ```
 
 ### Step 4 — Report back
