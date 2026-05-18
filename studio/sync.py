@@ -15,9 +15,12 @@ Usage:
     python sync.py                    # sync all discovered projects
     python sync.py --project MCF      # sync one project by prefix
     python sync.py --dry-run          # preview only, no writes or Asana mutations
+
+Log: studio/sync.log (rotating, 5 MB × 3)
 """
 
 import argparse
+import logging
 import os
 import re
 import sys
@@ -25,6 +28,7 @@ import json
 import requests
 from dataclasses import dataclass
 from datetime import date, timedelta
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -45,6 +49,37 @@ SKIP_PREFIXES = {"PIPE"}  # projects with their own sync scripts
 
 JUNK_PATTERNS = re.compile(r"^- |😍|📰|\[Product Update\]", re.IGNORECASE)
 PLAIN_CHECK   = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
+
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+def _setup_logging() -> logging.Logger:
+    logger = logging.getLogger("sync")
+    logger.setLevel(logging.DEBUG)
+
+    # Console: plain message, same feel as print()
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(ch)
+
+    # File: timestamped, rotating so it never grows unbounded
+    fh = RotatingFileHandler(
+        STUDIO_DIR / "sync.log",
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
+        encoding="utf-8",
+    )
+    fh.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)-5s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+    logger.addHandler(fh)
+
+    return logger
+
+log = _setup_logging()
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +204,7 @@ def ensure_custom_field(proj: ProjectConfig, state: dict, dry_run=False) -> str:
     if dry_run:
         state["custom_field_gid"] = SHARED_FIELD_GID
         return SHARED_FIELD_GID
-    print(f"  [{proj.prefix}] Attaching 'Local ID' field to project...")
+    log.info(f"  [{proj.prefix}] Attaching 'Local ID' field to project...")
     try:
         _post(f"/projects/{proj.gid}/addCustomFieldSetting", {"data": {
             "custom_field": SHARED_FIELD_GID, "is_important": True,
@@ -177,7 +212,7 @@ def ensure_custom_field(proj: ProjectConfig, state: dict, dry_run=False) -> str:
     except Exception as e:
         # Field may already be attached — that's fine
         if "already" not in str(e).lower():
-            print(f"  [{proj.prefix}] Note: could not attach field: {e}")
+            log.warning(f"  [{proj.prefix}] Note: could not attach field: {e}")
     state["custom_field_gid"] = SHARED_FIELD_GID
     save_ids(proj, state)
     return SHARED_FIELD_GID
@@ -188,6 +223,7 @@ def ensure_custom_field(proj: ProjectConfig, state: dict, dry_run=False) -> str:
 # ---------------------------------------------------------------------------
 
 def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
+    log.info(f"  [{proj.prefix}] Fetching tasks from Asana...")
     params = {
         "completed_since": "now",
         "opt_fields": (
@@ -239,10 +275,10 @@ def assign_ids(proj: ProjectConfig, tasks: list, state: dict, field_gid: str, dr
                 _put(f"/tasks/{gid}", {"data": {"custom_fields": {field_gid: lid}}})
                 assigned += 1
             except Exception as e:
-                print(f"  [{proj.prefix}] Note: could not write Local ID to Asana ({gid}): {e}")
+                log.warning(f"  [{proj.prefix}] Note: could not write Local ID to Asana ({gid}): {e}")
     save_ids(proj, state, dry_run)
     if assigned:
-        print(f"  [{proj.prefix}] Assigned {assigned} new Local ID(s).")
+        log.info(f"  [{proj.prefix}] Assigned {assigned} new Local ID(s).")
     return state
 
 
@@ -355,7 +391,7 @@ def priorities_table(tasks: list) -> str:
 
 def leave_comment(task_gid: str, text: str, dry_run=False):
     if dry_run:
-        print(f"    [DRY-RUN] Would comment on {task_gid}: {text[:80]}...")
+        log.info(f"    [DRY-RUN] Would comment on {task_gid}: {text[:80]}...")
         return
     _post(f"/tasks/{task_gid}/stories", {"data": {"text": text}})
 
@@ -365,16 +401,16 @@ def leave_comment(task_gid: str, text: str, dry_run=False):
 # ---------------------------------------------------------------------------
 
 def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
-    print(f"\n[{proj.prefix}] {proj.name}")
-    print(f"  Path: {proj.root}")
-    print(f"  GID:  {proj.gid}")
+    log.info(f"\n[{proj.prefix}] {proj.name}")
+    log.info(f"  Path: {proj.root}")
+    log.info(f"  GID:  {proj.gid}")
     try:
         proj.claude_dir.mkdir(exist_ok=True)
         state     = load_ids(proj)
         field_gid = ensure_custom_field(proj, state, dry_run)
 
         tasks = fetch_tasks(proj, field_gid)
-        print(f"  {len(tasks)} task(s) assigned to {ASSIGNEE_NAME}.")
+        log.info(f"  {len(tasks)} task(s) assigned to {ASSIGNEE_NAME}.")
 
         prev_gids    = parse_existing_task_gids(proj)
         curr_gids    = {t["gid"] for t in tasks}
@@ -396,12 +432,13 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                     and not PLAIN_CHECK.match(curr_p)
                     and curr_p != posted_progress.get(gid)):
                 try:
+                    log.info(f"  [{proj.prefix}] Posting progress comment for {local_id}...")
                     leave_comment(gid, curr_p, dry_run)
                     if not dry_run:
                         posted_progress[gid] = curr_p
                     commented += 1
                 except Exception as e:
-                    print(f"  Failed to comment on {local_id}: {e}")
+                    log.warning(f"  Failed to comment on {local_id}: {e}")
 
         state["posted_progress"] = posted_progress
         save_ids(proj, state, dry_run)
@@ -422,15 +459,15 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
         if not dry_run:
             proj.mirror_file.write_text(mirror)
-            print(f"  Mirror → {proj.mirror_file}")
+            log.info(f"  Mirror → {proj.mirror_file}")
         else:
-            print(f"  [DRY-RUN] Mirror would be written to {proj.mirror_file}")
+            log.info(f"  [DRY-RUN] Mirror would be written to {proj.mirror_file}")
 
-        print(f"  {len(new_gids)} new | {len(removed_gids)} removed | {commented} comment(s) posted")
+        log.info(f"  {len(new_gids)} new | {len(removed_gids)} removed | {commented} comment(s) posted")
         return True
 
     except Exception as e:
-        print(f"  FAILED: {e}")
+        log.error(f"  FAILED: {e}")
         return False
 
 
@@ -465,23 +502,23 @@ def main():
     args = parser.parse_args()
 
     if not ASANA_PAT:
-        print("ERROR: ASANA_PAT not set. Add it to ~/dev/bain-studio/studio/.env", file=sys.stderr)
+        log.error("ERROR: ASANA_PAT not set. Add it to ~/dev/bain-studio/studio/.env")
         sys.exit(2)
     if not WORKSPACE_GID or not BAINBOT_GID:
-        print("ERROR: ASANA_WORKSPACE_GID and ASANA_BAINBOT_GID must be set in .env", file=sys.stderr)
+        log.error("ERROR: ASANA_WORKSPACE_GID and ASANA_BAINBOT_GID must be set in .env")
         sys.exit(2)
 
     projects = discover_projects(filter_prefix=args.project)
     if not projects:
         label = f"prefix '{args.project}'" if args.project else "any project"
-        print(f"No projects discovered matching {label}.")
-        print("Add ASANA_PROJECT_GID and ASANA_TASK_PREFIX to a project's CLAUDE.md.")
+        log.error(f"No projects discovered matching {label}.")
+        log.info("Add ASANA_PROJECT_GID and ASANA_TASK_PREFIX to a project's CLAUDE.md.")
         sys.exit(1)
 
     suffix = " [DRY-RUN]" if args.dry_run else ""
-    print(f"Studio sync{suffix} — {len(projects)} project(s) discovered:")
+    log.info(f"=== Studio sync started{suffix} — {len(projects)} project(s) ===")
     for p in projects:
-        print(f"  {p.prefix}: {p.name}")
+        log.info(f"  {p.prefix}: {p.name}")
 
     results = {}
     for proj in projects:
@@ -489,13 +526,13 @@ def main():
 
     if not args.dry_run and not args.project:
         write_registry(projects, results)
-        print(f"\nRegistry written → {STUDIO_DIR / 'projects.md'}")
+        log.info(f"\nRegistry written → {STUDIO_DIR / 'projects.md'}")
 
     failed = [k for k, ok in results.items() if not ok]
     if failed:
-        print(f"\nFailed: {', '.join(failed)}", file=sys.stderr)
+        log.error(f"\nFailed: {', '.join(failed)}")
         sys.exit(1)
-    print(f"\nDone.")
+    log.info(f"\n=== Done ===")
 
 
 if __name__ == "__main__":
