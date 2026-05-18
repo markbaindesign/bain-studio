@@ -31,9 +31,10 @@ from dotenv import load_dotenv
 STUDIO_DIR = Path(__file__).parent
 load_dotenv(STUDIO_DIR / ".env")
 
-ASANA_PAT     = os.getenv("ASANA_PAT") or os.getenv("ASANA_TOKEN")
-WORKSPACE_GID = os.getenv("ASANA_WORKSPACE_GID")
-BAINBOT_GID   = os.getenv("ASANA_BAINBOT_GID")
+ASANA_PAT      = os.getenv("ASANA_PAT") or os.getenv("ASANA_TOKEN")
+WORKSPACE_GID  = os.getenv("ASANA_WORKSPACE_GID")
+BAINBOT_GID    = os.getenv("ASANA_BAINBOT_GID")
+ASSIGNEE_NAME  = os.getenv("STUDIO_ASSIGNEE_NAME", "Bot")
 TODAY         = date.today().isoformat()
 BASE_URL      = "https://app.asana.com/api/1.0"
 
@@ -292,10 +293,10 @@ def _trunc(text, n=300) -> str:
 
 def build_mirror(proj: ProjectConfig, tasks: list, carried: dict) -> str:
     lines = [
-        "# BainBot Asana Task Mirror",
+        f"# {ASSIGNEE_NAME} Asana Task Mirror",
         f"Last synced: {TODAY}",
-        f"Workspace: bain.design ({WORKSPACE_GID})",
-        f"BainBot GID: {BAINBOT_GID}",
+        f"Workspace GID: {WORKSPACE_GID}",
+        f"Assignee GID: {BAINBOT_GID}",
         "",
         f"## {proj.name}",
         "",
@@ -373,7 +374,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         field_gid = ensure_custom_field(proj, state, dry_run)
 
         tasks = fetch_tasks(proj, field_gid)
-        print(f"  {len(tasks)} task(s) assigned to BainBot.")
+        print(f"  {len(tasks)} task(s) assigned to {ASSIGNEE_NAME}.")
 
         prev_gids    = parse_existing_task_gids(proj)
         curr_gids    = {t["gid"] for t in tasks}
