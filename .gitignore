@@ -1,5 +1,6 @@
 studio/.env
 studio/projects.md
+.claude/settings.local.json
 studio/.venv/
 __pycache__/
 *.pyc
