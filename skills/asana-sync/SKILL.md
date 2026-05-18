@@ -24,7 +24,7 @@ If `ASANA_PROJECT_GID` is not in `CLAUDE.md`, report: "No Asana project configur
 ## Step 2 — Run the sync
 
 ```bash
-python ~/.claude/studio/sync.py --project {PREFIX}
+python ~/dev/bain-studio/studio/sync.py --project {PREFIX}
 ```
 
 This updates `.claude/asana-mirror.md` and `.claude/asana-ids.json` in the project root.
@@ -47,5 +47,5 @@ Read `.claude/asana-mirror.md`. Report:
 - The sync script handles ID assignment, progress-note diffing, and posting changed notes to Asana as comments.
 - Local IDs (e.g. MCF-001) are assigned sequentially and stored in `.claude/asana-ids.json`.
 - Progress notes are preserved across syncs — only updated when meaningfully changed.
-- To sync all studio projects at once: `python ~/.claude/studio/sync.py`
-- Sync log: `~/.claude/studio/sync.log`
+- To sync all studio projects at once: `python ~/dev/bain-studio/studio/sync.py`
+- Sync log: `~/dev/bain-studio/studio/sync.log`

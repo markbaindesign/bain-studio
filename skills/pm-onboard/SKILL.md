@@ -31,7 +31,7 @@ Ask the user for the following, one prompt at a time. Show your suggested value 
 
 2. **Task prefix** — `ASANA_TASK_PREFIX`
    - Suggest: uppercase initials of the project name, 2–4 chars (e.g. `mhairi_mcf` → `MCF`, `beato-properties` → `BEA`)
-   - Must be unique across studio projects. Check `~/.claude/studio/projects.md` if it exists.
+   - Must be unique across studio projects. Check `~/dev/bain-studio/studio/projects.md` if it exists.
 
 3. **Project name** — `ASANA_PROJECT_NAME`
    - Suggest: a clean version of the directory name (e.g. `mhairi_mcf` → `Mhairi McFarlane`)
@@ -110,7 +110,7 @@ Before running the sync, attach the shared "Local ID" custom field to the projec
 python3 - <<'EOF'
 import os, requests
 from dotenv import load_dotenv
-load_dotenv(os.path.expanduser("~/.claude/studio/.env"))
+load_dotenv(os.path.expanduser("~/dev/bain-studio/studio/.env"))
 token = os.environ["ASANA_TOKEN"]
 gid = "{GID}"
 field_gid = "1214878337481923"
@@ -135,7 +135,7 @@ Replace `{GID}` with the actual `ASANA_PROJECT_GID`.
 ## Step 6 — Run initial sync
 
 ```bash
-python3 ~/.claude/studio/sync.py --project {PREFIX}
+python3 ~/dev/bain-studio/studio/sync.py --project {PREFIX}
 ```
 
 Report the result: how many tasks found, whether the mirror was written, any errors.
