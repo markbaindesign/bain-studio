@@ -1,4 +1,5 @@
 studio/.env
 studio/projects.md
+studio/.venv/
 __pycache__/
 *.pyc
