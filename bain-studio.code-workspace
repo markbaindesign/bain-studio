@@ -1,0 +1,43 @@
+{
+  "folders": [
+    {
+      "name": "Studio Scripts",
+      "path": "studio"
+    },
+    {
+      "name": "Skills",
+      "path": "skills"
+    }
+  ],
+  "settings": {
+    "editor.wordWrap": "on",
+    "editor.rulers": [100],
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/*.pyc": true
+    },
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "[python]": {
+      "editor.defaultFormatter": "ms-python.python"
+    },
+    "[markdown]": {
+      "editor.quickSuggestions": {
+        "other": true,
+        "comments": false,
+        "strings": false
+      }
+    },
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.patterns": {
+      "SKILL.md": "*.md"
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "esbenp.prettier-vscode",
+      "ms-python.python",
+      "yzhang.markdown-all-in-one",
+      "davidanson.vscode-markdownlint"
+    ]
+  }
+}
