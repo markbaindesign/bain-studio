@@ -1,0 +1,4 @@
+studio/.env
+studio/projects.md
+__pycache__/
+*.pyc
