@@ -9,7 +9,8 @@ Required env vars (set in studio/.env):
     ASANA_WORKSPACE_GID     Workspace GID
     ASANA_BAINBOT_GID       GID of the Asana user tasks are assigned to
     ASANA_LOCAL_ID_FIELD_GID  GID of the custom text field used for local IDs
-    STUDIO_SCAN_ROOTS       Colon-separated paths to scan (default: ~/dev)
+
+Projects registry: studio/projects.json (gitignored — copy from projects.example.json)
 
 Usage:
     python sync.py                    # sync all discovered projects
@@ -42,9 +43,6 @@ ASSIGNEE_NAME  = os.getenv("STUDIO_ASSIGNEE_NAME", "Bot")
 TODAY         = date.today().isoformat()
 BASE_URL      = "https://app.asana.com/api/1.0"
 
-_scan_env = os.getenv("STUDIO_SCAN_ROOTS", "")
-SCAN_ROOTS = [Path(p) for p in _scan_env.split(":") if p] if _scan_env else [Path.home() / "dev"]
-SKIP_SUBPATHS = ["worktrees", "plugin-docs", "node_modules", ".venv", "__pycache__"]
 SKIP_PREFIXES = {"PIPE"}  # projects with their own sync scripts
 
 JUNK_PATTERNS = re.compile(r"^- |😍|📰|\[Product Update\]", re.IGNORECASE)
@@ -103,44 +101,58 @@ class ProjectConfig:
     def claude_dir(self): return self.root / ".claude"
 
 
+PROJECTS_FILE = STUDIO_DIR / "projects.json"
+
+
 def discover_projects(filter_prefix=None) -> list:
-    """Scan SCAN_ROOTS for CLAUDE.md files containing ASANA_PROJECT_GID."""
+    """Read project roots from projects.json and load config from each CLAUDE.md."""
+    if not PROJECTS_FILE.exists():
+        log.error(f"No projects.json found at {PROJECTS_FILE}. Copy projects.example.json to get started.")
+        return []
+
+    try:
+        roots = json.loads(PROJECTS_FILE.read_text())
+    except Exception as e:
+        log.error(f"Could not parse {PROJECTS_FILE}: {e}")
+        return []
+
     projects = []
     seen_gids = set()
 
-    for root in SCAN_ROOTS:
-        if not root.exists():
+    for raw in roots:
+        root = Path(raw).expanduser()
+        claude_md = root / "CLAUDE.md"
+        if not claude_md.exists():
+            log.warning(f"  Skipping {raw} — no CLAUDE.md found")
             continue
-        for claude_md in sorted(root.rglob("CLAUDE.md")):
-            path_str = str(claude_md)
-            if any(s in path_str for s in SKIP_SUBPATHS):
-                continue
 
-            try:
-                text = claude_md.read_text(errors="replace")
-            except OSError:
-                continue
+        try:
+            text = claude_md.read_text(errors="replace")
+        except OSError as e:
+            log.warning(f"  Skipping {raw} — could not read CLAUDE.md: {e}")
+            continue
 
-            gid_m    = re.search(r"ASANA_PROJECT_GID:\s*(\S+)", text)
-            prefix_m = re.search(r"ASANA_TASK_PREFIX:\s*(\S+)", text)
-            if not gid_m:
-                continue
+        gid_m    = re.search(r"ASANA_PROJECT_GID:\s*(\S+)", text)
+        prefix_m = re.search(r"ASANA_TASK_PREFIX:\s*(\S+)", text)
+        if not gid_m:
+            log.warning(f"  Skipping {raw} — no ASANA_PROJECT_GID in CLAUDE.md")
+            continue
 
-            gid    = gid_m.group(1)
-            prefix = prefix_m.group(1) if prefix_m else claude_md.parent.name.upper()[:4]
+        gid    = gid_m.group(1)
+        prefix = prefix_m.group(1) if prefix_m else root.name.upper()[:4]
 
-            if gid in seen_gids or prefix in SKIP_PREFIXES:
-                continue
-            if filter_prefix and prefix != filter_prefix:
-                continue
+        if gid in seen_gids or prefix in SKIP_PREFIXES:
+            continue
+        if filter_prefix and prefix != filter_prefix:
+            continue
 
-            name_m = re.search(r"ASANA_PROJECT_NAME:\s*(.+)", text)
-            name   = name_m.group(1).strip() if name_m else (
-                claude_md.parent.name.replace("_", " ").replace("-", " ").title()
-            )
+        name_m = re.search(r"ASANA_PROJECT_NAME:\s*(.+)", text)
+        name   = name_m.group(1).strip() if name_m else (
+            root.name.replace("_", " ").replace("-", " ").title()
+        )
 
-            projects.append(ProjectConfig(name=name, root=claude_md.parent, gid=gid, prefix=prefix))
-            seen_gids.add(gid)
+        projects.append(ProjectConfig(name=name, root=root, gid=gid, prefix=prefix))
+        seen_gids.add(gid)
 
     return projects
 
@@ -508,6 +520,9 @@ def main():
         log.error("ERROR: ASANA_WORKSPACE_GID and ASANA_BAINBOT_GID must be set in .env")
         sys.exit(2)
 
+    suffix = " [DRY-RUN]" if args.dry_run else ""
+    log.info(f"=== Studio sync started{suffix} ===")
+
     projects = discover_projects(filter_prefix=args.project)
     if not projects:
         label = f"prefix '{args.project}'" if args.project else "any project"
@@ -515,8 +530,7 @@ def main():
         log.info("Add ASANA_PROJECT_GID and ASANA_TASK_PREFIX to a project's CLAUDE.md.")
         sys.exit(1)
 
-    suffix = " [DRY-RUN]" if args.dry_run else ""
-    log.info(f"=== Studio sync started{suffix} — {len(projects)} project(s) ===")
+    log.info(f"{len(projects)} project(s) found:")
     for p in projects:
         log.info(f"  {p.prefix}: {p.name}")
 

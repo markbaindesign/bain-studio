@@ -1,4 +1,5 @@
 studio/.env
+studio/projects.json
 studio/projects.md
 .claude/settings.local.json
 studio/.venv/
