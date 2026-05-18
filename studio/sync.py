@@ -1,11 +1,15 @@
 """
-Studio Asana sync — syncs BainBot's tasks across all active studio projects.
+Studio Asana sync — syncs assignee tasks across all active studio projects.
 
-Scans project roots for CLAUDE.md files containing ASANA_PROJECT_GID, then
+Scans STUDIO_SCAN_ROOTS for CLAUDE.md files containing ASANA_PROJECT_GID, then
 syncs each project's Asana tasks to <project>/.claude/asana-mirror.md.
 
-Generalised from upwork-proposals/pipeline/asana_sync.py. The pipeline keeps
-its own sync script; projects with ASANA_TASK_PREFIX=PIPE are skipped here.
+Required env vars (set in studio/.env):
+    ASANA_PAT               Personal access token
+    ASANA_WORKSPACE_GID     Workspace GID
+    ASANA_BAINBOT_GID       GID of the Asana user tasks are assigned to
+    ASANA_LOCAL_ID_FIELD_GID  GID of the custom text field used for local IDs
+    STUDIO_SCAN_ROOTS       Colon-separated paths to scan (default: ~/dev)
 
 Usage:
     python sync.py                    # sync all discovered projects
@@ -28,15 +32,13 @@ STUDIO_DIR = Path(__file__).parent
 load_dotenv(STUDIO_DIR / ".env")
 
 ASANA_PAT     = os.getenv("ASANA_PAT") or os.getenv("ASANA_TOKEN")
-WORKSPACE_GID = os.getenv("ASANA_WORKSPACE_GID", "512209774840")
-BAINBOT_GID   = os.getenv("ASANA_BAINBOT_GID",   "1209202434387214")
+WORKSPACE_GID = os.getenv("ASANA_WORKSPACE_GID")
+BAINBOT_GID   = os.getenv("ASANA_BAINBOT_GID")
 TODAY         = date.today().isoformat()
 BASE_URL      = "https://app.asana.com/api/1.0"
 
-SCAN_ROOTS = [
-    Path("/media/data/dev/"),
-    Path("/home/bain/code/misc/"),
-]
+_scan_env = os.getenv("STUDIO_SCAN_ROOTS", "")
+SCAN_ROOTS = [Path(p) for p in _scan_env.split(":") if p] if _scan_env else [Path.home() / "dev"]
 SKIP_SUBPATHS = ["worktrees", "plugin-docs", "node_modules", ".venv", "__pycache__"]
 SKIP_PREFIXES = {"PIPE"}  # projects with their own sync scripts
 
@@ -157,7 +159,7 @@ def _next_lid(state: dict, prefix: str) -> str:
 # Custom field
 # ---------------------------------------------------------------------------
 
-SHARED_FIELD_GID = "1214878337481923"  # workspace 'Local ID' text field
+SHARED_FIELD_GID = os.getenv("ASANA_LOCAL_ID_FIELD_GID", "")
 
 
 def ensure_custom_field(proj: ProjectConfig, state: dict, dry_run=False) -> str:
@@ -462,7 +464,10 @@ def main():
     args = parser.parse_args()
 
     if not ASANA_PAT:
-        print("ERROR: ASANA_PAT not set in ~/.claude/studio/.env", file=sys.stderr)
+        print("ERROR: ASANA_PAT not set. Add it to ~/dev/bain-studio/studio/.env", file=sys.stderr)
+        sys.exit(2)
+    if not WORKSPACE_GID or not BAINBOT_GID:
+        print("ERROR: ASANA_WORKSPACE_GID and ASANA_BAINBOT_GID must be set in .env", file=sys.stderr)
         sys.exit(2)
 
     projects = discover_projects(filter_prefix=args.project)

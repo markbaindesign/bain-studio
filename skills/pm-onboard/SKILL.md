@@ -30,17 +30,17 @@ Ask the user for the following, one prompt at a time. Show your suggested value 
    - No default — must be provided.
 
 2. **Task prefix** — `ASANA_TASK_PREFIX`
-   - Suggest: uppercase initials of the project name, 2–4 chars (e.g. `mhairi_mcf` → `MCF`, `beato-properties` → `BEA`)
+   - Suggest: uppercase initials of the project name, 2–4 chars (e.g. `acme-corp` → `ACM`, `client-site` → `CLI`)
    - Must be unique across studio projects. Check `~/dev/bain-studio/studio/projects.md` if it exists.
 
 3. **Project name** — `ASANA_PROJECT_NAME`
-   - Suggest: a clean version of the directory name (e.g. `mhairi_mcf` → `Mhairi McFarlane`)
+   - Suggest: a clean version of the directory name (e.g. `acme_corp` → `Acme Corp`)
    - Used in mirrors and morning reports.
 
 **Optional (skip if already in CLAUDE.md):**
 
-4. **Client name** — full name and role (e.g. "Jaume Beato — real estate agent, Catalonia South")
-5. **PM / client contact** — name and email for the person Mark corresponds with
+4. **Client name** — full name and role (e.g. "Jane Smith — e-commerce retailer, London")
+5. **PM / client contact** — name and email for the person you correspond with
 6. **Billing rate** — hourly rate (e.g. `£48/hr`)
 7. **Client tone** — one line describing the communication style (e.g. "Warm, professional, concise. No jargon.")
 
@@ -77,15 +77,25 @@ Do not duplicate information already present in CLAUDE.md.
 
 Create the `.claude/` directory in the project root if it doesn't exist.
 
-Create `.claude/asana-ids.json` with the shared workspace field GID pre-seeded:
+Create `.claude/asana-ids.json` with the shared workspace field GID pre-seeded. Read the field GID from the studio `.env`:
 
-```json
-{
-  "custom_field_gid": "1214878337481923",
-  "tasks": {},
-  "next_seq": 1,
-  "posted_progress": {}
-}
+```bash
+python3 - <<'EOF'
+import os, json
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path("~/dev/bain-studio/studio/.env").expanduser())
+field_gid = os.getenv("ASANA_LOCAL_ID_FIELD_GID", "")
+ids_file = Path(".claude/asana-ids.json")
+ids_file.parent.mkdir(exist_ok=True)
+ids_file.write_text(json.dumps({
+    "custom_field_gid": field_gid,
+    "tasks": {},
+    "next_seq": 1,
+    "posted_progress": {}
+}, indent=2))
+print(f"asana-ids.json written (field GID: {field_gid or 'NOT SET — check .env'})")
+EOF
 ```
 
 Create `.claude/open-questions.md` if it doesn't exist:
@@ -111,9 +121,9 @@ python3 - <<'EOF'
 import os, requests
 from dotenv import load_dotenv
 load_dotenv(os.path.expanduser("~/dev/bain-studio/studio/.env"))
-token = os.environ["ASANA_TOKEN"]
+token = os.environ["ASANA_PAT"]
 gid = "{GID}"
-field_gid = "1214878337481923"
+field_gid = os.environ["ASANA_LOCAL_ID_FIELD_GID"]
 r = requests.post(
     f"https://app.asana.com/api/1.0/projects/{gid}/addCustomFieldSetting",
     headers={"Authorization": f"Bearer {token}"},

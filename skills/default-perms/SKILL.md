@@ -1,12 +1,12 @@
 ---
 name: default-perms
-description: Write Bain Design default permissions to .claude/settings.json for the current project. Use when setting up a new project or when asked to add default permissions.
+description: Write default permissions to .claude/settings.json for the current project. Use when setting up a new project or when asked to add default permissions.
 allowed-tools: [Bash, Read, Write, Edit]
 ---
 
-# BD Default Permissions Skill
+# Default Permissions Skill
 
-Write the Bain Design standard default permissions to `.claude/settings.json` in the current project.
+Write the standard default permissions to `.claude/settings.json` in the current project.
 
 ---
 

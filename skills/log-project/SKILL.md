@@ -1,6 +1,6 @@
 ---
 name: log-project
-description: Elicit completed project data and append a new row to context/portfolio/project-database.csv. Use when Mark finishes a project or wants to backfill a missing project. Ask one section at a time, then write the CSV row and offer to run cv_updater.py.
+description: Elicit completed project data and append a new row to context/portfolio/project-database.csv. Use when a project is finished or to backfill a missing project. Ask one section at a time, then write the CSV row and offer to run cv_updater.py.
 ---
 
 # Log Project
@@ -55,7 +55,7 @@ Work through these sections **one at a time**. Ask the questions, wait for the a
 
 ## After collecting answers
 
-1. **Show a preview** of the CSV row before writing — one field per line, clearly labelled. Ask Mark to confirm or correct anything.
+1. **Show a preview** of the CSV row before writing — one field per line, clearly labelled. Ask the user to confirm or correct anything.
 
 2. **Write the row** — append to `context/portfolio/project-database.csv`. Match the column order exactly. Wrap any field containing a comma in double quotes. Do not quote fields that don't need it.
 
@@ -65,7 +65,7 @@ Work through these sections **one at a time**. Ask the questions, wait for the a
 
 ## Rules
 
-- Never invent or infer tech. Only log what Mark explicitly confirms.
+- Never invent or infer tech. Only log what the user explicitly confirms.
 - If a field is unknown or not applicable, leave it blank (empty cell, not "N/A").
 - Profile values are fixed: Unicorn / Coder/Builder / Consultant / Designer — do not create new values.
 - The CSV has no archive — append only, never edit existing rows.

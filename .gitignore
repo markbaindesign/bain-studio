@@ -3,3 +3,5 @@ studio/projects.md
 studio/.venv/
 __pycache__/
 *.pyc
+*.mp3
+*.mp4
