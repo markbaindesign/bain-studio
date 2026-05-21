@@ -1,13 +1,16 @@
 """
-Studio Asana sync — syncs assignee tasks across all active studio projects.
+Studio Asana sync — full bidirectional sync across all active studio projects.
 
-Scans STUDIO_SCAN_ROOTS for CLAUDE.md files containing ASANA_PROJECT_GID, then
-syncs each project's Asana tasks to <project>/.claude/asana-mirror.md.
+Syncs each project's Asana tasks to <project>/.claude/asana-mirror.md.
+
+Conflict resolution: mirror file mtime vs Asana task modified_at.
+- asana_modified_at > mirror_mtime → Asana wins, pull all fields into mirror
+- otherwise → mirror wins, push changed fields to Asana
 
 Required env vars (set in studio/.env):
-    ASANA_PAT               Personal access token
-    ASANA_WORKSPACE_GID     Workspace GID
-    ASANA_BAINBOT_GID       GID of the Asana user tasks are assigned to
+    ASANA_PAT                 Personal access token
+    ASANA_WORKSPACE_GID       Workspace GID
+    ASANA_BAINBOT_GID         GID of the Asana user tasks are assigned to
     ASANA_LOCAL_ID_FIELD_GID  GID of the custom text field used for local IDs
 
 Projects registry: studio/projects.json (gitignored — copy from projects.example.json)
@@ -40,13 +43,15 @@ ASANA_PAT      = os.getenv("ASANA_PAT") or os.getenv("ASANA_TOKEN")
 WORKSPACE_GID  = os.getenv("ASANA_WORKSPACE_GID")
 BAINBOT_GID    = os.getenv("ASANA_BAINBOT_GID")
 ASSIGNEE_NAME  = os.getenv("STUDIO_ASSIGNEE_NAME", "Bot")
-TODAY         = date.today().isoformat()
-BASE_URL      = "https://app.asana.com/api/1.0"
+TODAY          = date.today().isoformat()
+BASE_URL       = "https://app.asana.com/api/1.0"
 
-SKIP_PREFIXES = set()
+SKIP_PREFIXES  = set()
 
-JUNK_PATTERNS = re.compile(r"^- |😍|📰|\[Product Update\]", re.IGNORECASE)
-PLAIN_CHECK   = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
+JUNK_PATTERNS  = re.compile(r"^- |😍|📰|\[Product Update\]", re.IGNORECASE)
+PLAIN_CHECK    = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
+GID_IN_PARENS  = re.compile(r'\((\d+)\)')
+FIELD_RE       = re.compile(r"- \*\*(.+?):\*\* (.+)")
 
 
 # ---------------------------------------------------------------------------
@@ -57,12 +62,10 @@ def _setup_logging() -> logging.Logger:
     logger = logging.getLogger("sync")
     logger.setLevel(logging.DEBUG)
 
-    # Console: plain message, same feel as print()
     ch = logging.StreamHandler(sys.stdout)
     ch.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(ch)
 
-    # File: timestamped, rotating so it never grows unbounded
     fh = RotatingFileHandler(
         STUDIO_DIR / "sync.log",
         maxBytes=5 * 1024 * 1024,
@@ -105,7 +108,6 @@ PROJECTS_FILE = STUDIO_DIR / "projects.json"
 
 
 def discover_projects(filter_prefix=None) -> list:
-    """Read project roots from projects.json and load config from each CLAUDE.md."""
     if not PROJECTS_FILE.exists():
         log.error(f"No projects.json found at {PROJECTS_FILE}. Copy projects.example.json to get started.")
         return []
@@ -234,7 +236,6 @@ def _create_and_attach_field(proj: ProjectConfig, field_name: str, env_var: str)
 
 
 def setup_project_fields(proj: ProjectConfig, dry_run=False):
-    """Create and attach custom fields for a project. Called by --setup mode."""
     log.info(f"\n[{proj.prefix}] {proj.name} — field setup")
     log.info(f"  Path: {proj.root}")
     state = load_ids(proj)
@@ -293,11 +294,18 @@ def ensure_last_synced_field(proj: ProjectConfig, state: dict) -> str:
 
 def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
     log.info(f"  [{proj.prefix}] Fetching tasks from Asana...")
+    thirty_days_ago = (date.today() - timedelta(days=30)).isoformat()
     params = {
-        "completed_since": "now",
+        "completed_since": thirty_days_ago,
         "opt_fields": (
-            "gid,name,notes,due_on,assignee.gid,projects.name,"
-            "modified_at,permalink_url,custom_fields.gid,custom_fields.text_value"
+            "gid,name,notes,due_on,due_at,start_on,completed,modified_at,permalink_url,"
+            "assignee.gid,assignee.name,assignee_status,"
+            "custom_fields.gid,custom_fields.text_value,"
+            "memberships.section.name,memberships.section.gid,memberships.project.gid,"
+            "tags.gid,tags.name,"
+            "followers.gid,followers.name,"
+            "dependencies.gid,dependencies.name,"
+            "dependents.gid,dependents.name"
         ),
         "limit": 100,
     }
@@ -307,11 +315,24 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
              and not _is_junk(t)]
     for t in tasks:
         t["_local_id"] = None
+        t["_section"]  = None
+        t["_section_gid"] = None
         for cf in t.get("custom_fields", []):
             if cf.get("gid") == field_gid:
                 t["_local_id"] = cf.get("text_value") or None
                 break
+        for m in t.get("memberships", []):
+            if (m.get("project") or {}).get("gid") == proj.gid:
+                sec = m.get("section") or {}
+                t["_section"]     = sec.get("name")
+                t["_section_gid"] = sec.get("gid")
+                break
     return tasks
+
+
+def fetch_sections(proj: ProjectConfig) -> dict:
+    data = _get(f"/projects/{proj.gid}/sections")["data"]
+    return {s["name"]: s["gid"] for s in data}
 
 
 def _is_junk(task) -> bool:
@@ -338,7 +359,7 @@ def assign_ids(proj: ProjectConfig, tasks: list, state: dict, field_gid: str, dr
             continue
         lid = state["tasks"].get(gid) or _next_lid(state, proj.prefix)
         state["tasks"][gid] = lid
-        t["_local_id"] = lid  # set locally regardless of Asana write
+        t["_local_id"] = lid
         if not dry_run:
             try:
                 _put(f"/tasks/{gid}", {"data": {"custom_fields": {field_gid: lid}}})
@@ -367,6 +388,31 @@ def stamp_last_synced(proj: ProjectConfig, tasks: list, field_gid: str, dry_run=
 
 
 # ---------------------------------------------------------------------------
+# Reference formatting helpers
+# ---------------------------------------------------------------------------
+
+def _fmt_refs(items: list) -> str:
+    if not items:
+        return "none"
+    return ", ".join(f"{i['name']} ({i['gid']})" for i in items)
+
+
+def _fmt_task_refs(items: list, gid_to_lid: dict) -> str:
+    if not items:
+        return "none"
+    parts = []
+    for i in items:
+        gid   = i["gid"]
+        label = gid_to_lid.get(gid) or i.get("name") or gid
+        parts.append(f"{label} ({gid})")
+    return ", ".join(parts)
+
+
+def _extract_gids(text: str) -> list:
+    return GID_IN_PARENS.findall(text) if text and text != "none" else []
+
+
+# ---------------------------------------------------------------------------
 # Mirror parsing
 # ---------------------------------------------------------------------------
 
@@ -374,24 +420,34 @@ def parse_existing_mirror(proj: ProjectConfig) -> dict:
     if not proj.mirror_file.exists():
         return {}
     carried = {}
-    pattern = re.compile(
-        r"- \*\*Local ID:\*\* (.+?)\n"
-        r"- \*\*Asana ID:\*\* (\d+)\n"
-        r"- \*\*Due:\*\* (.+?)\n"
-        r"- \*\*Notes:\*\* (.+?)\n"
-        r"- \*\*Blockers:\*\* (.+?)\n"
-        r"- \*\*Progress:\*\* (.+?)\n"
-        r"- \*\*Modified:\*\* (.+?)\n",
-    )
-    for m in pattern.finditer(proj.mirror_file.read_text()):
-        gid = m.group(2)
+    text   = proj.mirror_file.read_text()
+    blocks = re.split(r"\n(?=### )", text)
+    for block in blocks:
+        if not block.startswith("### "):
+            continue
+        fields = {}
+        for m in FIELD_RE.finditer(block):
+            key = m.group(1).lower().replace(" ", "_")
+            fields[key] = m.group(2).strip()
+        gid = fields.get("asana_id")
+        if not gid:
+            continue
+        due = (fields.get("due") or "none").replace(" **(OVERDUE)**", "").strip()
         carried[gid] = {
-            "local_id": m.group(1).strip(),
-            "due":      m.group(3).replace(" **(OVERDUE)**", "").strip(),
-            "notes":    m.group(4).strip(),
-            "blockers": m.group(5).strip(),
-            "progress": m.group(6).strip(),
-            "modified": m.group(7).strip(),
+            "local_id":        fields.get("local_id", "—"),
+            "section":         fields.get("section") or None,
+            "due":             due,
+            "start":           fields.get("start", "none"),
+            "notes":           fields.get("notes", ""),
+            "assignee":        fields.get("assignee", "none"),
+            "assignee_status": fields.get("assignee_status", "none"),
+            "tags":            fields.get("tags", "none"),
+            "followers":       fields.get("followers", "none"),
+            "dependencies":    fields.get("dependencies", "none"),
+            "dependents":      fields.get("dependents", "none"),
+            "blockers":        fields.get("blockers", "None identified."),
+            "progress":        fields.get("progress", ""),
+            "modified":        fields.get("modified", ""),
         }
     return carried
 
@@ -406,12 +462,58 @@ def parse_existing_task_gids(proj: ProjectConfig) -> set:
 # Mirror building
 # ---------------------------------------------------------------------------
 
-def _trunc(text, n=300) -> str:
-    text = text.strip().replace("\n", " ")
-    return text[:n] + "..." if len(text) > n else text
+def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
+    gid      = t["gid"]
+    prev     = carried.get(gid, {})
+    local_id = t.get("_local_id") or prev.get("local_id") or "—"
+    section  = t.get("_section") or prev.get("section") or "—"
+
+    blockers = prev.get("blockers") or "None identified."
+    prev_p   = prev.get("progress", "")
+    progress = f"Checked {TODAY}." if (not prev_p or PLAIN_CHECK.match(prev_p)) else prev_p
+
+    due      = t.get("due_on") or "none"
+    overdue  = " **(OVERDUE)**" if due != "none" and due < TODAY else ""
+    start    = t.get("start_on") or "none"
+    notes    = (t.get("notes") or "").strip() or "No notes."
+    modified = (t.get("modified_at") or "")[:19]
+
+    assignee     = t.get("assignee") or {}
+    assignee_str = f"{assignee['name']} ({assignee['gid']})" if assignee.get("gid") else "none"
+    astat        = t.get("assignee_status") or "none"
+
+    tags       = _fmt_refs(t.get("tags", []))
+    followers  = _fmt_refs(t.get("followers", []))
+    deps       = _fmt_task_refs(t.get("dependencies", []), gid_to_lid)
+    dependents = _fmt_task_refs(t.get("dependents", []), gid_to_lid)
+
+    return [
+        f"### {local_id} — {t['name']}",
+        f"- **Local ID:** {local_id}",
+        f"- **Asana ID:** {gid}",
+        f"- **Section:** {section}",
+        f"- **Due:** {due}{overdue}",
+        f"- **Start:** {start}",
+        f"- **Assignee:** {assignee_str}",
+        f"- **Assignee Status:** {astat}",
+        f"- **Tags:** {tags}",
+        f"- **Followers:** {followers}",
+        f"- **Dependencies:** {deps}",
+        f"- **Dependents:** {dependents}",
+        f"- **Notes:** {notes}",
+        f"- **Blockers:** {blockers}",
+        f"- **Progress:** {progress}",
+        f"- **Modified:** {modified}",
+        f"- **URL:** {t.get('permalink_url', '')}",
+        "",
+    ]
 
 
-def build_mirror(proj: ProjectConfig, tasks: list, carried: dict) -> str:
+def build_mirror(proj: ProjectConfig, tasks: list, carried: dict, gid_to_lid: dict) -> str:
+    active = [t for t in tasks if not t.get("completed")]
+    done   = sorted([t for t in tasks if t.get("completed")],
+                    key=lambda t: t.get("modified_at", ""), reverse=True)
+
     lines = [
         f"# {ASSIGNEE_NAME} Asana Task Mirror",
         f"Last synced: {TODAY}",
@@ -421,38 +523,23 @@ def build_mirror(proj: ProjectConfig, tasks: list, carried: dict) -> str:
         f"## {proj.name}",
         "",
     ]
-    for t in tasks:
-        gid      = t["gid"]
-        prev     = carried.get(gid, {})
-        local_id = t.get("_local_id") or prev.get("local_id") or "—"
-        blockers = prev.get("blockers") or "None identified."
-        prev_p   = prev.get("progress", "")
-        progress = f"Checked {TODAY}." if (not prev_p or PLAIN_CHECK.match(prev_p)) else prev_p
-        notes    = _trunc(t.get("notes") or "") or "No notes."
-        due      = t.get("due_on") or "none"
-        overdue  = " **(OVERDUE)**" if due != "none" and due < TODAY else ""
-        modified = (t.get("modified_at") or "")[:19]
+    for t in active:
+        lines += _task_lines(t, carried, gid_to_lid)
 
-        lines += [
-            f"### {local_id} — {t['name']}",
-            f"- **Local ID:** {local_id}",
-            f"- **Asana ID:** {gid}",
-            f"- **Due:** {due}{overdue}",
-            f"- **Notes:** {notes}",
-            f"- **Blockers:** {blockers}",
-            f"- **Progress:** {progress}",
-            f"- **Modified:** {modified}",
-            f"- **URL:** {t.get('permalink_url', '')}",
-            "",
-        ]
+    if done:
+        lines += ["", "## DONE", ""]
+        for t in done:
+            lines += _task_lines(t, carried, gid_to_lid)
+
     return "\n".join(lines)
 
 
 def priorities_table(tasks: list) -> str:
+    active   = [t for t in tasks if not t.get("completed")]
     week_out = (date.today() + timedelta(days=7)).isoformat()
-    overdue  = [t for t in tasks if t.get("due_on") and t["due_on"] < TODAY]
-    due_soon = [t for t in tasks if t.get("due_on") and TODAY <= t["due_on"] <= week_out]
-    no_due   = [t for t in tasks if not t.get("due_on")]
+    overdue  = [t for t in active if t.get("due_on") and t["due_on"] < TODAY]
+    due_soon = [t for t in active if t.get("due_on") and TODAY <= t["due_on"] <= week_out]
+    no_due   = [t for t in active if not t.get("due_on")]
 
     rows = []
     for t in overdue:
@@ -481,6 +568,106 @@ def leave_comment(task_gid: str, text: str, dry_run=False):
 
 
 # ---------------------------------------------------------------------------
+# Push helpers
+# ---------------------------------------------------------------------------
+
+def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool:
+    gid     = t["gid"]
+    lid     = t.get("_local_id", gid)
+    updates = {}
+
+    def _diff(mirror_val, asana_val):
+        return (mirror_val or "").strip() != (asana_val or "").strip()
+
+    if _diff(prev.get("notes"), t.get("notes", "")):
+        notes = prev.get("notes", "")
+        updates["notes"] = "" if notes in ("", "No notes.") else notes
+
+    due = prev.get("due", "none")
+    if _diff(due, t.get("due_on") or "none"):
+        updates["due_on"] = due if due != "none" else None
+
+    start = prev.get("start", "none")
+    if _diff(start, t.get("start_on") or "none"):
+        updates["start_on"] = start if start != "none" else None
+
+    astat = prev.get("assignee_status", "none")
+    if _diff(astat, t.get("assignee_status") or "none") and astat != "none":
+        updates["assignee_status"] = astat
+
+    if not updates:
+        return False
+    if dry_run:
+        log.info(f"    [DRY-RUN] Would PUT {lid}: {list(updates.keys())}")
+        return False
+    try:
+        _put(f"/tasks/{gid}", {"data": updates})
+        log.info(f"  [{prefix}] Pushed to {lid}: {list(updates.keys())}")
+        return True
+    except Exception as e:
+        log.warning(f"  [{prefix}] Could not push fields to {lid}: {e}")
+        return False
+
+
+def _push_set_field(task_gid: str, lid: str, mirror_text: str, asana_items: list,
+                    add_path: str, remove_path: str, item_key: str,
+                    dry_run: bool, prefix: str, label: str) -> bool:
+    mirror_gids = set(_extract_gids(mirror_text))
+    asana_gids  = {i["gid"] for i in (asana_items or [])}
+    to_add    = mirror_gids - asana_gids
+    to_remove = asana_gids - mirror_gids
+    if not to_add and not to_remove:
+        return False
+    if dry_run:
+        log.info(f"    [DRY-RUN] Would update {label} for {lid}: +{to_add} -{to_remove}")
+        return False
+    changed = False
+    for g in to_add:
+        try:
+            _post(add_path.format(task_gid=task_gid), {"data": {item_key: g}})
+            changed = True
+        except Exception as e:
+            log.warning(f"  [{prefix}] Could not add {label} {g} to {lid}: {e}")
+    for g in to_remove:
+        try:
+            _post(remove_path.format(task_gid=task_gid), {"data": {item_key: g}})
+            changed = True
+        except Exception as e:
+            log.warning(f"  [{prefix}] Could not remove {label} {g} from {lid}: {e}")
+    if changed:
+        log.info(f"  [{prefix}] Updated {label} for {lid} (+{len(to_add)}/-{len(to_remove)})")
+    return changed
+
+
+def _push_section(t: dict, mirror_section: str, sections: dict, dry_run: bool, prefix: str) -> bool:
+    gid        = t["gid"]
+    lid        = t.get("_local_id", gid)
+    target_gid = sections.get(mirror_section)
+    if not target_gid:
+        log.warning(f"  [{prefix}] Unknown section '{mirror_section}' for {lid} — skipping")
+        return False
+    if dry_run:
+        log.info(f"    [DRY-RUN] Would move {lid} → '{mirror_section}'")
+        return False
+    try:
+        _post(f"/sections/{target_gid}/addTask", {"data": {"task": gid}})
+        log.info(f"  [{prefix}] Moved {lid}: '{t.get('_section')}' → '{mirror_section}'")
+        t["_section"] = mirror_section
+    except Exception as e:
+        log.warning(f"  [{prefix}] Could not move {lid}: {e}")
+        return False
+    was_done = t.get("completed", False)
+    now_done = mirror_section == "DONE"
+    if now_done != was_done:
+        try:
+            _put(f"/tasks/{gid}", {"data": {"completed": now_done}})
+            t["completed"] = now_done
+        except Exception as e:
+            log.warning(f"  [{prefix}] Could not set completed={now_done} on {lid}: {e}")
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Per-project sync
 # ---------------------------------------------------------------------------
 
@@ -490,9 +677,14 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
     log.info(f"  GID:  {proj.gid}")
     try:
         proj.claude_dir.mkdir(exist_ok=True)
-        state             = load_ids(proj)
-        field_gid         = ensure_custom_field(proj, state, dry_run)
-        last_synced_gid   = ensure_last_synced_field(proj, state)
+        mirror_mtime = (
+            datetime.utcfromtimestamp(proj.mirror_file.stat().st_mtime).strftime("%Y-%m-%dT%H:%M:%S")
+            if proj.mirror_file.exists() else ""
+        )
+
+        state           = load_ids(proj)
+        field_gid       = ensure_custom_field(proj, state, dry_run)
+        last_synced_gid = ensure_last_synced_field(proj, state)
 
         tasks = fetch_tasks(proj, field_gid)
         log.info(f"  {len(tasks)} task(s) assigned to {ASSIGNEE_NAME}.")
@@ -502,10 +694,53 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         new_gids     = curr_gids - prev_gids
         removed_gids = prev_gids - curr_gids
 
-        carried = parse_existing_mirror(proj)
-        state   = assign_ids(proj, tasks, state, field_gid, dry_run)
+        carried  = parse_existing_mirror(proj)
+        sections = fetch_sections(proj)
+        log.info(f"  [{proj.prefix}] Sections: {list(sections.keys())}")
+
+        state      = assign_ids(proj, tasks, state, field_gid, dry_run)
+        gid_to_lid = state.get("tasks", {})
         stamp_last_synced(proj, tasks, last_synced_gid, dry_run)
 
+        # --- Bidirectional field sync ---
+        pushed = 0
+        for t in tasks:
+            gid  = t["gid"]
+            prev = carried.get(gid)
+            if not prev:
+                continue  # new task — nothing in mirror to push
+
+            asana_mod = (t.get("modified_at") or "")[:19]
+            if asana_mod > mirror_mtime:
+                # Asana is newer — pull (mirror rebuilds from t fields naturally)
+                continue
+
+            # Mirror is newer — push all changed fields to Asana
+            lid = t.get("_local_id", gid)
+
+            if _push_simple_fields(t, prev, dry_run, proj.prefix):
+                pushed += 1
+
+            for label, mirror_key, asana_key, add_path, remove_path, item_key in [
+                ("tags",         "tags",         "tags",         "/tasks/{task_gid}/addTag",          "/tasks/{task_gid}/removeTag",          "tag"),
+                ("followers",    "followers",    "followers",    "/tasks/{task_gid}/addFollowers",     "/tasks/{task_gid}/removeFollowers",     "followers"),
+                ("dependencies", "dependencies", "dependencies", "/tasks/{task_gid}/addDependencies",  "/tasks/{task_gid}/removeDependencies",  "dependencies"),
+                ("dependents",   "dependents",   "dependents",   "/tasks/{task_gid}/addDependents",    "/tasks/{task_gid}/removeDependents",    "dependents"),
+            ]:
+                if _push_set_field(
+                    gid, lid,
+                    prev.get(mirror_key), t.get(asana_key, []),
+                    add_path, remove_path, item_key,
+                    dry_run, proj.prefix, label,
+                ):
+                    pushed += 1
+
+            mirror_section = prev.get("section")
+            if mirror_section and mirror_section != t.get("_section"):
+                if _push_section(t, mirror_section, sections, dry_run, proj.prefix):
+                    pushed += 1
+
+        # --- Progress comments ---
         posted_progress = state.get("posted_progress", {})
         commented = 0
         for t in tasks:
@@ -529,7 +764,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         state["posted_progress"] = posted_progress
         save_ids(proj, state, dry_run)
 
-        mirror = build_mirror(proj, tasks, carried)
+        mirror = build_mirror(proj, tasks, carried, gid_to_lid)
 
         if new_gids or removed_gids:
             changes = ["\n## Changes This Sync\n"]
@@ -549,7 +784,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         else:
             log.info(f"  [DRY-RUN] Mirror would be written to {proj.mirror_file}")
 
-        log.info(f"  {len(new_gids)} new | {len(removed_gids)} removed | {commented} comment(s) posted")
+        log.info(f"  {len(new_gids)} new | {len(removed_gids)} removed | {commented} comment(s) | {pushed} push(es)")
         return True
 
     except Exception as e:

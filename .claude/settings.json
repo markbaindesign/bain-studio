@@ -7,5 +7,8 @@
       "Glob(/home/bain/code/bain-studio/*)",
       "Grep(/home/bain/code/bain-studio/*)"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "plugin_asana_asana"
+  ]
 }
