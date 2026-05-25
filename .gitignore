@@ -7,3 +7,6 @@ __pycache__/
 *.pyc
 *.mp3
 *.mp4
+studio/inbox/
+studio/.gmail_state.json
+studio/collectors/gmail_watch.log

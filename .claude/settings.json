@@ -3,6 +3,11 @@
     "CLAUDE_SESSION_NAME": "BD Studio"
   },
   "permissions": {
+    "allow": [
+      "mcp__claude_ai_Gmail__search_threads",
+      "mcp__claude_ai_Gmail__get_thread",
+      "Write(/media/data/dev/bain-studio/studio/inbox/*)"
+    ],
     "deny": [
       "Edit(/home/bain/code/bain-studio/*)",
       "Write(/home/bain/code/bain-studio/*)"
