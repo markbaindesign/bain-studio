@@ -6,7 +6,7 @@ Watches studio/inbox/ for pending signals and routes each one through triage.
 Run on cron after gmail_watch.py, or any time signals land in inbox/.
 
 Cron example (runs 5 min after gmail_watch):
-  5,35 * * * * cd /media/data/dev/bain-studio && python3 studio/collectors/hermes.py >> studio/collectors/hermes.log 2>&1
+  5 8 * * * cd /media/data/dev/bain-studio && python3 studio/collectors/hermes.py >> studio/collectors/hermes.log 2>&1
 """
 
 import subprocess

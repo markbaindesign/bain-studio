@@ -5,8 +5,8 @@ Gmail signal collector for Hermes.
 Invokes a headless Claude session (with Gmail MCP) to scan for new client
 signals and write them as structured .md files to studio/inbox/.
 
-Run on cron, e.g.:
-  */30 * * * * cd /media/data/dev/bain-studio && python3 studio/collectors/gmail_watch.py >> studio/collectors/gmail_watch.log 2>&1
+Run on cron once a day, e.g.:
+  0 8 * * * cd /media/data/dev/bain-studio && python3 studio/collectors/gmail_watch.py >> studio/collectors/gmail_watch.log 2>&1
 """
 
 import subprocess
