@@ -17,7 +17,7 @@ If invoked with a project name argument, use it. Otherwise read `context/portfol
 
 ### 2. Read the project record
 
-Read the row from `context/portfolio/project-database.csv` for the named project. Extract all fields.
+Read the row from `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv` for the named project. Extract all fields.
 
 Check current harvest status:
 - If all three harvest fields (Case Study, Blog Post, Testimonial Status) are already `published`, report harvest is complete and ask if the user wants to regenerate anything.
@@ -96,7 +96,7 @@ Keep the body under 100 words. Specific to this project, not a template.
 
 ### 7. Update Mnemosyne
 
-Edit `context/portfolio/project-database.csv` — find the row by Project Name and update:
+Edit `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv` — find the row by Project Name and update:
 - **Case Study** → `draft` (if it was `none`)
 - **Blog Post** → `draft` (if it was `none`)
 - **Testimonial Status** → `requested` (if it was `none`) — never downgrade an existing status

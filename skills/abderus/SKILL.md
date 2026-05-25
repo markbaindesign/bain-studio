@@ -11,7 +11,7 @@ Check every time-sensitive obligation in the studio and surface what needs actio
 
 Read all of the following that exist:
 
-1. `context/portfolio/project-database.csv` — End Date, harvest status fields (Case Study, Blog Post, Testimonial Status)
+1. `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv` — End Date, harvest status fields (Case Study, Blog Post, Testimonial Status)
 2. `context/pipeline/triage-log.md` — inbound signals logged as "Investigate" with no follow-up recorded
 3. Active project Asana mirrors — `.claude/asana-mirror.md` in each active project directory (paths from CLAUDE.md active projects table)
 
