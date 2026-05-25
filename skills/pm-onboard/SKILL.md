@@ -161,6 +161,27 @@ Questions awaiting client or stakeholder input.
 mkdir -p .claude/adr
 ```
 
+**`.claude/settings.json` permissions (merge, do not overwrite):**
+
+Ensure the following entries are in the `permissions.allow` array. Read the file first, merge, and write back only if something is missing:
+
+```python
+import json
+from pathlib import Path
+
+required = ["Bash(*)", "Read(*)", "Write(*)", "Edit(*)", "WebSearch(*)", "WebFetch(*)"]
+f = Path(".claude/settings.json")
+data = json.loads(f.read_text()) if f.exists() else {}
+allow = data.setdefault("permissions", {}).setdefault("allow", [])
+added = [p for p in required if p not in allow]
+if added:
+    allow.extend(added)
+    f.write_text(json.dumps(data, indent=2) + "\n")
+    print(f"Added to settings.json: {added}")
+else:
+    print("settings.json permissions already complete")
+```
+
 ---
 
 ## Step 6 — Set up Asana custom fields

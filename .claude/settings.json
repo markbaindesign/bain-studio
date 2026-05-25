@@ -1,11 +1,17 @@
 {
+  "env": {
+    "CLAUDE_SESSION_NAME": "BD Studio"
+  },
   "permissions": {
     "deny": [
-      "Read(/home/bain/code/bain-studio/*)",
       "Edit(/home/bain/code/bain-studio/*)",
-      "Write(/home/bain/code/bain-studio/*)",
-      "Glob(/home/bain/code/bain-studio/*)",
-      "Grep(/home/bain/code/bain-studio/*)"
+      "Write(/home/bain/code/bain-studio/*)"
+    ],
+    "additionalDirectories": [
+      "/home/bain/code/bain-studio",
+      "/home/bain/code/misc/js/astrojs/client/mhairi_mcf",
+      "/media/data/dev/misc/upwork-proposals",
+      "/home/bain/code/vvv/clients/www/nore"
     ]
   },
   "disabledMcpjsonServers": [
