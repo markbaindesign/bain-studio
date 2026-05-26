@@ -677,10 +677,6 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
     log.info(f"  GID:  {proj.gid}")
     try:
         proj.claude_dir.mkdir(exist_ok=True)
-        mirror_mtime = (
-            datetime.utcfromtimestamp(proj.mirror_file.stat().st_mtime).strftime("%Y-%m-%dT%H:%M:%S")
-            if proj.mirror_file.exists() else ""
-        )
 
         state           = load_ids(proj)
         field_gid       = ensure_custom_field(proj, state, dry_run)
@@ -702,17 +698,28 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         gid_to_lid = state.get("tasks", {})
         stamp_last_synced(proj, tasks, last_synced_gid, dry_run)
 
+        # Per-task last-sync timestamps — used for conflict resolution.
+        # Comparing against mirror file mtime was wrong: sync.py rewrites the
+        # mirror every run, so mirror_mtime was always "now", causing any Asana
+        # change made after the last run to be overwritten by the local mirror.
+        last_sync_times = state.get("last_sync_times", {})
+        now_utc = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+
         # --- Bidirectional field sync ---
         pushed = 0
         for t in tasks:
             gid  = t["gid"]
             prev = carried.get(gid)
             if not prev:
+                last_sync_times[gid] = now_utc
                 continue  # new task — nothing in mirror to push
 
             asana_mod = (t.get("modified_at") or "")[:19]
-            if asana_mod > mirror_mtime:
+            task_last_sync = last_sync_times.get(gid, "")
+
+            if asana_mod > task_last_sync:
                 # Asana is newer — pull (mirror rebuilds from t fields naturally)
+                last_sync_times[gid] = now_utc
                 continue
 
             # Mirror is newer — push all changed fields to Asana
@@ -739,6 +746,10 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
             if mirror_section and mirror_section != t.get("_section"):
                 if _push_section(t, mirror_section, sections, dry_run, proj.prefix):
                     pushed += 1
+
+            last_sync_times[gid] = now_utc
+
+        state["last_sync_times"] = last_sync_times
 
         # --- Progress comments ---
         posted_progress = state.get("posted_progress", {})
