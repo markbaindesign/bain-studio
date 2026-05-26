@@ -579,9 +579,9 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
     def _diff(mirror_val, asana_val):
         return (mirror_val or "").strip() != (asana_val or "").strip()
 
-    if _diff(prev.get("notes"), t.get("notes", "")):
-        notes = prev.get("notes", "")
-        updates["notes"] = "" if notes in ("", "No notes.") else notes
+    # Notes are read-only in the mirror — multi-line content doesn't survive the
+    # FIELD_RE single-line parser, so pushing notes would silently truncate them.
+    # Edit notes directly in Asana.
 
     due = prev.get("due", "none")
     if _diff(due, t.get("due_on") or "none"):
