@@ -16,9 +16,11 @@ Required env vars (set in studio/.env):
 Projects registry: studio/projects.json (gitignored — copy from projects.example.json)
 
 Usage:
-    python sync.py                    # sync all discovered projects
-    python sync.py --project MCF      # sync one project by prefix
-    python sync.py --dry-run          # preview only, no writes or Asana mutations
+    python sync.py                                          # sync all discovered projects
+    python sync.py --project MCF                            # sync one project by prefix
+    python sync.py --dry-run                                # preview only, no writes or Asana mutations
+    python sync.py --create --name "Client" --prefix CLI --path /path/to/project
+                                                            # scaffold a new project from template
 
 Log: studio/sync.log (rotating, 5 MB × 3)
 """
@@ -29,6 +31,7 @@ import os
 import re
 import sys
 import json
+import time
 import requests
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -39,10 +42,11 @@ from dotenv import load_dotenv
 STUDIO_DIR = Path(__file__).parent
 load_dotenv(STUDIO_DIR / ".env")
 
-ASANA_PAT      = os.getenv("ASANA_PAT") or os.getenv("ASANA_TOKEN")
-WORKSPACE_GID  = os.getenv("ASANA_WORKSPACE_GID")
-BAINBOT_GID    = os.getenv("ASANA_BAINBOT_GID")
-ASSIGNEE_NAME  = os.getenv("STUDIO_ASSIGNEE_NAME", "Bot")
+ASANA_PAT            = os.getenv("ASANA_PAT") or os.getenv("ASANA_TOKEN")
+WORKSPACE_GID        = os.getenv("ASANA_WORKSPACE_GID")
+BAINBOT_GID          = os.getenv("ASANA_BAINBOT_GID")
+ASSIGNEE_NAME        = os.getenv("STUDIO_ASSIGNEE_NAME", "Bot")
+TEMPLATE_PROJECT_GID = os.getenv("ASANA_TEMPLATE_PROJECT_GID")
 TODAY          = date.today().isoformat()
 BASE_URL       = "https://app.asana.com/api/1.0"
 
@@ -180,6 +184,23 @@ def _put(path, payload):
     r = requests.put(f"{BASE_URL}{path}", headers=_h(), json=payload, timeout=15)
     r.raise_for_status()
     return r.json()
+
+def _delete(path):
+    r = requests.delete(f"{BASE_URL}{path}", headers=_h(), timeout=15)
+    r.raise_for_status()
+
+def _wait_for_job(job_gid, interval=2, timeout=60):
+    """Poll GET /jobs/{job_gid} until succeeded. Returns the new_project dict."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        result = _get(f"/jobs/{job_gid}")
+        status = result["data"]["status"]
+        if status == "succeeded":
+            return result["data"]["new_project"]
+        if status == "failed":
+            raise RuntimeError(f"Asana job {job_gid} failed")
+        time.sleep(interval)
+    raise TimeoutError(f"Asana job {job_gid} timed out after {timeout}s")
 
 
 # ---------------------------------------------------------------------------
@@ -822,6 +843,99 @@ def write_registry(projects: list, results: dict):
 
 
 # ---------------------------------------------------------------------------
+# Project scaffold (--create)
+# ---------------------------------------------------------------------------
+
+def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_run=False):
+    path = Path(path).expanduser().resolve()
+    log.info(f"\n=== Creating project: {name} ({prefix}) ===")
+
+    if not template_gid:
+        log.error("No template project GID. Set ASANA_TEMPLATE_PROJECT_GID in .env or use --template.")
+        sys.exit(1)
+
+    # 1. Duplicate template
+    log.info(f"  Duplicating template {template_gid}...")
+    if not dry_run:
+        resp = _post(f"/projects/{template_gid}/duplicate", {"data": {
+            "name": name,
+            "include": ["members", "notes"],
+        }})
+        job_gid = resp["data"]["gid"]
+        log.info(f"  Job started: {job_gid} — waiting...")
+        project_ref = _wait_for_job(job_gid)
+        new_gid = project_ref["gid"]
+        log.info(f"  Project created: {new_gid}")
+    else:
+        log.info(f"  [DRY-RUN] Would duplicate template → '{name}'")
+        new_gid = "DRY-RUN-GID"
+
+    # 2. Delete placeholder tasks
+    if not dry_run:
+        tasks = _get(f"/projects/{new_gid}/tasks", params={"opt_fields": "gid"}).get("data", [])
+        log.info(f"  Deleting {len(tasks)} placeholder task(s)...")
+        for task in tasks:
+            _delete(f"/tasks/{task['gid']}")
+    else:
+        log.info("  [DRY-RUN] Would delete placeholder tasks")
+
+    # 3. Add members
+    members = [m for m in ([BAINBOT_GID] + (extra_members or [])) if m]
+    if not dry_run:
+        _post(f"/projects/{new_gid}/addMembers", {"data": {"members": members}})
+        log.info(f"  Added {len(members)} member(s)")
+    else:
+        log.info(f"  [DRY-RUN] Would add members: {members}")
+
+    # 4. Scaffold local directory
+    log.info(f"  Scaffolding {path} ...")
+    if not dry_run:
+        claude_dir = path / ".claude"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+
+        ids_file = claude_dir / "asana-ids.json"
+        if not ids_file.exists():
+            ids_file.write_text(json.dumps({
+                "tasks": {}, "next_seq": 1,
+                "last_sync_times": {}, "posted_progress": {},
+            }, indent=2) + "\n")
+
+        asana_block = (
+            f"\n## Asana\n\n"
+            f"ASANA_PROJECT_GID: {new_gid}\n"
+            f"ASANA_TASK_PREFIX: {prefix}\n"
+            f"ASANA_PROJECT_NAME: {name}\n"
+        )
+        claude_md = path / "CLAUDE.md"
+        if claude_md.exists():
+            existing = claude_md.read_text()
+            if "ASANA_PROJECT_GID" not in existing:
+                claude_md.write_text(existing.rstrip() + "\n" + asana_block)
+        else:
+            claude_md.write_text(f"# {name}\n{asana_block}")
+
+        roots = json.loads(PROJECTS_FILE.read_text())
+        if str(path) not in roots:
+            roots.append(str(path))
+            PROJECTS_FILE.write_text(json.dumps(roots, indent=2) + "\n")
+            log.info(f"  Registered in {PROJECTS_FILE}")
+    else:
+        log.info(f"  [DRY-RUN] Would scaffold {path}/.claude/ and update CLAUDE.md + projects.json")
+
+    # 5. Attach custom fields + initial sync
+    if not dry_run:
+        proj = ProjectConfig(name=name, root=path, gid=new_gid, prefix=prefix)
+        setup_project_fields(proj, dry_run=False)
+        sync_project(proj, dry_run=False)
+
+    log.info(f"\n=== Done ===")
+    log.info(f"  Name:   {name}")
+    log.info(f"  Prefix: {prefix}")
+    log.info(f"  GID:    {new_gid}")
+    log.info(f"  Path:   {path}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -833,6 +947,18 @@ def main():
                         help="Create and attach custom fields, write GIDs to asana-ids.json, then exit")
     parser.add_argument("--dry-run", action="store_true",
                         help="Discover and preview — no writes to mirrors or Asana")
+    parser.add_argument("--create", action="store_true",
+                        help="Scaffold a new project from the Asana template")
+    parser.add_argument("--name", metavar="NAME",
+                        help="Project name (required with --create)")
+    parser.add_argument("--prefix", metavar="PREFIX",
+                        help="Task ID prefix, e.g. MUR (required with --create)")
+    parser.add_argument("--path", metavar="PATH",
+                        help="Local project directory (required with --create)")
+    parser.add_argument("--template", metavar="GID",
+                        help="Override template project GID (default: ASANA_TEMPLATE_PROJECT_GID in .env)")
+    parser.add_argument("--members", metavar="GID,GID",
+                        help="Extra workspace member GIDs to add, comma-separated")
     args = parser.parse_args()
 
     if not ASANA_PAT:
@@ -841,6 +967,21 @@ def main():
     if not WORKSPACE_GID or not BAINBOT_GID:
         log.error("ERROR: ASANA_WORKSPACE_GID and ASANA_BAINBOT_GID must be set in .env")
         sys.exit(2)
+
+    if args.create:
+        missing = [f for f, v in [("--name", args.name), ("--prefix", args.prefix), ("--path", args.path)] if not v]
+        if missing:
+            parser.error(f"--create requires: {', '.join(missing)}")
+        extra = [m.strip() for m in args.members.split(",")] if args.members else []
+        scaffold_project(
+            name=args.name,
+            prefix=args.prefix.upper(),
+            path=args.path,
+            template_gid=args.template or TEMPLATE_PROJECT_GID,
+            extra_members=extra,
+            dry_run=args.dry_run,
+        )
+        sys.exit(0)
 
     if args.setup:
         suffix = " [DRY-RUN]" if args.dry_run else ""
