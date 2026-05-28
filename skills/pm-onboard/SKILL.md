@@ -66,10 +66,13 @@ Ask for any fields that are missing. Show your suggested value and let the user 
 
 **Optional Studio PM fields:**
 
-4. **Client name** — full name and role (e.g. "Jane Smith — e-commerce retailer, London") → CLAUDE.md
-5. **Client tone** — one line (e.g. "Warm, professional, concise. No jargon.") → CLAUDE.md
-6. **PM / client contact** — name and email → `.claude/settings.local.json` (gitignored)
-7. **Billing rate** — e.g. `£48/hr` → `.claude/settings.local.json` (gitignored)
+4. **Session name** — `CLAUDE_SESSION_NAME` → `.claude/settings.json`
+   - Shown in desktop notifications: `[KF Web] Task complete`
+   - Suggest: short project label, 2–4 words (e.g. `KF Web`, `Mhairi Site`)
+5. **Client name** — full name and role (e.g. "Jane Smith — e-commerce retailer, London") → CLAUDE.md
+6. **Client tone** — one line (e.g. "Warm, professional, concise. No jargon.") → CLAUDE.md
+7. **PM / client contact** — name and email → `.claude/settings.local.json` (gitignored)
+8. **Billing rate** — e.g. `£48/hr` → `.claude/settings.local.json` (gitignored)
 
 In **update mode**, only ask for fields that are genuinely missing. If all fields are present, skip this step entirely.
 

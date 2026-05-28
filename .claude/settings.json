@@ -6,7 +6,9 @@
     "allow": [
       "mcp__claude_ai_Gmail__search_threads",
       "mcp__claude_ai_Gmail__get_thread",
-      "Write(/media/data/dev/bain-studio/studio/inbox/*)"
+      "Write(/media/data/dev/bain-studio/studio/inbox/*)",
+      "Edit(/media/data/dev/misc/upwork-proposals/*)",
+      "Write(/media/data/dev/misc/upwork-proposals/*)"
     ],
     "deny": [
       "Edit(/home/bain/code/bain-studio/*)",

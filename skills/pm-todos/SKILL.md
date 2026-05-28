@@ -63,30 +63,46 @@ TODO.md lives at the project root. Use this structure:
 
 ## Pushing to Asana
 
+### Token resolution
+
+Always use the **bainbot PAT** (`ASANA_PAT` from `studio/.env`), never the human OAuth token. Resolve it once at the start of the Asana push:
+
+```bash
+ASANA_PAT=$(python3 -c "
+from dotenv import load_dotenv; import os
+from pathlib import Path
+for p in ['studio/.env', '/media/data/dev/bain-studio/studio/.env']:
+    if Path(p).exists():
+        load_dotenv(p); break
+print(os.getenv('ASANA_PAT', ''))
+" 2>/dev/null)
+
+if [ -z "$ASANA_PAT" ]; then
+  echo "ERROR: ASANA_PAT not found in studio/.env"
+  exit 1
+fi
+```
+
+Use `$ASANA_PAT` in all subsequent curl calls. Never use `$ASANA_TOKEN`.
+
 ### Step 1 — Find the Asana project GID
 
 Check in this order:
 
 1. Read the project's CLAUDE.md for `ASANA_PROJECT_GID: <gid>`.
-2. Check `.claude/` memory files for an Asana GID.
-3. Search by name: list all projects and match against the current directory name (case-insensitive, partial match OK).
-4. If none found, ask the user.
-
-```bash
-curl -s "https://app.asana.com/api/1.0/projects?workspace=$ASANA_WORKSPACE_GID&opt_fields=name,gid" \
-  -H "Authorization: Bearer $ASANA_TOKEN"
-```
+2. Check `.claude/asana-ids.json` for a GID.
+3. If none found, ask the user.
 
 ### Step 2 — Find or create the TO DO section
 
 ```bash
 # List sections
 curl -s "https://app.asana.com/api/1.0/projects/{PROJECT_GID}/sections" \
-  -H "Authorization: Bearer $ASANA_TOKEN"
+  -H "Authorization: Bearer $ASANA_PAT"
 
 # Create if missing
 curl -s -X POST "https://app.asana.com/api/1.0/projects/{PROJECT_GID}/sections" \
-  -H "Authorization: Bearer $ASANA_TOKEN" \
+  -H "Authorization: Bearer $ASANA_PAT" \
   -H "Content-Type: application/json" \
   -d '{"data": {"name": "TO DO"}}'
 ```
@@ -94,28 +110,37 @@ curl -s -X POST "https://app.asana.com/api/1.0/projects/{PROJECT_GID}/sections" 
 ### Step 3 — Create each task in priority order
 
 ```bash
-# Create task
+# Create task (assigned to bainbot — sync will show it in the mirror)
+BAINBOT_GID=$(python3 -c "
+from dotenv import load_dotenv; import os
+from pathlib import Path
+for p in ['studio/.env', '/media/data/dev/bain-studio/studio/.env']:
+    if Path(p).exists():
+        load_dotenv(p); break
+print(os.getenv('ASANA_BAINBOT_GID', ''))
+" 2>/dev/null)
+
 curl -s -X POST "https://app.asana.com/api/1.0/tasks" \
-  -H "Authorization: Bearer $ASANA_TOKEN" \
+  -H "Authorization: Bearer $ASANA_PAT" \
   -H "Content-Type: application/json" \
   -d "{
     \"data\": {
       \"name\": \"TASK NAME\",
       \"notes\": \"TASK DESCRIPTION\",
       \"projects\": [\"PROJECT_GID\"],
-      \"assignee\": \"$ASANA_USER_GID\"
+      \"assignee\": \"$BAINBOT_GID\"
     }
   }"
 
 # Move into TO DO section
 curl -s -X POST "https://app.asana.com/api/1.0/sections/{TODO_SECTION_GID}/addTask" \
-  -H "Authorization: Bearer $ASANA_TOKEN" \
+  -H "Authorization: Bearer $ASANA_PAT" \
   -H "Content-Type: application/json" \
   -d "{\"data\": {\"task\": \"TASK_GID\"}}"
 
 # Add created-by comment
 curl -s -X POST "https://app.asana.com/api/1.0/tasks/{TASK_GID}/stories" \
-  -H "Authorization: Bearer $ASANA_TOKEN" \
+  -H "Authorization: Bearer $ASANA_PAT" \
   -H "Content-Type: application/json" \
   -d "{\"data\": {\"text\": \"Created by Claude Code on $(date '+%Y-%m-%d') via the pm-todos skill.\"}}"
 ```

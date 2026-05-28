@@ -20,6 +20,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 INBOX_DIR = PROJECT_ROOT / "studio" / "inbox"
 SKILL_PATH = Path.home() / ".claude/skills/triage/SKILL.md"
+ATHENA_SKILL_PATH = Path.home() / ".claude/skills/athena/SKILL.md"
+PLUTUS_SKILL_PATH = Path.home() / ".claude/skills/plutus/SKILL.md"
 LOG_PREFIX = f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] hermes"
 
 
@@ -157,6 +159,112 @@ VERDICT::{{Pursue|Investigate|Decline|Support|Referral|Spam}}"""
     return verdict, cost, None
 
 
+def create_brief_slug(meta):
+    """Generate a slug from signal metadata. Returns slug string like 'client-project-2026-05-27'."""
+    client = meta.get('from', 'unknown').split('@')[0].lower().replace(' ', '-')
+    subject = meta.get('subject', 'project').lower()
+    subject = re.sub(r'[^a-z0-9\s-]', '', subject)[:20].strip('-')
+
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    slug = f"{client}-{subject}-{today}"
+    slug = re.sub(r'-+', '-', slug).strip('-')
+    return slug[:60]  # Reasonable filename limit
+
+
+def create_brief_file(meta, body, slug):
+    """Create a brief .md file from the signal. Returns the path."""
+    brief_path = PROJECT_ROOT / "context" / "pipeline" / "briefs" / f"{slug}.md"
+    brief_path.parent.mkdir(parents=True, exist_ok=True)
+
+    channel = meta.get('channel', 'Unknown')
+    client = meta.get('from', 'Unknown')
+    project = meta.get('subject', 'Untitled')
+    budget = meta.get('budget', 'Unknown')
+    timeline = meta.get('timeline', 'Open')
+
+    brief_content = f"""---
+channel: {channel}
+client: {client}
+project: {project}
+budget: {budget}
+timeline: {timeline}
+---
+
+# Project description
+
+{body}
+"""
+
+    brief_path.write_text(brief_content)
+    return brief_path
+
+
+def invoke_athena(brief_path):
+    """Invoke Athena headlessly. Returns (success: bool, error: str or None)."""
+    if not ATHENA_SKILL_PATH.exists():
+        return False, "Athena skill not found at " + str(ATHENA_SKILL_PATH)
+
+    # Load and extract Athena skill content (strip YAML frontmatter)
+    athena_content = ATHENA_SKILL_PATH.read_text()
+    if athena_content.startswith("---"):
+        match = re.match(r"^---\n.*?\n---\n(.*)", athena_content, re.DOTALL)
+        if match:
+            athena_content = match.group(1).strip()
+
+    prompt = f"""Run the Athena skill on this brief: {brief_path}
+
+Process all six steps (Pallas research, Erichthonius estimate, Nike questions/proposal, gate prep) and save the complete Athena Report to context/pipeline/athena/."""
+
+    result = subprocess.run(
+        ["claude", "-p", prompt, "--system", athena_content, "--output-format", "text"],
+        capture_output=True,
+        text=True,
+        cwd=str(PROJECT_ROOT),
+    )
+
+    if result.returncode != 0:
+        return False, f"claude exited {result.returncode}: {result.stderr[:100]}"
+
+    if not result.stdout.strip():
+        return False, "athena produced no output"
+
+    return True, None
+
+
+def invoke_plutus(athena_report_path):
+    """Invoke Plutus headlessly to add margin check to Athena report. Returns (success: bool, error: str or None)."""
+    if not PLUTUS_SKILL_PATH.exists():
+        return False, "Plutus skill not found at " + str(PLUTUS_SKILL_PATH)
+
+    # Load and extract Plutus skill content (strip YAML frontmatter)
+    plutus_content = PLUTUS_SKILL_PATH.read_text()
+    if plutus_content.startswith("---"):
+        match = re.match(r"^---\n.*?\n---\n(.*)", plutus_content, re.DOTALL)
+        if match:
+            plutus_content = match.group(1).strip()
+
+    prompt = f"""Run the Plutus skill to review the Athena report and append a margin check.
+
+Report path: {athena_report_path}
+
+Process all five steps (load report, Poros margin check, Euporia tax adjustment, Penia viability, gate prep) and append the Financial Review section to the Athena report."""
+
+    result = subprocess.run(
+        ["claude", "-p", prompt, "--system", plutus_content, "--output-format", "text"],
+        capture_output=True,
+        text=True,
+        cwd=str(PROJECT_ROOT),
+    )
+
+    if result.returncode != 0:
+        return False, f"claude exited {result.returncode}: {result.stderr[:100]}"
+
+    if not result.stdout.strip():
+        return False, "plutus produced no output"
+
+    return True, None
+
+
 def find_pending():
     if not INBOX_DIR.exists():
         return []
@@ -204,6 +312,26 @@ def main():
         verdict = verdict or "Unknown"
         mark_processed(signal_path, verdict)
         print(f"{LOG_PREFIX}:   → {verdict} (${cost:.3f})")
+
+        # If verdict is Pursue, invoke Athena then Plutus
+        if verdict == "Pursue":
+            slug = create_brief_slug(meta)
+            brief_path = create_brief_file(meta, body, slug)
+            success, athena_error = invoke_athena(brief_path)
+            if success:
+                print(f"{LOG_PREFIX}:     ✓ Athena invoked (brief: {slug})")
+
+                # Now invoke Plutus to add margin check
+                today = datetime.datetime.now().strftime('%Y-%m-%d')
+                athena_report_path = PROJECT_ROOT / "context" / "pipeline" / "athena" / f"{slug}-{today}.md"
+                p_success, p_error = invoke_plutus(str(athena_report_path))
+                if p_success:
+                    print(f"{LOG_PREFIX}:     ✓ Plutus invoked (margin check added)")
+                else:
+                    print(f"{LOG_PREFIX}:     ✗ Plutus failed: {p_error}", file=sys.stderr)
+            else:
+                print(f"{LOG_PREFIX}:     ✗ Athena failed: {athena_error}", file=sys.stderr)
+
         ok += 1
 
     print(f"{LOG_PREFIX}: done — {ok} triaged, {skipped} skipped, {failed} failed — total ${total_cost:.3f}")

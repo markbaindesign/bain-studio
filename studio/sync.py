@@ -47,6 +47,7 @@ WORKSPACE_GID        = os.getenv("ASANA_WORKSPACE_GID")
 BAINBOT_GID          = os.getenv("ASANA_BAINBOT_GID")
 ASSIGNEE_NAME        = os.getenv("STUDIO_ASSIGNEE_NAME", "Bot")
 TEMPLATE_PROJECT_GID = os.getenv("ASANA_TEMPLATE_PROJECT_GID")
+USER_GID             = os.getenv("ASANA_USER_GID")
 TODAY          = date.today().isoformat()
 BASE_URL       = "https://app.asana.com/api/1.0"
 
@@ -896,7 +897,7 @@ def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_r
         log.info("  [DRY-RUN] Would delete placeholder tasks")
 
     # 3. Add members
-    members = [m for m in ([BAINBOT_GID] + (extra_members or [])) if m]
+    members = [m for m in ([BAINBOT_GID, USER_GID] + (extra_members or [])) if m]
     if not dry_run:
         _post(f"/projects/{new_gid}/addMembers", {"data": {"members": members}})
         log.info(f"  Added {len(members)} member(s)")
@@ -949,6 +950,8 @@ def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_r
     log.info(f"  Prefix: {prefix}")
     log.info(f"  GID:    {new_gid}")
     log.info(f"  Path:   {path}")
+    log.info(f"  URL:    https://app.asana.com/0/{new_gid}/list")
+    log.info(f"\n  ⚠️  Set the custom project icon manually in Asana — the API cannot copy it.")
 
 
 # ---------------------------------------------------------------------------
