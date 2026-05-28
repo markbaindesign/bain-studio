@@ -1,4 +1,5 @@
 studio/.env
+studio/dashboard/.env
 studio/projects.json
 studio/projects.md
 .claude/settings.local.json
@@ -11,3 +12,4 @@ studio/inbox/
 studio/.gmail_state.json
 studio/collectors/gmail_watch.log
 context/foundation-wordpress-prospecting-plan.md
+context/outreach/

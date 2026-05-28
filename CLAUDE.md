@@ -31,3 +31,9 @@ The PM workflow is:
 1. Read task state from local mirror files (e.g. `PROJ-123.md`)
 2. Edit mirrors if changes are needed
 3. Run `python3 studio/sync.py` to push changes to Asana via bainbot
+
+## Asana
+
+ASANA_PROJECT_GID: 1215208851588912
+ASANA_TASK_PREFIX: BSTD
+ASANA_PROJECT_NAME: Bain Studio
