@@ -189,7 +189,7 @@ def _delete(path):
     r = requests.delete(f"{BASE_URL}{path}", headers=_h(), timeout=15)
     r.raise_for_status()
 
-def _wait_for_job(job_gid, interval=2, timeout=60):
+def _wait_for_job(job_gid, interval=5, timeout=300):
     """Poll GET /jobs/{job_gid} until succeeded. Returns the new_project dict."""
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -846,7 +846,7 @@ def write_registry(projects: list, results: dict):
 # Project scaffold (--create)
 # ---------------------------------------------------------------------------
 
-def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_run=False):
+def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_run=False, yes=False):
     path = Path(path).expanduser().resolve()
     log.info(f"\n=== Creating project: {name} ({prefix}) ===")
 
@@ -859,7 +859,7 @@ def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_r
     if not dry_run:
         resp = _post(f"/projects/{template_gid}/duplicate", {"data": {
             "name": name,
-            "include": ["members", "notes"],
+            "include": ["notes"],
         }})
         job_gid = resp["data"]["gid"]
         log.info(f"  Job started: {job_gid} — waiting...")
@@ -870,12 +870,28 @@ def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_r
         log.info(f"  [DRY-RUN] Would duplicate template → '{name}'")
         new_gid = "DRY-RUN-GID"
 
-    # 2. Delete placeholder tasks
+    # 2. Delete placeholder tasks (with confirmation gate)
     if not dry_run:
         tasks = _get(f"/projects/{new_gid}/tasks", params={"opt_fields": "gid"}).get("data", [])
-        log.info(f"  Deleting {len(tasks)} placeholder task(s)...")
-        for task in tasks:
-            _delete(f"/tasks/{task['gid']}")
+        if tasks:
+            if not yes:
+                proj_data = _get(f"/projects/{new_gid}", params={"opt_fields": "name,created_at"}).get("data", {})
+                created_at = proj_data.get("created_at", "unknown")[:10]
+                print(f"\n  ⚠️  About to delete {len(tasks)} task(s) from:")
+                print(f"       Name:    {name}")
+                print(f"       GID:     {new_gid}")
+                print(f"       Created: {created_at}")
+                print(f"       URL:     https://app.asana.com/0/{new_gid}/list")
+                confirm = input(f"\n  Type the project GID to confirm deletion: ").strip()
+                if confirm != new_gid:
+                    log.error("  GID did not match — aborting task deletion. Project was created but tasks were not cleared.")
+                    log.error(f"  Re-run with --yes to skip this gate, or clear tasks manually.")
+                    sys.exit(1)
+            log.info(f"  Deleting {len(tasks)} placeholder task(s)...")
+            for task in tasks:
+                _delete(f"/tasks/{task['gid']}")
+        else:
+            log.info("  No placeholder tasks to delete.")
     else:
         log.info("  [DRY-RUN] Would delete placeholder tasks")
 
@@ -959,6 +975,8 @@ def main():
                         help="Override template project GID (default: ASANA_TEMPLATE_PROJECT_GID in .env)")
     parser.add_argument("--members", metavar="GID,GID",
                         help="Extra workspace member GIDs to add, comma-separated")
+    parser.add_argument("--yes", action="store_true",
+                        help="Skip the task-deletion confirmation gate (for scripted use)")
     args = parser.parse_args()
 
     if not ASANA_PAT:
@@ -980,6 +998,7 @@ def main():
             template_gid=args.template or TEMPLATE_PROJECT_GID,
             extra_members=extra,
             dry_run=args.dry_run,
+            yes=args.yes,
         )
         sys.exit(0)
 
