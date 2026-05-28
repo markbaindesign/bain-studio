@@ -9,6 +9,24 @@ Studio PM tooling for client project management.
 - Log: `studio/sync.log`
 - Field setup (one-time, per project): `python3 studio/sync.py --setup --project {PREFIX}`
 - All Asana API calls must use the **bainbot** account token (`ASANA_PAT` in `studio/.env`)
+- sync.py **pulls** from Asana only — edits to the mirror push back; new tasks must be created via API before they appear
+- Asana duplication is async — `_wait_for_job` polls up to 300s
+
+## New project scaffold
+
+```
+python3 studio/sync.py --create --name "Client Name" --prefix "CLN" --path /path/to/project
+```
+
+- Duplicates `ASANA_TEMPLATE_PROJECT_GID` from `studio/.env`, clears placeholder tasks, adds Mark + bainbot as members
+- Optional: `--template GID`, `--members GID,GID`, `--yes` (skip confirmation gate)
+- Custom project icons are **UI-only** — set manually in Asana after `--create`
+- `ASANA_USER_GID` (Mark's GID) and `ASANA_TEMPLATE_PROJECT_GID` must be set in `studio/.env`
+
+## Content locations
+
+- Case studies: `context/portfolio/{project-slug}/` — `workshop.md` → `upwork.md` + `website.md`
+- Internal project briefs: `context/internal/`
 
 ## Custom fields (workspace-level)
 
