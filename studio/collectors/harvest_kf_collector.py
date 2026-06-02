@@ -102,19 +102,18 @@ def build_snapshot(budget, env):
         prev_year = budget['previous_year']['year']
 
     # Adjusted annual target = base + carry-over owed (or minus credit)
-    adjusted_annual = round(annual_hours + carry_over, 2)
+    adjusted_annual  = round(annual_hours + carry_over, 2)
+    # Redistribute evenly: adjusted annual ÷ 12 = new monthly pace
+    adjusted_monthly = adjusted_annual / 12
 
     today          = date.today()
     current_month  = today.strftime('%Y-%m')
     months_elapsed = today.month
-    year_target    = round(monthly_hours * months_elapsed, 2)
-
-    # Year variance measured against adjusted annual, prorated to date
-    adjusted_target_to_date = round(year_target + carry_over, 2)
-    year_variance  = round(year_hours - adjusted_target_to_date, 2)
+    year_target    = round(adjusted_monthly * months_elapsed, 2)
+    year_variance  = round(year_hours - year_target, 2)
 
     month_hours    = by_month.get(current_month, 0.0)
-    month_target   = round(monthly_hours, 2)
+    month_target   = round(adjusted_monthly, 2)
     month_variance = round(month_hours - month_target, 2)
 
     return {
@@ -123,24 +122,24 @@ def build_snapshot(budget, env):
         'harvest_project_id': project_id,
         'year':           year,
         'rate_usd':       budget['hourly_rate_usd'],
-        'monthly_budget_usd': budget['monthly_budget_usd'],
-        'monthly_hours_target':  round(monthly_hours, 2),
-        'annual_hours_target':   round(annual_hours, 2),
-        'carry_over_hours':      carry_over,
-        'carry_over_from_year':  prev_year,
-        'prev_year_logged':      prev_logged,
-        'prev_year_target':      prev_target,
-        'adjusted_annual_target': adjusted_annual,
-        'year_hours_logged':     year_hours,
-        'year_target_to_date':   year_target,
-        'adjusted_target_to_date': adjusted_target_to_date,
-        'year_variance':         year_variance,
-        'months_elapsed':        months_elapsed,
-        'current_month':         current_month,
-        'month_hours_logged':    month_hours,
-        'month_hours_target':    month_target,
-        'month_variance':        month_variance,
-        'by_month':              by_month,
+        'monthly_budget_usd':        budget['monthly_budget_usd'],
+        'monthly_hours_target':      round(monthly_hours, 2),
+        'annual_hours_target':       round(annual_hours, 2),
+        'carry_over_hours':          carry_over,
+        'carry_over_from_year':      prev_year,
+        'prev_year_logged':          prev_logged,
+        'prev_year_target':          prev_target,
+        'adjusted_annual_target':    adjusted_annual,
+        'adjusted_monthly_target':   round(adjusted_monthly, 2),
+        'year_hours_logged':         year_hours,
+        'year_target_to_date':       year_target,
+        'year_variance':             year_variance,
+        'months_elapsed':            months_elapsed,
+        'current_month':             current_month,
+        'month_hours_logged':        month_hours,
+        'month_hours_target':        month_target,
+        'month_variance':            month_variance,
+        'by_month':                  by_month,
     }
 
 
@@ -150,7 +149,7 @@ def print_status(snap):
     y_base    = snap['annual_hours_target']
     y_adj     = snap['adjusted_annual_target']
     y_var     = snap['year_variance']
-    y_elapsed = snap['adjusted_target_to_date']
+    y_elapsed = snap['year_target_to_date']
     co        = snap['carry_over_hours']
     m_name    = datetime.strptime(snap['current_month'], '%Y-%m').strftime('%b')
     m_logged  = snap['month_hours_logged']

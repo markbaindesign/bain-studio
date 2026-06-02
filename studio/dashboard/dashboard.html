@@ -736,7 +736,7 @@ function fmtHours(h) {
 }
 
 function renderKFPage(d) {
-  const monthlyTarget  = d.monthly_hours_target;
+  const monthlyTarget  = d.adjusted_monthly_target ?? d.monthly_hours_target;
   const annualBase     = d.annual_hours_target;
   const annualAdj      = d.adjusted_annual_target ?? annualBase;
   const carryOver      = d.carry_over_hours ?? 0;
@@ -744,7 +744,7 @@ function renderKFPage(d) {
   const prevLogged     = d.prev_year_logged;
   const prevTarget     = d.prev_year_target;
   const yearLogged     = d.year_hours_logged;
-  const adjTargetToDate = d.adjusted_target_to_date ?? d.year_target_to_date;
+  const adjTargetToDate = d.year_target_to_date;
   const yearVar        = d.year_variance;
   const monthLogged    = d.month_hours_logged;
   const monthVar       = d.month_variance;
