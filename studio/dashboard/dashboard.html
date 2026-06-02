@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bain Design — Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f5f5f0;
+  color: #1a1a1a;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+header {
+  background: #fff;
+  border-bottom: 1px solid #e8e8e2;
+  padding: 16px 32px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+  margin-left: 24px;
+}
+.tab-btn {
+  background: none;
+  border: none;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #888;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+.tab-btn:hover { background: #f5f5f0; color: #444; }
+.tab-btn.active { background: #1a1a1a; color: #fff; }
+.updated { font-size: 12px; color: #aaa; }
+.refresh-btn {
+  background: none;
+  border: 1px solid #e0e0da;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: #555;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.refresh-btn:hover { background: #f5f5f0; }
+.refresh-btn.spinning svg { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.error-banner {
+  background: #fef2f2;
+  border-bottom: 1px solid #fecaca;
+  padding: 8px 32px;
+  font-size: 12px;
+  color: #c0392b;
+  display: none;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 16px;
+  padding: 24px 32px;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e8e8e2;
+  border-radius: 8px;
+  padding: 20px;
+}
+.card-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #888;
+  margin-bottom: 14px;
+}
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #aaa;
+  grid-column: span 12;
+  margin-top: 4px;
+}
+
+.col-3  { grid-column: span 3; }
+.col-4  { grid-column: span 4; }
+.col-5  { grid-column: span 5; }
+.col-6  { grid-column: span 6; }
+.col-7  { grid-column: span 7; }
+.col-8  { grid-column: span 8; }
+.col-12 { grid-column: span 12; }
+
+/* Stat cards */
+.stat-value { font-size: 28px; font-weight: 300; letter-spacing: -0.02em; line-height: 1.1; }
+.stat-label { font-size: 12px; color: #888; margin-top: 4px; }
+.stat-sub   { font-size: 12px; color: #aaa; margin-top: 6px; }
+
+.positive { color: #2d8a4e; }
+.negative { color: #c0392b; }
+.warning  { color: #d97706; }
+.neutral  { color: #555; }
+
+/* Skeleton loader */
+.skel {
+  background: linear-gradient(90deg, #f0f0eb 25%, #e8e8e3 50%, #f0f0eb 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 4px;
+}
+@keyframes shimmer { to { background-position: -200% 0; } }
+.skel-text { height: 14px; margin: 6px 0; }
+.skel-lg   { height: 32px; margin: 4px 0; }
+
+/* Balance table */
+.balance-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0eb;
+}
+.balance-row:last-of-type { border-bottom: none; }
+.balance-name   { color: #444; }
+.balance-native { font-size: 11px; color: #bbb; text-align: right; }
+.balance-eur    { font-weight: 500; text-align: right; }
+.balance-total  {
+  display: flex; justify-content: space-between;
+  padding: 10px 0 0; margin-top: 6px;
+  border-top: 2px solid #e8e8e2;
+  font-weight: 600;
+}
+
+/* Upcoming payments */
+.upcoming-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid #f0f0eb;
+}
+.upcoming-row:last-child { border-bottom: none; }
+.badge {
+  font-size: 10px; font-weight: 600;
+  padding: 2px 7px; border-radius: 10px;
+  white-space: nowrap; min-width: 52px; text-align: center;
+}
+.badge-urgent { background: #fef2f2; color: #c0392b; }
+.badge-soon   { background: #fffbeb; color: #d97706; }
+.badge-later  { background: #f0f9f4; color: #2d8a4e; }
+.up-label { flex: 1; color: #333; }
+.up-date  { font-size: 11px; color: #bbb; }
+.up-amt   { font-weight: 500; min-width: 72px; text-align: right; }
+.type-draw  { color: #7c3aed; }
+.type-tax   { color: #c0392b; }
+.type-fixed { color: #1a1a1a; }
+
+/* Projects */
+.project-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid #f0f0eb;
+}
+.project-row:last-child { border-bottom: none; }
+.project-name  { font-weight: 500; font-size: 13px; }
+.project-client { font-size: 12px; color: #888; }
+.project-right { margin-left: auto; text-align: right; }
+.project-budget { font-size: 12px; color: #aaa; }
+.budget-bar-wrap { margin-top: 3px; }
+.budget-bar-track { height: 4px; background: #f0f0eb; border-radius: 2px; width: 120px; }
+.budget-bar-fill  { height: 4px; border-radius: 2px; }
+
+/* Invoices */
+.invoice-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid #f0f0eb;
+}
+.invoice-row:last-child { border-bottom: none; }
+.invoice-client { flex: 1; }
+.invoice-num    { font-size: 11px; color: #bbb; }
+.invoice-due    { font-size: 11px; color: #888; }
+.invoice-amt    { font-weight: 500; }
+.overdue-tag    { font-size: 10px; background: #fef2f2; color: #c0392b; padding: 1px 6px; border-radius: 8px; }
+
+/* Chart containers */
+.chart-wrap { position: relative; }
+
+/* Legend dots */
+.legend { display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #888; }
+.dot { width: 8px; height: 8px; border-radius: 50%; }
+
+/* Empty state */
+.empty { font-size: 13px; color: #aaa; padding: 12px 0; }
+
+/* Harvest/Upwork not configured */
+.not-configured {
+  font-size: 12px; color: #aaa; padding: 20px 0;
+  border: 1px dashed #e0e0da; border-radius: 6px;
+  text-align: center;
+}
+
+/* KF time budget */
+.kf-progress-track {
+  height: 8px; background: #f0f0eb; border-radius: 4px;
+  margin: 12px 0 6px;
+}
+.kf-progress-fill {
+  height: 8px; border-radius: 4px; transition: width 0.4s ease;
+}
+.kf-target-marker {
+  position: relative;
+}
+.kf-target-line {
+  position: absolute; top: -10px; width: 2px; background: #aaa;
+  height: 28px; border-radius: 1px;
+}
+.month-row {
+  display: grid;
+  grid-template-columns: 52px 1fr 64px 64px 72px;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px solid #f0f0eb;
+  font-size: 12px;
+}
+.month-row:last-child { border-bottom: none; }
+.month-bar-track { height: 4px; background: #f0f0eb; border-radius: 2px; }
+.month-bar-fill  { height: 4px; border-radius: 2px; }
+
+@media (max-width: 1100px) {
+  .col-3, .col-4, .col-5, .col-6, .col-7, .col-8 { grid-column: span 6; }
+}
+@media (max-width: 700px) {
+  .col-3, .col-4, .col-5, .col-6, .col-7, .col-8, .col-12 { grid-column: span 12; }
+  .grid { padding: 12px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Bain Design</h1>
+  <nav class="tabs">
+    <button class="tab-btn active" id="tab-finance" onclick="switchTab('finance')">Financial</button>
+    <button class="tab-btn" id="tab-kf" onclick="switchTab('kf')">KF Time Budget</button>
+  </nav>
+  <span class="updated" id="updatedAt">Loading…</span>
+  <button class="refresh-btn" id="refreshBtn" onclick="refreshCurrent()">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M10.5 6A4.5 4.5 0 1 1 6 1.5M10.5 1.5V5H7"/>
+    </svg>
+    Refresh
+  </button>
+</header>
+
+<div id="errorBanner" class="error-banner"></div>
+
+<!-- Financial page -->
+<div id="page-finance">
+  <div class="grid" id="mainGrid">
+    <!-- KPI row skeleton -->
+    <div class="card col-3"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
+    <div class="card col-3"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
+    <div class="card col-3"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
+    <div class="card col-3"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
+  </div>
+</div>
+
+<!-- KF time budget page -->
+<div id="page-kf" style="display:none">
+  <div class="grid" id="kfGrid">
+    <div class="card col-6"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
+    <div class="card col-6"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+let plChart, donutChart, beChart;
+let currentTab = 'finance';
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('page-finance').style.display = tab === 'finance' ? '' : 'none';
+  document.getElementById('page-kf').style.display      = tab === 'kf'      ? '' : 'none';
+  document.getElementById('tab-finance').classList.toggle('active', tab === 'finance');
+  document.getElementById('tab-kf').classList.toggle('active', tab === 'kf');
+  if (tab === 'kf') loadKF();
+  else loadData();
+}
+
+function refreshCurrent() {
+  if (currentTab === 'kf') loadKF();
+  else loadData();
+}
+
+function fmt(n, digits=0) {
+  if (n === null || n === undefined) return '—';
+  return '€' + Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+function fmtSigned(n) {
+  if (n === null || n === undefined) return '—';
+  return (n >= 0 ? '+' : '−') + '€' + Math.abs(n).toLocaleString('en-GB', { maximumFractionDigits: 0 });
+}
+function fmtNative(bal, cur) {
+  const sym = cur === 'USD' ? '$' : cur === 'GBP' ? '£' : '€';
+  return sym + Math.abs(bal).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function badgeClass(days) {
+  if (days <= 7)  return 'badge-urgent';
+  if (days <= 30) return 'badge-soon';
+  return 'badge-later';
+}
+function badgeDays(days) {
+  if (days === 0) return 'Today';
+  if (days === 1) return '1 day';
+  return `${days} days`;
+}
+function typeClass(type) {
+  return `type-${type}`;
+}
+function shortMonth(m) {
+  const [y, mo] = m.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[parseInt(mo)-1] + ' ' + y.slice(2);
+}
+function isOverdue(due_date) {
+  return due_date && due_date < new Date().toISOString().slice(0,10);
+}
+
+function renderKPIs(g, h) {
+  const cashClass = g.total_eur < 2000 ? 'negative' : g.total_eur < 4000 ? 'warning' : 'positive';
+
+  // Last 3 months avg income (exclude current month if incomplete)
+  const pl = g.monthly_pl || [];
+  const today = new Date();
+  const curMonth = today.toISOString().slice(0,7);
+  const recent = pl.filter(m => m.month < curMonth).slice(-3);
+  const avgInc = recent.length ? recent.reduce((s,m) => s + m.income, 0) / recent.length : 0;
+  const bufferVsBE = avgInc - g.breakeven_allin;
+  const bufferClass = bufferVsBE >= 0 ? 'positive' : 'negative';
+
+  // Upcoming month totals
+  const upcoming = g.upcoming || [];
+  const thisMonthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0,10);
+  const nextMonthEnd = new Date(today.getFullYear(), today.getMonth() + 2, 0).toISOString().slice(0,10);
+  const thisMo = upcoming.filter(u => u.date <= thisMonthEnd).reduce((s,u) => s + u.amount, 0);
+  const nextMo = upcoming.filter(u => u.date > thisMonthEnd && u.date <= nextMonthEnd).reduce((s,u) => s + u.amount, 0);
+
+  // Harvest earnings
+  const earn = (h && h.earnings) || {};
+  const todayEur   = (earn.today      || {}).eur   || 0;
+  const weekEur    = (earn.this_week  || {}).eur   || 0;
+  const monthEur   = (earn.this_month || {}).eur   || 0;
+  const weekHours  = (earn.this_week  || {}).hours || 0;
+  const monthHours = (earn.this_month || {}).hours || 0;
+  const harvestOk  = h && h.projects !== undefined && !h.error;
+
+  return `
+    <div class="card col-3">
+      <div class="card-title">Cash on Hand</div>
+      <div class="stat-value ${cashClass}">${fmt(g.total_eur)}</div>
+      <div class="stat-label">EUR equivalent, all accounts</div>
+      <div class="stat-sub ${bufferClass}">Break-even ${fmt(g.breakeven_allin)}/mo · avg ${fmt(avgInc)} · ${fmtSigned(bufferVsBE)}</div>
+    </div>
+    <div class="card col-3">
+      <div class="card-title">Harvest — This Month</div>
+      ${harvestOk
+        ? `<div class="stat-value positive">${fmt(monthEur)}</div>
+           <div class="stat-label">${monthHours}h billable logged</div>
+           <div class="stat-sub neutral">This week ${fmt(weekEur)} (${weekHours}h) &middot; Today ${fmt(todayEur)}</div>`
+        : `<div class="not-configured" style="margin-top:8px">Add Harvest keys to .env</div>`
+      }
+    </div>
+    <div class="card col-3">
+      <div class="card-title">Due This Month</div>
+      <div class="stat-value ${thisMo > g.total_eur ? 'negative' : 'warning'}">${fmt(thisMo)}</div>
+      <div class="stat-label">Upcoming payments before month end</div>
+      <div class="stat-sub ${g.total_eur - thisMo > 0 ? 'positive' : 'negative'}">After payments: ${fmt(g.total_eur - thisMo)}</div>
+    </div>
+    <div class="card col-3">
+      <div class="card-title">Due Next Month</div>
+      <div class="stat-value warning">${fmt(nextMo)}</div>
+      <div class="stat-label">Projected outgoings next month</div>
+    </div>
+  `;
+}
+
+function renderBalances(balances, total_eur) {
+  const rows = balances.map(b => `
+    <div class="balance-row">
+      <span class="balance-name">${b.name}</span>
+      <div>
+        ${b.currency !== 'EUR' ? `<div class="balance-native">${fmtNative(b.balance, b.currency)}</div>` : ''}
+        <div class="balance-eur">${fmt(b.eur)}</div>
+      </div>
+    </div>
+  `).join('');
+  return `
+    <div class="card col-4">
+      <div class="card-title">Account Balances</div>
+      ${rows}
+      <div class="balance-total"><span>Total</span><span>${fmt(total_eur)}</span></div>
+    </div>
+  `;
+}
+
+function renderUpcoming(upcoming) {
+  if (!upcoming || !upcoming.length) {
+    return '<div class="card col-4"><div class="card-title">Upcoming Payments</div><div class="empty">No upcoming payments found.</div></div>';
+  }
+  const rows = upcoming.slice(0, 12).map(u => `
+    <div class="upcoming-row">
+      <span class="badge ${badgeClass(u.days)}">${badgeDays(u.days)}</span>
+      <span class="up-label">${u.label}</span>
+      <span class="up-date">${u.date.slice(5).replace('-', ' ')}</span>
+      <span class="up-amt ${typeClass(u.type)}">${fmt(u.amount)}</span>
+    </div>
+  `).join('');
+
+  const legend = `
+    <div class="legend" style="margin-top:12px;padding-top:10px;border-top:1px solid #f0f0eb;">
+      <div class="legend-item"><span class="dot" style="background:#7c3aed"></span>Draw</div>
+      <div class="legend-item"><span class="dot" style="background:#c0392b"></span>Tax</div>
+      <div class="legend-item"><span class="dot" style="background:#1a1a1a"></span>Fixed</div>
+    </div>`;
+
+  return `
+    <div class="card col-4">
+      <div class="card-title">Upcoming Payments</div>
+      ${rows}
+      ${legend}
+    </div>
+  `;
+}
+
+function renderHarvestProjects(harvest) {
+  if (!harvest || harvest.configured === false) {
+    return `
+      <div class="card col-4">
+        <div class="card-title">Active Projects (Harvest)</div>
+        <div class="not-configured">Add HARVEST_TOKEN + HARVEST_ACCOUNT_ID to .env to enable</div>
+      </div>`;
+  }
+  if (harvest.error) {
+    return `
+      <div class="card col-4">
+        <div class="card-title">Active Projects (Harvest)</div>
+        <div class="not-configured" style="color:#c0392b;">Harvest error: ${harvest.error}</div>
+      </div>`;
+  }
+  const projects = (harvest.projects || []).filter(p => p.is_billable);
+  if (!projects.length) {
+    return `
+      <div class="card col-4">
+        <div class="card-title">Active Projects (Harvest)</div>
+        <div class="empty">No active billable projects.</div>
+      </div>`;
+  }
+  const rows = projects.map(p => {
+    const pct = p.budget_pct || 0;
+    const barColor = pct > 90 ? '#c0392b' : pct > 70 ? '#d97706' : '#2d8a4e';
+    const budgetStr = p.budget
+      ? `${fmt(p.budget_spent)} of ${fmt(p.budget)} (${p.budget_pct}%)`
+      : 'No budget set';
+    return `
+      <div class="project-row">
+        <div>
+          <div class="project-name">${p.name}</div>
+          <div class="project-client">${p.client}</div>
+          ${p.budget ? `<div class="budget-bar-wrap">
+            <div class="budget-bar-track">
+              <div class="budget-bar-fill" style="width:${Math.min(pct,100)}%;background:${barColor}"></div>
+            </div>
+          </div>` : ''}
+        </div>
+        <div class="project-right">
+          <div class="project-budget">${budgetStr}</div>
+          ${p.budget_remaining !== null ? `<div style="font-size:12px;color:#2d8a4e">${fmt(p.budget_remaining)} left</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  const uninvoiced = harvest.uninvoiced || {};
+  const uninvoicedStr = (uninvoiced.total_eur > 0 || (uninvoiced.partial || []).length > 0)
+    ? `<div style="margin-top:12px;padding-top:10px;border-top:1px solid #f0f0eb;font-size:12px;color:#888;">
+        ${uninvoiced.total_eur > 0 ? `<div>Ready to invoice: <strong style="color:#2d8a4e">${fmt(uninvoiced.total_eur)}</strong></div>
+        ${(uninvoiced.by_project || []).map(p => `<div style="margin-top:3px;padding-left:8px;">${p.client} — ${p.currency} ${p.uninvoiced} (${fmt(p.uninvoiced_eur)})</div>`).join('')}` : ''}
+        ${(uninvoiced.partial || []).length > 0 ? `<div style="margin-top:6px;color:#aaa;">Hours logged, already partially invoiced (fixed-fee):</div>
+        ${(uninvoiced.partial || []).map(p => `<div style="margin-top:3px;padding-left:8px;color:#bbb;">${p.client} — ${p.uninvoiced_hrs}h (${fmt(p.uninvoiced_eur)})</div>`).join('')}` : ''}
+       </div>`
+    : '';
+
+  return `
+    <div class="card col-4">
+      <div class="card-title">Active Projects (Harvest)</div>
+      ${rows}
+      ${uninvoicedStr}
+    </div>`;
+}
+
+function renderInvoices(harvest) {
+  if (!harvest || harvest.configured === false || harvest.error) return '';
+  const invoices = harvest.invoices || [];
+  if (!invoices.length) {
+    return `
+      <div class="card col-4">
+        <div class="card-title">Outstanding Invoices (Harvest)</div>
+        <div class="empty">No open invoices.</div>
+      </div>`;
+  }
+  const today = new Date().toISOString().slice(0,10);
+  const rows = invoices.map(inv => {
+    const od = inv.due_date && inv.due_date < today;
+    return `
+      <div class="invoice-row">
+        <div>
+          <div class="invoice-client">${inv.client} <span class="invoice-num">#${inv.number}</span></div>
+          <div class="invoice-due">Due ${inv.due_date || '—'} ${od ? '<span class="overdue-tag">overdue</span>' : ''}</div>
+        </div>
+        <div class="invoice-amt ${od ? 'negative' : ''}">${fmt(inv.due_amount)}</div>
+      </div>`;
+  }).join('');
+
+  const total = harvest.invoice_total || 0;
+  return `
+    <div class="card col-4">
+      <div class="card-title">Outstanding Invoices (Harvest)</div>
+      ${rows}
+      <div class="balance-total"><span>Total receivable</span><span>${fmt(total)}</span></div>
+    </div>`;
+}
+
+function renderPLChart(monthly_pl) {
+  const labels = monthly_pl.map(m => shortMonth(m.month));
+  const income  = monthly_pl.map(m => m.income);
+  const outgoings = monthly_pl.map(m => m.expenses + m.draw);
+  const be = monthly_pl.map(() => 4115);
+
+  if (plChart) plChart.destroy();
+  const ctx = document.getElementById('plChart').getContext('2d');
+  plChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Income', data: income, backgroundColor: 'rgba(45,138,78,0.72)', borderRadius: 3, order: 2 },
+        { label: 'Outgoings (exp + draw)', data: outgoings, backgroundColor: 'rgba(192,57,43,0.62)', borderRadius: 3, order: 2 },
+        { label: 'Break-even', data: be, type: 'line', borderColor: '#1a1a1a', borderWidth: 1.5, borderDash: [4,3], pointRadius: 0, fill: false, order: 1 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: €${c.parsed.y.toLocaleString('en-GB', {maximumFractionDigits:0})}` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { grid: { color: '#f0f0eb' }, ticks: { font: { size: 11 }, callback: v => '€' + (v/1000).toFixed(0) + 'k' } }
+      }
+    }
+  });
+}
+
+function renderDonut(cat_exp) {
+  const exclude = ['Taxes', 'Bad Debt'];
+  const entries = Object.entries(cat_exp)
+    .filter(([k]) => !exclude.includes(k))
+    .sort((a, b) => b[1] - a[1]);
+  const labels = entries.map(([k]) => k);
+  const vals   = entries.map(([, v]) => Math.round(v));
+  const colors = ['#4f86c6','#6db8a0','#e8a87c','#9b7ec8','#e8c97c','#7cb8e8','#e87c9b','#a0c8a0','#c8a07c','#b8b8a0'];
+
+  if (donutChart) donutChart.destroy();
+  const ctx = document.getElementById('donutChart').getContext('2d');
+  donutChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data: vals, backgroundColor: colors.slice(0, vals.length), borderWidth: 2, borderColor: '#fff' }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '62%',
+      plugins: {
+        legend: { position: 'right', labels: { boxWidth: 10, font: { size: 10 }, padding: 8 } },
+        tooltip: {
+          callbacks: {
+            label: c => {
+              const total = vals.reduce((a,b)=>a+b,0);
+              return ` €${c.parsed.toLocaleString('en-GB')} (${Math.round(c.parsed/total*100)}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderBEChart(monthly_pl) {
+  const yr2025 = monthly_pl.filter(m => m.month.startsWith('2025'));
+  const labels = yr2025.map(m => shortMonth(m.month));
+  const income = yr2025.map(m => m.income);
+  const be     = yr2025.map(() => 4115);
+
+  if (beChart) beChart.destroy();
+  const ctx = document.getElementById('beChart').getContext('2d');
+  beChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '2025 Monthly Income',
+          data: income,
+          borderColor: '#2d8a4e',
+          backgroundColor: 'rgba(45,138,78,0.07)',
+          borderWidth: 2,
+          pointRadius: 5,
+          pointBackgroundColor: income.map(v => v >= 4115 ? '#2d8a4e' : '#c0392b'),
+          fill: true, tension: 0.3
+        },
+        { label: 'Break-even (€4,115)', data: be, borderColor: '#c0392b', borderWidth: 1.5, borderDash: [5,4], pointRadius: 0, fill: false }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: €${c.parsed.y.toLocaleString('en-GB', {maximumFractionDigits:0})}` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { grid: { color: '#f0f0eb' }, min: 0, max: 10000, ticks: { font: { size: 11 }, callback: v => '€' + (v/1000).toFixed(1) + 'k' } }
+      }
+    }
+  });
+}
+
+async function loadData() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning');
+
+  try {
+    const res = await fetch('/api/data');
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const d = await res.json();
+
+    const g = d.gnucash || {};
+    const h = d.harvest  || {};
+
+    // Error banner
+    const banner = document.getElementById('errorBanner');
+    if (d.errors && d.errors.length) {
+      banner.style.display = 'block';
+      banner.textContent = d.errors.map(e => `${e.source}: ${e.message}`).join('  |  ');
+    } else {
+      banner.style.display = 'none';
+    }
+
+    // Updated timestamp + live FX rates
+    const ts = new Date(d.generated_at);
+    const fx = d.fx || {};
+    const fxStr = fx.USD_TO_EUR
+      ? ` · USD/EUR ${fx.USD_TO_EUR.toFixed(4)} · GBP/EUR ${fx.GBP_TO_EUR.toFixed(4)}`
+      : '';
+    document.getElementById('updatedAt').textContent =
+      'Updated ' + ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + fxStr;
+
+    // Render grid
+    const grid = document.getElementById('mainGrid');
+    grid.innerHTML = `
+      ${renderKPIs(g, h)}
+
+      <div class="section-label">Cash &amp; Liquidity</div>
+      ${renderBalances(g.balances || [], g.total_eur || 0)}
+      ${renderUpcoming(g.upcoming || [])}
+      ${renderInvoices(h)}
+
+      <div class="section-label">Projects</div>
+      ${renderHarvestProjects(h)}
+
+      <div class="section-label">Charts</div>
+      <div class="card col-8">
+        <div class="card-title">Monthly P&amp;L — Income vs Outgoings (2025–present)</div>
+        <div class="chart-wrap" style="height:260px;"><canvas id="plChart"></canvas></div>
+      </div>
+      <div class="card col-4">
+        <div class="card-title">2025 Expense Mix</div>
+        <div class="chart-wrap" style="height:260px;"><canvas id="donutChart"></canvas></div>
+      </div>
+      <div class="card col-12">
+        <div class="card-title">Monthly Income vs Break-Even — 2025</div>
+        <div class="chart-wrap" style="height:180px;"><canvas id="beChart"></canvas></div>
+      </div>
+    `;
+
+    if (g.monthly_pl && g.monthly_pl.length) {
+      renderPLChart(g.monthly_pl);
+      renderBEChart(g.monthly_pl);
+    }
+    if (g.cat_exp && Object.keys(g.cat_exp).length) {
+      renderDonut(g.cat_exp);
+    }
+
+  } catch (err) {
+    const banner = document.getElementById('errorBanner');
+    banner.style.display = 'block';
+    banner.textContent = 'Failed to load data: ' + err.message;
+  } finally {
+    btn.classList.remove('spinning');
+  }
+}
+
+function fmtHours(h) {
+  return h === null || h === undefined ? '—' : h.toFixed(1) + 'h';
+}
+
+function renderKFPage(d) {
+  const monthlyTarget = d.monthly_hours_target;
+  const annualTarget  = d.annual_hours_target;
+  const yearLogged    = d.year_hours_logged;
+  const yearTarget    = d.year_target_to_date;
+  const yearVar       = d.year_variance;
+  const monthLogged   = d.month_hours_logged;
+  const monthVar      = d.month_variance;
+  const months        = d.months_elapsed;
+  const curMonth      = d.current_month;
+  const mName         = new Date(curMonth + '-01').toLocaleString('en-GB', { month: 'long' });
+
+  const yearPct   = Math.min(yearLogged / annualTarget * 100, 100);
+  const targetPct = Math.min(yearTarget / annualTarget * 100, 100);
+  const monthPct  = Math.min(monthLogged / monthlyTarget * 100, 100);
+
+  const yearDir   = yearVar >= 0 ? 'ahead of' : 'behind';
+  const monthDir  = monthVar >= 0 ? 'ahead of' : 'behind';
+  const yearCls   = yearVar >= 0 ? 'positive' : 'negative';
+  const monthCls  = monthVar >= 0 ? 'positive' : 'negative';
+  const yearBarColor  = yearVar >= 0 ? '#2d8a4e' : '#c0392b';
+  const monthBarColor = monthVar >= 0 ? '#2d8a4e' : '#c0392b';
+
+  // Monthly breakdown rows
+  const byMonth = d.by_month || {};
+  const allMonths = [];
+  for (let m = 1; m <= 12; m++) {
+    const key = `${d.year}-${String(m).padStart(2,'0')}`;
+    allMonths.push(key);
+  }
+  const today = new Date().toISOString().slice(0,7);
+  const monthRows = allMonths.map(key => {
+    const mn = new Date(key + '-01').toLocaleString('en-GB', { month: 'short' });
+    const logged = byMonth[key] || 0;
+    const isFuture = key > today;
+    const isCurrentMonth = key === curMonth;
+    if (isFuture) {
+      return `<div class="month-row" style="opacity:0.35">
+        <span style="font-weight:500">${mn}</span>
+        <div class="month-bar-track"></div>
+        <span style="color:#bbb">—</span>
+        <span style="color:#bbb">${fmtHours(monthlyTarget)}</span>
+        <span style="color:#bbb">—</span>
+      </div>`;
+    }
+    const pct = Math.min(logged / monthlyTarget * 100, 100);
+    const v   = logged - monthlyTarget;
+    const vc  = v >= 0 ? 'positive' : 'negative';
+    const bc  = v >= 0 ? '#2d8a4e' : '#c0392b';
+    return `<div class="month-row" style="${isCurrentMonth ? 'font-weight:600' : ''}">
+      <span>${mn}${isCurrentMonth ? ' ●' : ''}</span>
+      <div class="month-bar-track"><div class="month-bar-fill" style="width:${pct}%;background:${bc}"></div></div>
+      <span>${fmtHours(logged)}</span>
+      <span style="color:#aaa">${fmtHours(monthlyTarget)}</span>
+      <span class="${vc}">${v >= 0 ? '+' : ''}${fmtHours(v)}</span>
+    </div>`;
+  }).join('');
+
+  const ts = new Date(d.generated_at);
+  document.getElementById('updatedAt').textContent =
+    'Updated ' + ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+  document.getElementById('kfGrid').innerHTML = `
+    <div class="card col-6">
+      <div class="card-title">Year ${d.year} — Annual Budget</div>
+      <div class="stat-value ${yearCls}">${fmtHours(yearLogged)}</div>
+      <div class="stat-label">of ${fmtHours(annualTarget)} annual target (${d.rate_usd * annualTarget | 0} USD)</div>
+      <div class="kf-target-marker" style="position:relative;margin:14px 0 6px;">
+        <div class="kf-progress-track" style="margin:0;">
+          <div class="kf-progress-fill" style="width:${yearPct}%;background:${yearBarColor}"></div>
+        </div>
+        <div class="kf-target-line" style="left:${targetPct}%"></div>
+      </div>
+      <div style="font-size:11px;color:#aaa;margin-bottom:12px;">
+        Target to date (${months} months): ${fmtHours(yearTarget)}
+        <span style="float:right;font-size:11px;color:#bbb">▲ target</span>
+      </div>
+      <div class="stat-sub ${yearCls}" style="font-size:14px;">
+        ${fmtHours(Math.abs(yearVar))} ${yearDir} target
+      </div>
+    </div>
+
+    <div class="card col-6">
+      <div class="card-title">${mName} — Monthly Budget</div>
+      <div class="stat-value ${monthCls}">${fmtHours(monthLogged)}</div>
+      <div class="stat-label">of ${fmtHours(monthlyTarget)} monthly target (${d.monthly_budget_usd} USD)</div>
+      <div class="kf-progress-track">
+        <div class="kf-progress-fill" style="width:${monthPct}%;background:${monthBarColor}"></div>
+      </div>
+      <div class="stat-sub ${monthCls}" style="font-size:14px;margin-top:12px;">
+        ${fmtHours(Math.abs(monthVar))} ${monthDir} target
+      </div>
+      <div class="stat-sub" style="margin-top:6px;">
+        ${fmtHours(monthlyTarget - monthLogged > 0 ? monthlyTarget - monthLogged : 0)} remaining to hit monthly target
+      </div>
+    </div>
+
+    <div class="card col-12">
+      <div class="card-title">Monthly Breakdown</div>
+      <div style="display:grid;grid-template-columns:52px 1fr 64px 64px 72px;gap:8px;padding:0 0 8px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#aaa;">
+        <span>Month</span><span>Progress</span><span>Logged</span><span>Target</span><span>Variance</span>
+      </div>
+      ${monthRows}
+    </div>
+  `;
+}
+
+async function loadKF() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning');
+  try {
+    const res = await fetch('/api/kf');
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const d = await res.json();
+    if (d.error) throw new Error(d.error);
+    renderKFPage(d);
+  } catch (err) {
+    document.getElementById('kfGrid').innerHTML = `
+      <div class="card col-12">
+        <div class="not-configured" style="color:#c0392b;">${err.message}</div>
+      </div>`;
+    document.getElementById('updatedAt').textContent = 'Error';
+  } finally {
+    btn.classList.remove('spinning');
+  }
+}
+
+// Initial load
+loadData();
+
+// Auto-refresh every 5 minutes
+setInterval(() => { if (currentTab === 'finance') loadData(); else loadKF(); }, 5 * 60 * 1000);
+</script>
+
+</body>
+</html>
