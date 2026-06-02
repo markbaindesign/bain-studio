@@ -736,7 +736,7 @@ function fmtHours(h) {
 }
 
 function renderKFPage(d) {
-  const monthlyTarget  = d.adjusted_monthly_target ?? d.monthly_hours_target;
+  const monthlyTarget  = d.paced_monthly_target ?? d.monthly_hours_target;
   const annualBase     = d.annual_hours_target;
   const annualAdj      = d.adjusted_annual_target ?? annualBase;
   const carryOver      = d.carry_over_hours ?? 0;
@@ -851,9 +851,13 @@ function renderKFPage(d) {
     </div>
 
     <div class="card col-6">
-      <div class="card-title">${mName} — Monthly Budget</div>
+      <div class="card-title">${mName} — Monthly Target (Paced)</div>
       <div class="stat-value ${monthCls}">${fmtHours(monthLogged)}</div>
-      <div class="stat-label">of ${fmtHours(monthlyTarget)} monthly target (${d.monthly_budget_usd} USD)</div>
+      <div class="stat-label">of ${fmtHours(monthlyTarget)} paced target</div>
+      <div style="font-size:11px;color:#aaa;margin:4px 0 10px;">
+        (${fmtHours(annualAdj)} remaining ÷ ${d.months_remaining} months left)
+        · base rate ${fmtHours(d.monthly_hours_target)}/mo
+      </div>
       <div class="kf-progress-track">
         <div class="kf-progress-fill" style="width:${monthPct}%;background:${monthBarColor}"></div>
       </div>
@@ -861,7 +865,7 @@ function renderKFPage(d) {
         ${fmtHours(Math.abs(monthVar))} ${monthDir} target
       </div>
       <div class="stat-sub" style="margin-top:6px;">
-        ${fmtHours(monthlyTarget - monthLogged > 0 ? monthlyTarget - monthLogged : 0)} remaining to hit monthly target
+        ${fmtHours(Math.max(monthlyTarget - monthLogged, 0))} remaining this month
       </div>
     </div>
 
