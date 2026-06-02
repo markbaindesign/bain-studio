@@ -736,19 +736,24 @@ function fmtHours(h) {
 }
 
 function renderKFPage(d) {
-  const monthlyTarget = d.monthly_hours_target;
-  const annualTarget  = d.annual_hours_target;
-  const yearLogged    = d.year_hours_logged;
-  const yearTarget    = d.year_target_to_date;
-  const yearVar       = d.year_variance;
-  const monthLogged   = d.month_hours_logged;
-  const monthVar      = d.month_variance;
-  const months        = d.months_elapsed;
-  const curMonth      = d.current_month;
-  const mName         = new Date(curMonth + '-01').toLocaleString('en-GB', { month: 'long' });
+  const monthlyTarget  = d.monthly_hours_target;
+  const annualBase     = d.annual_hours_target;
+  const annualAdj      = d.adjusted_annual_target ?? annualBase;
+  const carryOver      = d.carry_over_hours ?? 0;
+  const carryFromYear  = d.carry_over_from_year;
+  const prevLogged     = d.prev_year_logged;
+  const prevTarget     = d.prev_year_target;
+  const yearLogged     = d.year_hours_logged;
+  const adjTargetToDate = d.adjusted_target_to_date ?? d.year_target_to_date;
+  const yearVar        = d.year_variance;
+  const monthLogged    = d.month_hours_logged;
+  const monthVar       = d.month_variance;
+  const months         = d.months_elapsed;
+  const curMonth       = d.current_month;
+  const mName          = new Date(curMonth + '-01').toLocaleString('en-GB', { month: 'long' });
 
-  const yearPct   = Math.min(yearLogged / annualTarget * 100, 100);
-  const targetPct = Math.min(yearTarget / annualTarget * 100, 100);
+  const yearPct   = Math.min(yearLogged / annualAdj * 100, 100);
+  const targetPct = Math.min(adjTargetToDate / annualAdj * 100, 100);
   const monthPct  = Math.min(monthLogged / monthlyTarget * 100, 100);
 
   const yearDir   = yearVar >= 0 ? 'ahead of' : 'behind';
@@ -797,20 +802,48 @@ function renderKFPage(d) {
   document.getElementById('updatedAt').textContent =
     'Updated ' + ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
+  // Month ticks + labels for year bar
+  const mnShort = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const ticks = Array.from({length: 11}, (_, i) => {
+    const pct = (i + 1) / 12 * 100;
+    return `<div style="position:absolute;top:0;left:${pct}%;width:1px;height:8px;background:#d0d0ca;transform:translateX(-50%)"></div>`;
+  }).join('');
+  const labels = mnShort.map((mn, i) => {
+    const pct = (i + 0.5) / 12 * 100;
+    const isCur = (i + 1) === months;
+    return `<div style="position:absolute;left:${pct}%;transform:translateX(-50%);font-size:10px;color:${isCur ? '#1a1a1a' : '#bbb'};font-weight:${isCur ? '600' : '400'};white-space:nowrap;">${mn}</div>`;
+  }).join('');
+
+  const carryOverHtml = carryOver !== 0 ? (() => {
+    const coSign  = carryOver < 0 ? 'positive' : 'negative';
+    const coLabel = carryOver < 0 ? 'credit' : 'owed';
+    const coSign2 = carryOver < 0 ? '−' : '+';
+    return `<div style="margin:10px 0 4px;padding:8px 10px;background:#f7f7f3;border-radius:6px;font-size:12px;line-height:1.6;">
+      <span style="color:#888;">${carryFromYear} carry-over:</span>
+      <span class="${coSign}" style="margin-left:6px;font-weight:600;">${coSign2}${fmtHours(Math.abs(carryOver))} ${coLabel}</span>
+      <span style="color:#bbb;font-size:11px;margin-left:6px;">(logged ${fmtHours(prevLogged)} of ${fmtHours(prevTarget)})</span><br>
+      <span style="color:#aaa;">Adjusted target: ${fmtHours(annualBase)} ${coSign2} ${fmtHours(Math.abs(carryOver))} = </span>
+      <strong>${fmtHours(annualAdj)}</strong>
+    </div>`;
+  })() : '';
+
   document.getElementById('kfGrid').innerHTML = `
     <div class="card col-6">
       <div class="card-title">Year ${d.year} — Annual Budget</div>
       <div class="stat-value ${yearCls}">${fmtHours(yearLogged)}</div>
-      <div class="stat-label">of ${fmtHours(annualTarget)} annual target (${d.rate_usd * annualTarget | 0} USD)</div>
-      <div class="kf-target-marker" style="position:relative;margin:14px 0 6px;">
+      <div class="stat-label">of ${fmtHours(annualAdj)} adjusted target (${d.rate_usd * annualAdj | 0} USD)</div>
+      ${carryOverHtml}
+      <div style="position:relative;margin:16px 0 32px;">
         <div class="kf-progress-track" style="margin:0;">
           <div class="kf-progress-fill" style="width:${yearPct}%;background:${yearBarColor}"></div>
         </div>
-        <div class="kf-target-line" style="left:${targetPct}%"></div>
+        ${ticks}
+        <div style="position:absolute;top:10px;left:0;right:0;height:16px;">${labels}</div>
+        <div style="position:absolute;top:-6px;left:${targetPct}%;width:2px;height:28px;background:#aaa;border-radius:1px;transform:translateX(-50%)"></div>
       </div>
       <div style="font-size:11px;color:#aaa;margin-bottom:12px;">
-        Target to date (${months} months): ${fmtHours(yearTarget)}
-        <span style="float:right;font-size:11px;color:#bbb">▲ target</span>
+        Adjusted target to date (${months} months): ${fmtHours(adjTargetToDate)}
+        <span style="float:right;font-size:11px;color:#bbb">▲ target marker</span>
       </div>
       <div class="stat-sub ${yearCls}" style="font-size:14px;">
         ${fmtHours(Math.abs(yearVar))} ${yearDir} target
