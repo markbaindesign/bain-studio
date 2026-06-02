@@ -1,0 +1,11 @@
+client: Khyentse Foundation
+harvest_project_id: 46865825
+year: 2026
+
+# Retainer: $1,000/month at $58/hour
+monthly_budget_usd: 1000
+hourly_rate_usd: 58
+
+# Derived targets (computed by collector, stored here for reference)
+# monthly_hours: 17.24  (1000 / 58)
+# annual_hours: 206.90  (monthly_hours * 12)
