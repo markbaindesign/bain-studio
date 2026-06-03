@@ -26,7 +26,7 @@ Mark writes like a senior engineer who genuinely likes his clients. Plain Englis
 - Honest: if something was hard, say so. If results are unknown, don't fabricate them.
 
 ### Don't
-- No em dashes in external-facing text — use a hyphen or restructure the sentence
+- No em dashes anywhere — use a hyphen or restructure the sentence
 - No filler openers: "Excited to share…", "Thrilled to announce…", "We're proud to…", "I'm pleased to…"
 - No weasel words: leveraged, synergised, holistic approach, best-in-class, robust solution, seamlessly
 - No title case in headings (except proper nouns: WordPress, GitHub, Barcelona)
@@ -72,6 +72,6 @@ This file is for agents producing output — copy, posts, proposals, UI. For the
 
 ---
 
-## Open question (unresolved)
+## Oxford commas
 
-The bain.design design-system README says "Em-dashes and Oxford commas welcome." Agent skills (Nike, Copywriter) say "No em dashes in external-facing text." These contradict. The no-em-dash rule is applied in agent output until Mark resolves this.
+Oxford commas are fine.

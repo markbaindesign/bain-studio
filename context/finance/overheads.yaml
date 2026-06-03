@@ -10,7 +10,7 @@ description: Monthly fixed costs for margin and viability calculations. Itemised
 # The runtime total (fixed_costs) comes from accounts.json — trust that over this file.
 
 monthly_fixed:
-  autonomo_social_security: 379.97   # Spanish autónomo mandatory contribution (note: overheads.yaml previously had 300 — GnuCash shows 379.97; confirm with Mark)
+  autonomo_social_security: 379.97   # Spanish autónomo mandatory contribution
   gestor_accountant: 212.00           # Monthly accountant / gestora fee
   movistar_phone_internet: 102.81     # Phone and internet (Movistar)
   crashplan_backup: 44.08             # CrashPlan backup service
