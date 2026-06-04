@@ -357,6 +357,31 @@ def fetch_sections(proj: ProjectConfig) -> dict:
     return {s["name"]: s["gid"] for s in data}
 
 
+def fetch_comments(task_gid: str) -> list:
+    """Return human-written comments on a task, excluding bainbot's own progress notes."""
+    try:
+        data = _get(f"/tasks/{task_gid}/stories", {
+            "opt_fields": "created_at,created_by.gid,created_by.name,text,resource_subtype",
+            "limit": 50,
+        })["data"]
+    except Exception:
+        return []
+    comments = []
+    for s in data:
+        if s.get("resource_subtype") != "comment_added":
+            continue
+        creator = s.get("created_by") or {}
+        if creator.get("gid") == BAINBOT_GID:
+            continue
+        text = (s.get("text") or "").strip()
+        if not text:
+            continue
+        created = (s.get("created_at") or "")[:10]
+        author = creator.get("name", "Unknown")
+        comments.append({"author": author, "text": text, "created_at": created})
+    return comments
+
+
 def _is_junk(task) -> bool:
     name = task.get("name", "")
     projects = task.get("projects", [])
@@ -509,6 +534,15 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
     deps       = _fmt_task_refs(t.get("dependencies", []), gid_to_lid)
     dependents = _fmt_task_refs(t.get("dependents", []), gid_to_lid)
 
+    raw_comments = t.get("_comments") or []
+    if raw_comments:
+        comment_lines = ["- **Comments:**"]
+        for c in raw_comments:
+            text = c["text"].replace("\n", " ").strip()
+            comment_lines.append(f"  > {c['created_at']} **{c['author']}:** {text}")
+    else:
+        comment_lines = ["- **Comments:** none"]
+
     return [
         f"### {local_id} — {t['name']}",
         f"- **Local ID:** {local_id}",
@@ -525,6 +559,7 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
         f"- **Notes:** {notes}",
         f"- **Blockers:** {blockers}",
         f"- **Progress:** {progress}",
+        *comment_lines,
         f"- **Modified:** {modified}",
         f"- **URL:** {t.get('permalink_url', '')}",
         "",
@@ -706,6 +741,8 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
         tasks = fetch_tasks(proj, field_gid)
         log.info(f"  {len(tasks)} task(s) assigned to {ASSIGNEE_NAME}.")
+        for t in tasks:
+            t["_comments"] = fetch_comments(t["gid"])
 
         prev_gids    = parse_existing_task_gids(proj)
         curr_gids    = {t["gid"] for t in tasks}
