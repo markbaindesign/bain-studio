@@ -75,7 +75,20 @@ The mirror isn't purely a read cache. Two things write back to Asana:
 
 ## Project discovery
 
-The sync script reads `studio/projects.json` (a list of absolute paths, gitignored) and loads Asana config from each project's `CLAUDE.md`:
+The sync script reads `studio/projects.json` (gitignored) — an array of objects with `path` and `status` fields — and loads Asana config from each project's `CLAUDE.md`. Projects with status `paused` or `archived` are skipped by the cron sync but can be synced manually with `--project PREFIX`.
+
+Valid statuses: `featured` (synced + top of standup), `active` (synced), `paused` (skip cron, manual only), `archived` (hidden). Use `/project-status` to change status.
+
+Example registry:
+
+```json
+[
+  {"path": "/home/bain/code/client/mcf", "status": "featured"},
+  {"path": "/home/bain/code/client/nore", "status": "paused", "paused_at": "2026-06-05"}
+]
+```
+
+Asana config lives in each project's `CLAUDE.md`:
 
 ```
 ASANA_PROJECT_GID: 1234567890123456

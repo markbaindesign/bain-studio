@@ -112,21 +112,45 @@ class ProjectConfig:
 PROJECTS_FILE = STUDIO_DIR / "projects.json"
 
 
-def discover_projects(filter_prefix=None) -> list:
+def load_projects_registry() -> list:
+    """Load projects.json, migrating flat path arrays to object format."""
     if not PROJECTS_FILE.exists():
-        log.error(f"No projects.json found at {PROJECTS_FILE}. Copy projects.example.json to get started.")
         return []
-
     try:
-        roots = json.loads(PROJECTS_FILE.read_text())
+        data = json.loads(PROJECTS_FILE.read_text())
     except Exception as e:
         log.error(f"Could not parse {PROJECTS_FILE}: {e}")
+        return []
+    # Migrate flat list of strings → list of {path, status} objects
+    migrated = False
+    result = []
+    for entry in data:
+        if isinstance(entry, str):
+            result.append({"path": entry, "status": "active"})
+            migrated = True
+        else:
+            result.append(entry)
+    if migrated:
+        PROJECTS_FILE.write_text(json.dumps(result, indent=2) + "\n")
+        log.info("projects.json migrated to object format")
+    return result
+
+
+def discover_projects(filter_prefix=None) -> list:
+    registry = load_projects_registry()
+    if not registry:
+        log.error(f"No projects.json found at {PROJECTS_FILE}. Copy projects.example.json to get started.")
         return []
 
     projects = []
     seen_gids = set()
 
-    for raw in roots:
+    for entry in registry:
+        raw    = entry["path"]
+        status = entry.get("status", "active")
+        # Skip paused and archived projects unless explicitly filtered by prefix
+        if status in ("paused", "archived") and not filter_prefix:
+            continue
         root = Path(raw).expanduser()
         claude_md = root / "CLAUDE.md"
         if not claude_md.exists():
@@ -357,6 +381,31 @@ def fetch_sections(proj: ProjectConfig) -> dict:
     return {s["name"]: s["gid"] for s in data}
 
 
+def fetch_comments(task_gid: str) -> list:
+    """Return human-written comments on a task, excluding bainbot's own progress notes."""
+    try:
+        data = _get(f"/tasks/{task_gid}/stories", {
+            "opt_fields": "created_at,created_by.gid,created_by.name,text,resource_subtype",
+            "limit": 50,
+        })["data"]
+    except Exception:
+        return []
+    comments = []
+    for s in data:
+        if s.get("resource_subtype") != "comment_added":
+            continue
+        creator = s.get("created_by") or {}
+        if creator.get("gid") == BAINBOT_GID:
+            continue
+        text = (s.get("text") or "").strip()
+        if not text:
+            continue
+        created = (s.get("created_at") or "")[:10]
+        author = creator.get("name", "Unknown")
+        comments.append({"author": author, "text": text, "created_at": created})
+    return comments
+
+
 def _is_junk(task) -> bool:
     name = task.get("name", "")
     projects = task.get("projects", [])
@@ -509,6 +558,15 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
     deps       = _fmt_task_refs(t.get("dependencies", []), gid_to_lid)
     dependents = _fmt_task_refs(t.get("dependents", []), gid_to_lid)
 
+    raw_comments = t.get("_comments") or []
+    if raw_comments:
+        comment_lines = ["- **Comments:**"]
+        for c in raw_comments:
+            text = c["text"].replace("\n", " ").strip()
+            comment_lines.append(f"  > {c['created_at']} **{c['author']}:** {text}")
+    else:
+        comment_lines = ["- **Comments:** none"]
+
     return [
         f"### {local_id} — {t['name']}",
         f"- **Local ID:** {local_id}",
@@ -525,6 +583,7 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
         f"- **Notes:** {notes}",
         f"- **Blockers:** {blockers}",
         f"- **Progress:** {progress}",
+        *comment_lines,
         f"- **Modified:** {modified}",
         f"- **URL:** {t.get('permalink_url', '')}",
         "",
@@ -706,6 +765,8 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
         tasks = fetch_tasks(proj, field_gid)
         log.info(f"  {len(tasks)} task(s) assigned to {ASSIGNEE_NAME}.")
+        for t in tasks:
+            t["_comments"] = fetch_comments(t["gid"])
 
         prev_gids    = parse_existing_task_gids(proj)
         curr_gids    = {t["gid"] for t in tasks}
@@ -931,10 +992,11 @@ def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_r
         else:
             claude_md.write_text(f"# {name}\n{asana_block}")
 
-        roots = json.loads(PROJECTS_FILE.read_text())
-        if str(path) not in roots:
-            roots.append(str(path))
-            PROJECTS_FILE.write_text(json.dumps(roots, indent=2) + "\n")
+        registry = load_projects_registry()
+        paths_in_registry = [e["path"] for e in registry]
+        if str(path) not in paths_in_registry:
+            registry.append({"path": str(path), "status": "active"})
+            PROJECTS_FILE.write_text(json.dumps(registry, indent=2) + "\n")
             log.info(f"  Registered in {PROJECTS_FILE}")
     else:
         log.info(f"  [DRY-RUN] Would scaffold {path}/.claude/ and update CLAUDE.md + projects.json")
