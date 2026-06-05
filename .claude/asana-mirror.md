@@ -418,6 +418,25 @@ Projects are mortal because they are destined to die, unlike the studio which is
 - **Modified:** 2026-06-05T15:02:49
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215224928197756
 
+### BSTD-023 — Change default GitHub branch from master to main
+- **Local ID:** BSTD-023
+- **Asana ID:** pending
+- **Section:** TO DO
+- **Due:** none
+- **Start:** none
+- **Assignee:** Mark Bain (507443625075)
+- **Assignee Status:** inbox
+- **Tags:** none
+- **Followers:** BainBot (1209202434387214)
+- **Dependencies:** none
+- **Dependents:** none
+- **Notes:** Go to github.com/markbain/bain-studio → Settings → Branches → change default branch from master to main. Then run: git push origin --delete master
+- **Blockers:** None identified.
+- **Progress:** Checked 2026-06-05.
+- **Comments:** none
+- **Modified:** 2026-06-05T00:00:00
+- **URL:** https://github.com/markbain/bain-studio/settings/branches
+
 ## Immediate Priorities
 
 | ID | Task | Status |
