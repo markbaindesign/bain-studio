@@ -245,12 +245,129 @@ header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 .month-bar-track { height: 4px; background: #f0f0eb; border-radius: 2px; }
 .month-bar-fill  { height: 4px; border-radius: 2px; }
 
+/* Pipeline */
+.funnel-step { display: flex; align-items: baseline; gap: 8px; padding: 5px 0; }
+.funnel-count { font-size: 22px; font-weight: 300; min-width: 36px; }
+.funnel-label { font-size: 12px; color: #888; }
+.funnel-arrow { padding-left: 8px; font-size: 13px; color: #ccc; line-height: 1; }
+
+.outcome-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px;
+}
+.outcome-cell { text-align: center; padding: 8px 4px; background: #f7f7f3; border-radius: 6px; }
+.outcome-val  { font-size: 20px; font-weight: 300; line-height: 1.2; }
+.outcome-lbl  { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+
+.pipeline-hdr {
+  display: grid; grid-template-columns: 1fr 90px 44px 90px 64px;
+  gap: 10px; padding: 0 0 8px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: #aaa;
+}
+.pipeline-row {
+  display: grid; grid-template-columns: 1fr 90px 44px 90px 64px;
+  gap: 10px; align-items: center;
+  padding: 10px 0; border-bottom: 1px solid #f0f0eb; font-size: 13px;
+}
+.pipeline-row:last-child { border-bottom: none; }
+.pipeline-title a { color: #1a1a1a; text-decoration: none; }
+.pipeline-title a:hover { text-decoration: underline; }
+.pipeline-budget { font-size: 12px; color: #888; }
+.score-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 50%;
+  font-size: 12px; font-weight: 600;
+}
+.score-high { background: #f0f9f4; color: #2d8a4e; }
+.score-mid  { background: #fffbeb; color: #d97706; }
+.score-low  { background: #fef2f2; color: #c0392b; }
+.status-pill {
+  font-size: 10px; font-weight: 600; padding: 2px 8px;
+  border-radius: 10px; white-space: nowrap; display: inline-block;
+}
+.status-pending  { background: #f0f0eb; color: #888; }
+.status-nudged   { background: #eff6ff; color: #3b82f6; }
+.status-proposal { background: #f0f9f4; color: #2d8a4e; }
+.pipeline-age { font-size: 11px; color: #bbb; text-align: right; }
+
+/* Connects badge + inline edit */
+.connects-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 600; padding: 2px 7px;
+  border-radius: 10px; background: #f0f0eb; color: #555;
+  cursor: pointer; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.connects-badge:hover { border-color: #d0d0ca; background: #e8e8e3; }
+.connects-badge.edited { background: #eff6ff; color: #3b82f6; }
+.connects-edit-wrap { display: inline-flex; align-items: center; gap: 4px; }
+.connects-input {
+  width: 42px; padding: 2px 4px; font-size: 12px;
+  border: 1px solid #d0d0ca; border-radius: 4px; text-align: center;
+}
+.connects-save, .connects-cancel {
+  background: none; border: none; cursor: pointer; font-size: 13px; padding: 0 2px; line-height: 1;
+}
+.connects-save  { color: #2d8a4e; }
+.connects-cancel { color: #c0392b; }
+
+/* Briefs integrated table */
+.briefs-hdr, .briefs-row {
+  display: grid;
+  grid-template-columns: 1fr 84px 44px 100px 58px 68px 68px;
+  gap: 10px; align-items: center;
+}
+.briefs-hdr {
+  padding: 0 0 8px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #aaa;
+}
+.briefs-row {
+  padding: 9px 0; border-bottom: 1px solid #f0f0eb; font-size: 13px;
+}
+.briefs-row:last-child { border-bottom: none; }
+.briefs-title a { color: #1a1a1a; text-decoration: none; }
+.briefs-title a:hover { text-decoration: underline; }
+.briefs-dim { font-size: 11px; color: #bbb; text-align: right; }
+
+/* Status pill variants */
+.status-won       { background: #f0f9f4; color: #2d8a4e; }
+.status-lost      { background: #fef2f2; color: #c0392b; }
+.status-rejected  { background: #fef2f2; color: #c0392b; }
+.status-interview { background: #f5f0ff; color: #7c3aed; }
+.status-waiting   { background: #fffbeb; color: #d97706; }
+
+/* Filter bar */
+.filter-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.filter-chip {
+  font-size: 11px; padding: 3px 9px; border-radius: 12px;
+  border: 1px solid #e0e0da; background: none; color: #888; cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.filter-chip:hover { background: #f5f5f0; color: #444; }
+.filter-chip.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+.filter-sep { width: 1px; background: #e8e8e2; margin: 0 2px; align-self: stretch; }
+
+.days-toggle { display: flex; gap: 4px; }
+.days-btn {
+  font-size: 10px; padding: 2px 7px; border-radius: 10px;
+  border: 1px solid #e0e0da; background: none; color: #888; cursor: pointer;
+}
+.days-btn.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+
 @media (max-width: 1100px) {
   .col-3, .col-4, .col-5, .col-6, .col-7, .col-8 { grid-column: span 6; }
+  .pipeline-hdr, .pipeline-row { grid-template-columns: 1fr 80px 44px 80px 60px; }
+  .briefs-hdr, .briefs-row { grid-template-columns: 1fr 80px 44px 96px 58px 64px; }
+  .briefs-hdr span:last-child, .briefs-row .briefs-dim:last-child { display: none; }
 }
 @media (max-width: 700px) {
   .col-3, .col-4, .col-5, .col-6, .col-7, .col-8, .col-12 { grid-column: span 12; }
   .grid { padding: 12px; }
+  .pipeline-hdr, .pipeline-row { grid-template-columns: 1fr 44px 80px 56px; }
+  .pipeline-hdr span:nth-child(2), .pipeline-row .pipeline-budget { display: none; }
+  .briefs-hdr, .briefs-row { grid-template-columns: 1fr 44px 96px 58px; }
+  .briefs-hdr span:nth-child(2), .briefs-row .briefs-budget,
+  .briefs-hdr span:nth-child(6), .briefs-hdr span:nth-child(7) { display: none; }
 }
 </style>
 </head>
@@ -261,6 +378,7 @@ header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
   <nav class="tabs">
     <button class="tab-btn active" id="tab-finance" onclick="switchTab('finance')">Financial</button>
     <button class="tab-btn" id="tab-kf" onclick="switchTab('kf')">KF Time Budget</button>
+    <button class="tab-btn" id="tab-pipeline" onclick="switchTab('pipeline')">Pipeline</button>
   </nav>
   <span class="updated" id="updatedAt">Loading…</span>
   <button class="refresh-btn" id="refreshBtn" onclick="refreshCurrent()">
@@ -284,6 +402,15 @@ header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
   </div>
 </div>
 
+<!-- Pipeline page -->
+<div id="page-pipeline" style="display:none">
+  <div class="grid" id="pipelineGrid">
+    <div class="card col-4"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
+    <div class="card col-4"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
+    <div class="card col-4"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
+  </div>
+</div>
+
 <!-- KF time budget page -->
 <div id="page-kf" style="display:none">
   <div class="grid" id="kfGrid">
@@ -296,19 +423,77 @@ header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 <script>
 let plChart, donutChart, beChart;
 let currentTab = 'finance';
+let pipelineDays = 7;
 
-function switchTab(tab) {
-  currentTab = tab;
-  document.getElementById('page-finance').style.display = tab === 'finance' ? '' : 'none';
-  document.getElementById('page-kf').style.display      = tab === 'kf'      ? '' : 'none';
-  document.getElementById('tab-finance').classList.toggle('active', tab === 'finance');
-  document.getElementById('tab-kf').classList.toggle('active', tab === 'kf');
-  if (tab === 'kf') loadKF();
-  else loadData();
+// ---------------------------------------------------------------------------
+// Routing
+// ---------------------------------------------------------------------------
+
+const TABS = ['finance', 'kf', 'pipeline'];
+
+function parseHash() {
+  const raw = location.hash.replace(/^#/, '') || 'finance';
+  const [tab, qs] = raw.split('?');
+  const params = {};
+  if (qs) new URLSearchParams(qs).forEach((v, k) => { params[k] = v; });
+  return { tab: TABS.includes(tab) ? tab : 'finance', params };
 }
 
+function buildHash(tab, params) {
+  const defaults = { status: 'all', score: 'all', days: '7' };
+  const qs = new URLSearchParams(
+    Object.entries(params).filter(([k, v]) => v !== defaults[k])
+  ).toString();
+  return '#' + tab + (qs ? '?' + qs : '');
+}
+
+function navigate(tab, newParams = {}) {
+  const cur = parseHash();
+  const params = cur.tab === tab ? { ...cur.params, ...newParams } : newParams;
+  history.pushState(null, '', buildHash(tab, params));
+  onHashChange();
+}
+
+function onHashChange() {
+  const { tab, params } = parseHash();
+  const prevTab  = currentTab;
+  const prevDays = pipelineDays;
+
+  pipelineDays         = parseInt(params.days   || '7',   10);
+  pipelineStatusFilter = params.status || 'all';
+  pipelineScoreFilter  = params.score  || 'all';
+  currentTab = tab;
+
+  TABS.forEach(t => {
+    document.getElementById(`page-${t}`).style.display = t === tab ? '' : 'none';
+    document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
+  });
+
+  if (tab === 'kf') {
+    loadKF();
+  } else if (tab === 'pipeline') {
+    const needFetch = prevTab !== 'pipeline' || pipelineDays !== prevDays || !_pipelineBriefs.length;
+    if (needFetch) {
+      loadPipeline();
+    } else {
+      // Filter change only — update chips and re-render, no network call
+      document.querySelectorAll('[data-sf]').forEach(b =>
+        b.classList.toggle('active', b.dataset.sf === pipelineStatusFilter));
+      document.querySelectorAll('[data-scf]').forEach(b =>
+        b.classList.toggle('active', b.dataset.scf === pipelineScoreFilter));
+      renderBriefsTable(_pipelineBriefs);
+    }
+  } else {
+    loadData();
+  }
+}
+
+function switchTab(tab) { navigate(tab); }
+
 function refreshCurrent() {
-  if (currentTab === 'kf') loadKF();
+  const { tab } = parseHash();
+  if (tab === 'kf') loadKF();
+  else if (tab === 'pipeline') loadPipeline();
   else loadData();
 }
 
@@ -899,11 +1084,269 @@ async function loadKF() {
   }
 }
 
-// Initial load
-loadData();
+let _pipelineBriefs  = [];
+let pipelineStatusFilter = 'all';
+let pipelineScoreFilter  = 'all';
+
+function scoreClass(s) { return s >= 8 ? 'score-high' : s >= 5 ? 'score-mid' : 'score-low'; }
+
+function statusPillClass(s) {
+  const m = { won:'status-won', lost:'status-lost', rejected:'status-rejected',
+              interview:'status-interview', waiting:'status-waiting',
+              proposal_sent:'status-proposal', nudged:'status-nudged' };
+  return m[s] || 'status-pending';
+}
+
+function statusLabel(s) {
+  const m = { pending:'Pending', nudged:'Nudged', proposal_sent:'Sent',
+              waiting:'Waiting', interview:'Interview',
+              won:'Won', lost:'Lost', rejected:'Rejected' };
+  return m[s] || s;
+}
+
+function displayStatus(b) {
+  return (b.interview && b.applied) ? 'interview' : b.status;
+}
+
+function budgetMin(str) {
+  if (!str || str === '—') return 0;
+  const nums = str.match(/[\d,]+/g);
+  return nums ? parseInt(nums[0].replace(/,/g, ''), 10) : 0;
+}
+
+function fmtDateShort(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso.replace(' ', 'T') + (iso.includes('T') ? '' : 'T00:00:00'));
+  if (isNaN(d)) return '—';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff  = Math.round((d - today) / 86400000);
+  if (diff === 0)  return 'today';
+  if (diff === -1) return 'yest.';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+function renderPipelinePage(d, briefs) {
+  const f = d.funnel   || {};
+  const o = d.outcomes || {};
+  const c = d.connects || {};
+  const appliedList = c.per_proposal || [];
+
+  const passRateClass = (f.pass_rate >= 40) ? 'positive' : (f.pass_rate >= 20) ? 'warning' : 'negative';
+  const winRate  = (o.applied > 0) ? Math.round(o.won / o.applied * 100) : null;
+  const winClass = winRate !== null ? (winRate >= 30 ? 'positive' : winRate >= 10 ? 'warning' : 'negative') : 'neutral';
+  const totalSpent = c.total_spent ?? 0;
+  const avgConn    = appliedList.length ? Math.round(totalSpent / appliedList.length) : 6;
+
+  const inPlay = (briefs || []).filter(b => ['pending','nudged','proposal_sent'].includes(b.status));
+
+  const ts = d.updated_at ? new Date(d.updated_at) : new Date();
+  document.getElementById('updatedAt').textContent =
+    'Updated ' + ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+  document.getElementById('pipelineGrid').innerHTML = `
+    <div class="card col-3">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>${f.days || pipelineDays}-day Funnel</span>
+        <div class="days-toggle">
+          <button class="days-btn ${pipelineDays===7?'active':''}" onclick="setPipelineDays(7)">7d</button>
+          <button class="days-btn ${pipelineDays===30?'active':''}" onclick="setPipelineDays(30)">30d</button>
+        </div>
+      </div>
+      <div class="stat-value ${passRateClass}">${f.pass_rate ?? '—'}%</div>
+      <div class="stat-label">pass rate (seen → proposal)</div>
+      <div style="margin-top:14px;">
+        <div class="funnel-step"><span class="funnel-count">${f.seen ?? '—'}</span><span class="funnel-label">seen</span></div>
+        <div class="funnel-arrow">↓</div>
+        <div class="funnel-step"><span class="funnel-count">${f.passed ?? '—'}</span><span class="funnel-label">passed triage</span></div>
+        <div class="funnel-arrow">↓</div>
+        <div class="funnel-step"><span class="funnel-count">${f.proposals ?? '—'}</span><span class="funnel-label">proposals sent</span></div>
+      </div>
+    </div>
+
+    <div class="card col-3">
+      <div class="card-title">Outcomes</div>
+      ${winRate !== null
+        ? `<div class="stat-value ${winClass}">${winRate}%</div>
+           <div class="stat-label">win rate · ${o.won} won of ${o.applied} applied</div>`
+        : `<div class="stat-value neutral">—</div><div class="stat-label">No applications yet</div>`}
+      <div class="outcome-grid">
+        <div class="outcome-cell"><div class="outcome-val positive">${o.won ?? 0}</div><div class="outcome-lbl">Won</div></div>
+        <div class="outcome-cell"><div class="outcome-val warning">${o.interview ?? 0}</div><div class="outcome-lbl">Interview</div></div>
+        <div class="outcome-cell"><div class="outcome-val neutral">${o.waiting ?? 0}</div><div class="outcome-lbl">Waiting</div></div>
+        <div class="outcome-cell"><div class="outcome-val negative">${o.lost ?? 0}</div><div class="outcome-lbl">Lost</div></div>
+        <div class="outcome-cell"><div class="outcome-val negative">${o.rejected ?? 0}</div><div class="outcome-lbl">Rejected</div></div>
+        <div class="outcome-cell"><div class="outcome-val neutral">${o.applied ?? 0}</div><div class="outcome-lbl">Applied</div></div>
+      </div>
+    </div>
+
+    <div class="card col-3">
+      <div class="card-title">In Play</div>
+      <div class="stat-value">${inPlay.length}</div>
+      <div class="stat-label">pending / nudged / sent</div>
+      ${inPlay.length > 0 ? `<div style="margin-top:12px;font-size:12px;color:#888;line-height:1.8;">
+        <span class="positive">${inPlay.filter(b=>b.score>=8).length} high-score</span> ·
+        ${inPlay.filter(b=>b.status==='proposal_sent').length} sent ·
+        ${inPlay.filter(b=>b.status==='nudged').length} nudged
+      </div>` : ''}
+    </div>
+
+    <div class="card col-3">
+      <div class="card-title">Connects Spent</div>
+      <div class="stat-value">${totalSpent}</div>
+      <div class="stat-label">${appliedList.length} proposal${appliedList.length !== 1 ? 's' : ''} · avg ${avgConn}/proposal</div>
+    </div>
+
+    <div class="card col-12" id="briefs-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div class="card-title" style="margin:0;">All Briefs</div>
+        <span style="font-size:11px;color:#aaa;" id="briefs-count"></span>
+      </div>
+      <div class="filter-bar" id="status-filters">
+        ${['all','pending','nudged','proposal_sent','waiting','interview','won','lost','rejected'].map(s => {
+          const label = s === 'all' ? 'All' : s === 'proposal_sent' ? 'Sent' : statusLabel(s);
+          return `<button class="filter-chip ${pipelineStatusFilter===s?'active':''}" data-sf="${s}" onclick="setStatusFilter('${s}')">${label}</button>`;
+        }).join('')}
+        <span class="filter-sep"></span>
+        ${[['all','All score'],['high','High 8+'],['mid','Mid 5–7'],['low','Low <5']].map(([v,l]) =>
+          `<button class="filter-chip ${pipelineScoreFilter===v?'active':''}" data-scf="${v}" onclick="setScoreFilter('${v}')">${l}</button>`
+        ).join('')}
+      </div>
+      <div class="briefs-hdr">
+        <span>Job</span><span>Budget</span><span>Score</span><span>Status</span>
+        <span style="text-align:right;">Connects</span><span style="text-align:right;">Applied</span><span style="text-align:right;">Seen</span>
+      </div>
+      <div id="briefs-rows"></div>
+    </div>
+  `;
+
+  renderBriefsTable(briefs || []);
+}
+
+function renderBriefsTable(allBriefs) {
+  // Filter
+  let rows = allBriefs.filter(b => {
+    const ds = displayStatus(b);
+    const statusOk = pipelineStatusFilter === 'all' || ds === pipelineStatusFilter;
+    const scoreOk  = pipelineScoreFilter  === 'all'
+      || (pipelineScoreFilter === 'high' && b.score >= 8)
+      || (pipelineScoreFilter === 'mid'  && b.score >= 5 && b.score < 8)
+      || (pipelineScoreFilter === 'low'  && b.score < 5);
+    return statusOk && scoreOk;
+  });
+
+  // Sort: score desc → budget desc → hours asc
+  rows.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const bd = budgetMin(b.budget) - budgetMin(a.budget);
+    if (bd !== 0) return bd;
+    return a.hours - b.hours;
+  });
+
+  const countEl = document.getElementById('briefs-count');
+  if (countEl) countEl.textContent = `${rows.length} of ${allBriefs.length}`;
+
+  const el = document.getElementById('briefs-rows');
+  if (!el) return;
+  if (!rows.length) { el.innerHTML = '<div class="empty">No briefs match the current filters.</div>'; return; }
+
+  el.innerHTML = rows.map(b => {
+    const ds     = displayStatus(b);
+    const connCell = b.applied
+      ? `<span id="conn-${b.thread_id}" style="text-align:right;display:block;">${connectsBadge(b.thread_id, b.connects, b.connects !== 6)}</span>`
+      : `<span class="briefs-dim">—</span>`;
+    return `
+      <div class="briefs-row">
+        <div class="briefs-title">${b.url ? `<a href="${b.url}" target="_blank" rel="noopener">${b.title}</a>` : b.title}</div>
+        <div class="briefs-budget" style="font-size:12px;color:#888;">${b.budget || '—'}</div>
+        <span class="score-badge ${scoreClass(b.score)}">${b.score}</span>
+        <span class="status-pill ${statusPillClass(ds)}">${statusLabel(ds)}</span>
+        ${connCell}
+        <span class="briefs-dim">${b.applied_at ? fmtDateShort(b.applied_at) : '—'}</span>
+        <span class="briefs-dim">${fmtDateShort(b.sent_at)}</span>
+      </div>`;
+  }).join('');
+}
+
+function setStatusFilter(val) { navigate('pipeline', { status: val }); }
+function setScoreFilter(val)  { navigate('pipeline', { score:  val }); }
+
+function connectsBadge(threadId, connects, edited) {
+  const cls = edited ? 'connects-badge edited' : 'connects-badge';
+  return `<span class="${cls}" onclick="editConnects('${threadId}', ${connects})">${connects} ⚡</span>`;
+}
+
+function editConnects(threadId, current) {
+  const cell = document.getElementById(`conn-${threadId}`);
+  cell.innerHTML = `
+    <span class="connects-edit-wrap">
+      <input class="connects-input" type="number" value="${current}" min="1" max="100">
+      <button class="connects-save"  onclick="saveConnects('${threadId}', ${current})">✓</button>
+      <button class="connects-cancel" onclick="cancelConnects('${threadId}', ${current})">✗</button>
+    </span>`;
+  cell.querySelector('input').focus();
+  cell.querySelector('input').select();
+}
+
+async function saveConnects(threadId, prev) {
+  const cell  = document.getElementById(`conn-${threadId}`);
+  const input = cell.querySelector('input');
+  const val   = parseInt(input.value, 10);
+  if (isNaN(val) || val < 1) { cancelConnects(threadId, prev); return; }
+  try {
+    const res = await fetch(`/api/pipeline/connects/${threadId}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({connects: val}),
+    });
+    if (!res.ok) throw new Error('Save failed');
+    cell.innerHTML = connectsBadge(threadId, val, val !== 6);
+  } catch {
+    cell.innerHTML = connectsBadge(threadId, prev, prev !== 6);
+  }
+}
+
+function cancelConnects(threadId, prev) {
+  document.getElementById(`conn-${threadId}`).innerHTML = connectsBadge(threadId, prev, prev !== 6);
+}
+
+async function loadPipeline() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning');
+  try {
+    const [statusRes, briefsRes] = await Promise.all([
+      fetch(`/api/pipeline?days=${pipelineDays}`),
+      fetch('/api/pipeline/briefs'),
+    ]);
+    if (!statusRes.ok) throw new Error(`Status error ${statusRes.status}`);
+    if (!briefsRes.ok) throw new Error(`Briefs error ${briefsRes.status}`);
+    const [d, briefs] = await Promise.all([statusRes.json(), briefsRes.json()]);
+    if (d.error) throw new Error(d.error);
+    if (briefs.error) throw new Error(briefs.error);
+    _pipelineBriefs = Array.isArray(briefs) ? briefs : [];
+    renderPipelinePage(d, _pipelineBriefs);
+  } catch (err) {
+    document.getElementById('pipelineGrid').innerHTML = `
+      <div class="card col-12">
+        <div class="not-configured" style="color:#c0392b;">${err.message}</div>
+      </div>`;
+    document.getElementById('updatedAt').textContent = 'Error';
+  } finally {
+    btn.classList.remove('spinning');
+  }
+}
+
+function setPipelineDays(days) { navigate('pipeline', { days: String(days) }); }
+
+// Boot
+window.addEventListener('popstate', onHashChange);
+onHashChange();
 
 // Auto-refresh every 5 minutes
-setInterval(() => { if (currentTab === 'finance') loadData(); else loadKF(); }, 5 * 60 * 1000);
+setInterval(() => {
+  if (currentTab === 'finance') loadData();
+  else if (currentTab === 'kf') loadKF();
+  else if (currentTab === 'pipeline') loadPipeline();
+}, 5 * 60 * 1000);
 </script>
 
 </body>
