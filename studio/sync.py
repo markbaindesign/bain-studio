@@ -837,6 +837,19 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         # --- Progress comments ---
         posted_progress = state.get("posted_progress", {})
         commented = 0
+
+        # Guard: if the same non-trivial progress text appears on more than 2 tasks,
+        # it was almost certainly written by a replace_all bug in the mirror editor.
+        # Skip the batch rather than spam every task with the same comment.
+        progress_texts = [
+            (prev or {}).get("progress", "")
+            for t in tasks
+            for prev in [carried.get(t["gid"])]
+            if (prev or {}).get("progress", "") and not PLAIN_CHECK.match((prev or {}).get("progress", ""))
+        ]
+        from collections import Counter
+        progress_counts = Counter(progress_texts)
+
         for t in tasks:
             gid      = t["gid"]
             prev     = carried.get(gid)
@@ -846,6 +859,9 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
             if (curr_p
                     and not PLAIN_CHECK.match(curr_p)
                     and curr_p != posted_progress.get(gid)):
+                if progress_counts[curr_p] > 2:
+                    log.warning(f"  [{proj.prefix}] Skipping comment for {local_id} — same progress text on {progress_counts[curr_p]} tasks (mirror edit bug?)")
+                    continue
                 try:
                     log.info(f"  [{proj.prefix}] Posting progress comment for {local_id}...")
                     leave_comment(gid, curr_p, dry_run)
