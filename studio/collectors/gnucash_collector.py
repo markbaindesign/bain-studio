@@ -22,7 +22,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 CONTENT_DIR  = Path(os.getenv("STUDIO_CONTENT_DIR", Path(__file__).parents[2] / "context"))
 GNUCASH_DIR  = Path('/media/data/Dropbox/Work/Admin/Financial/Accounting/GNUCash')
-GNUCASH_FILE = GNUCASH_DIR / 'accounts.gnucash'
+GNUCASH_FILE = GNUCASH_DIR / 'accounts.bu.gnucash'
 DASHBOARD_URL = 'http://localhost:5555/api/data'
 OUTPUT_FILE  = CONTENT_DIR / 'finance' / 'accounts.json'
 
