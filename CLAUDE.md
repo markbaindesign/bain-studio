@@ -2,6 +2,12 @@
 
 Studio PM tooling for client project management.
 
+## Git workflow
+
+- Always work on `develop`. Never commit directly to `main`.
+- Feature branches off `develop` via `git flow feature start {name}`.
+- Merge `develop` → `main` only when releasing.
+
 ## Sync script
 
 - Run with `python3 studio/sync.py` (system `python` is 2.7)
