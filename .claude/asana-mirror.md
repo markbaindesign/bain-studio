@@ -22,7 +22,7 @@ Assignee GID: 1209202434387214
 - **Progress:** Checked 2026-06-03. Blocked — needs bainbot Asana credentials.
 - **Comments:**
   > 2026-06-05 **Mark Bain:** Why is this needed? It has already been done I'm sure. More detail please!
-- **Modified:** 2026-06-05T16:28:47
+- **Modified:** 2026-06-05T16:52:47
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209467864880
 
 ### BSTD-020 — Linked In job check - focus on new jobs
@@ -43,7 +43,7 @@ Assignee GID: 1209202434387214
 - **Comments:**
   > 2026-06-03 **Mark Bain:** Note added.
   > 2026-06-05 **Mark Bain:** In the pipeline, there is a script that checks for linked in jobs that look interesting, but it surfaces very old roles that are out of date. I want to make sure the jobs are recent.
-- **Modified:** 2026-06-05T16:31:02
+- **Modified:** 2026-06-05T16:52:48
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215230461939789
 
 ### BSTD-010 — Audit and complete studio dashboard
@@ -62,7 +62,7 @@ Assignee GID: 1209202434387214
 - **Blockers:** None identified.
 - **Progress:** Checked 2026-06-03. Assessed: dashboard currently has Finance, KF time budget, and Pipeline tabs (1353-line dashboard.html). Missing: active projects tab and harvest status card. Both are buildable from existing data sources (projects.json/mirrors and project-database.csv). Deferred to dedicated branch: feature/bstd-010-dashboard-active-projects-harvest.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:31:23
+- **Modified:** 2026-06-05T16:52:48
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209663490357
 
 ### BSTD-021 — Add API cost tracker to studio dashboard
@@ -81,7 +81,7 @@ Assignee GID: 1209202434387214
 - **Blockers:** 2026-06-03 — Task notes explicitly state: blocked on rotating the leaked API key first. Cannot proceed until the API key has been rotated and replaced in all .env files.
 - **Progress:** Checked 2026-06-05.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:29:30
+- **Modified:** 2026-06-05T16:52:49
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215394379541907
 
 ### BSTD-022 — Conduct a security audit on the studio project
@@ -104,7 +104,7 @@ Assignee GID: 1209202434387214
 - **Blockers:** None identified.
 - **Progress:** Checked 2026-06-05.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:43:47
+- **Modified:** 2026-06-05T16:52:50
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215386521408712
 
 ### BSTD-012 — Backfill Mnemosyne (project-database.csv)
@@ -124,7 +124,7 @@ Assignee GID: 1209202434387214
 - **Progress:** Checked 2026-06-03. Blocked — needs Mark to provide historical project data.
 - **Comments:**
   > 2026-06-05 **Mark Bain:** What data is needed? Where should I provide it? Maybe work from a Google sheet? I can set this up, let me know
-- **Modified:** 2026-06-05T16:32:02
+- **Modified:** 2026-06-05T16:52:50
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209677034138
 
 ### BSTD-019 — Fix VVV shutdown asking for password
@@ -144,7 +144,7 @@ Assignee GID: 1209202434387214
 - **Progress:** Checked 2026-06-05.
 - **Comments:**
   > 2026-06-05 **Mark Bain:** How can I grant this? Does this mean we can't do it?
-- **Modified:** 2026-06-05T16:29:15
+- **Modified:** 2026-06-05T16:52:51
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215210721133744
 
 ### BSTD-009 — Automate case study → website delivery pipeline
@@ -164,7 +164,7 @@ Assignee GID: 1209202434387214
 - **Progress:** Checked 2026-06-03. Deferred — complex multi-step build, needs dedicated session.
 - **Comments:**
   > 2026-06-05 **Mark Bain:** Agreed. This is a project stub not a task.
-- **Modified:** 2026-06-05T16:33:26
+- **Modified:** 2026-06-05T16:52:52
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209965255230
 
 ### BSTD-023 — Create the studio brand voice
@@ -183,7 +183,7 @@ Assignee GID: 1209202434387214
 - **Blockers:** None identified.
 - **Progress:** Checked 2026-06-05.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:43:39
+- **Modified:** 2026-06-05T16:52:52
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215445632997592
 
 
@@ -205,7 +205,7 @@ Assignee GID: 1209202434387214
 - **Blockers:** None identified.
 - **Progress:** Checked 2026-06-05.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:03:02
+- **Modified:** 2026-06-05T16:53:03
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209467867245
 
 ### BSTD-011 — Build The Notifier
@@ -224,7 +224,7 @@ Assignee GID: 1209202434387214
 - **Blockers:** None identified.
 - **Progress:** Checked 2026-06-05.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:03:01
+- **Modified:** 2026-06-05T16:53:02
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209965001262
 
 ### BSTD-014 — Set up Telegram notifications for rate limit reset
@@ -243,7 +243,7 @@ Assignee GID: 1209202434387214
 - **Blockers:** None identified.
 - **Progress:** Checked 2026-06-05.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:03:00
+- **Modified:** 2026-06-05T16:53:01
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209394424148
 
 ### BSTD-015 — Create the /studio-postman skill
@@ -266,7 +266,7 @@ Projects are mortal because they are destined to die, unlike the studio which is
 - **Blockers:** None identified.
 - **Progress:** Checked 2026-06-05.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:02:59
+- **Modified:** 2026-06-05T16:53:01
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209677652051
 
 ### BSTD-001 — Flesh out Iris skill
@@ -285,7 +285,7 @@ Projects are mortal because they are destined to die, unlike the studio which is
 - **Blockers:** None identified.
 - **Progress:** Completed 2026-06-03. Full Iris skill built at ~/.claude/skills/iris/SKILL.md — defines Arke (event spotting), Aura (post writing), and Kairos (scheduling) sub-agents with signal/harvest/draft modes. Standalone Arke, Aura, and Kairos skills also created.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:02:58
+- **Modified:** 2026-06-05T16:53:00
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209677218047
 
 ### BSTD-002 — Flesh out Themis skill
@@ -304,7 +304,7 @@ Projects are mortal because they are destined to die, unlike the studio which is
 - **Blockers:** None identified.
 - **Progress:** Completed 2026-06-03. Full Themis skill built at ~/.claude/skills/themis/SKILL.md — defines Eunomia (scope), Dike (accessibility/WCAG), and Eirene (Core Web Vitals) sub-agents with GATE CLEAR/BLOCKED ruling. Standalone sub-skills also created. Delivery gate workflow in studio-delivery-gate skill.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:02:57
+- **Modified:** 2026-06-05T16:52:59
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209811194641
 
 ### BSTD-003 — Flesh out Hephaestus skill
@@ -323,7 +323,7 @@ Projects are mortal because they are destined to die, unlike the studio which is
 - **Blockers:** None identified.
 - **Progress:** Completed 2026-06-03. Full Hephaestus skill built at ~/.claude/skills/hephaestus/SKILL.md — plan and review modes covering Erichthonius (estimation), Caeculus (frontend/headless), and Periphetes (DevOps/infra). Standalone sub-skills also created.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:02:57
+- **Modified:** 2026-06-05T16:52:58
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209663836183
 
 ### BSTD-004 — Flesh out Aphrodite skill
@@ -342,7 +342,7 @@ Projects are mortal because they are destined to die, unlike the studio which is
 - **Blockers:** None identified.
 - **Progress:** Completed 2026-06-03. Full Aphrodite skill built at ~/.claude/skills/aphrodite/SKILL.md — direction and review modes with Anteros (brand) and Harmonia (layout) sub-agents. Standalone sub-skills also created.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:02:56
+- **Modified:** 2026-06-05T16:52:57
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209676329024
 
 ### BSTD-006 — Resolve issue of local project sync with global studio sync
@@ -363,7 +363,7 @@ Projects are mortal because they are destined to die, unlike the studio which is
 - **Blockers:** None identified.
 - **Progress:** Completed 2026-06-03. Renamed pm-asana-sync → studio-asana-sync, pm-retro → studio-retro, pm-todos → studio-todos, pm-onboard → studio-onboard via git mv in skills/. Updated symlinks and name: frontmatter fields. Fixed studio-pm agent reference /retro → /studio-retro. PR at https://github.com/markbain/bain-studio/pull/new/feature/bstd-006-rename-pm-skills-to-studio
 - **Comments:** none
-- **Modified:** 2026-06-05T16:02:55
+- **Modified:** 2026-06-05T16:52:57
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209677652048
 
 ### BSTD-016 — Create /studio-shutdown routine
@@ -382,7 +382,7 @@ Projects are mortal because they are destined to die, unlike the studio which is
 - **Blockers:** None identified.
 - **Progress:** Completed 2026-06-03. /studio-shutdown skill created — mirrors sync check, open branches audit, /studio-retro invocation, blocker report, Hermes notification. In bain-studio repo at skills/studio-shutdown/SKILL.md.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:02:54
+- **Modified:** 2026-06-05T16:52:56
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209677652054
 
 ### BSTD-017 — Create /studio-startup routine
@@ -401,7 +401,7 @@ Projects are mortal because they are destined to die, unlike the studio which is
 - **Blockers:** None identified.
 - **Progress:** Completed 2026-06-03. /studio-startup skill created — syncs all mirrors, reads project pulse, invokes Abderus, checks financial snapshot, outputs morning report. In bain-studio repo at skills/studio-startup/SKILL.md.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:02:53
+- **Modified:** 2026-06-05T16:52:55
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209677652057
 
 ### BSTD-018 — Create /studio-ghost-projects scans for inactive
@@ -420,7 +420,7 @@ Projects are mortal because they are destined to die, unlike the studio which is
 - **Blockers:** None identified.
 - **Progress:** Completed 2026-06-03. /studio-ghost-projects skill created — scans registered projects for stale mirrors (14d), inactive tasks (30d), orphaned branches, unanswered open questions. Reports active/stale/ghost/completed-unclosed with specific recommended actions. In bain-studio repo at skills/studio-ghost-projects/SKILL.md.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:02:53
+- **Modified:** 2026-06-05T16:52:54
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209407993905
 
 ### BSTD-007 — Define delivery gate workflow
@@ -439,7 +439,7 @@ Projects are mortal because they are destined to die, unlike the studio which is
 - **Blockers:** None identified.
 - **Progress:** Completed 2026-06-03. /studio-delivery-gate skill created — full 7-step sequence: Themis QA → gate package for Mark → approval gate → Iris announce → Poros invoice → Harvest → Asana closure. In bain-studio repo at skills/studio-delivery-gate/SKILL.md.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:02:52
+- **Modified:** 2026-06-05T16:52:54
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215209676891088
 
 ### BSTD-008 — Wire GNUCash collector into Plutus
@@ -458,14 +458,9 @@ Projects are mortal because they are destined to die, unlike the studio which is
 - **Blockers:** None identified.
 - **Progress:** Completed 2026-06-03. Verified: gnucash_collector.py writes to context/finance/accounts.json. Crontab runs it at 08:10 daily (10 8 * * * cd /media/data/dev/bain-studio && python3 studio/collectors/gnucash_collector.py). Plutus, Penia, and Euporia all read from accounts.json. No changes needed.
 - **Comments:** none
-- **Modified:** 2026-06-05T16:02:51
+- **Modified:** 2026-06-05T16:52:53
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1215224928197756
 
-
-## Changes This Sync
-
-- NEW: BSTD-023 — Create the studio brand voice
-- NEW: BSTD-019 — Fix VVV shutdown asking for password
 ## Immediate Priorities
 
 | ID | Task | Status |
