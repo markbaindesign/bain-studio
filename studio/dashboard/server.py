@@ -7,7 +7,7 @@ import requests
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from flask import Flask, jsonify, send_file
+from flask import Flask, jsonify, send_file, request
 from dotenv import load_dotenv
 
 HERE = Path(__file__).resolve().parent
@@ -25,6 +25,7 @@ GNUCASH_PATH = os.getenv('GNUCASH_FILE', os.getenv(
 ))
 HARVEST_TOKEN      = os.getenv('HARVEST_TOKEN', '')
 HARVEST_ACCOUNT_ID = os.getenv('HARVEST_ACCOUNT_ID', '')
+PIPELINE_API_URL   = os.getenv('PIPELINE_API_URL', 'http://localhost:5050')
 
 # FX rate cache — refreshed at most once per hour
 _fx_cache = {'rates': None, 'fetched_at': None, 'source': None}
@@ -72,6 +73,47 @@ def api_kf():
     import json
     data = json.loads(KF_SNAPSHOT.read_text())
     return jsonify(data)
+
+
+@app.route('/api/pipeline')
+def api_pipeline():
+    days = request.args.get('days', '7')
+    try:
+        r = requests.get(f'{PIPELINE_API_URL}/api/status', params={'days': days}, timeout=5)
+        r.raise_for_status()
+        return jsonify(r.json())
+    except requests.exceptions.ConnectionError:
+        return jsonify({'error': f'Pipeline API not reachable at {PIPELINE_API_URL}'}), 503
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+
+@app.route('/api/pipeline/briefs')
+def api_pipeline_briefs():
+    try:
+        r = requests.get(f'{PIPELINE_API_URL}/api/briefs', timeout=5)
+        r.raise_for_status()
+        return jsonify(r.json())
+    except requests.exceptions.ConnectionError:
+        return jsonify({'error': f'Pipeline API not reachable at {PIPELINE_API_URL}'}), 503
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+
+@app.route('/api/pipeline/connects/<thread_id>', methods=['POST'])
+def api_pipeline_connects(thread_id):
+    try:
+        r = requests.post(
+            f'{PIPELINE_API_URL}/connects/{thread_id}',
+            json=request.get_json(),
+            timeout=5,
+        )
+        r.raise_for_status()
+        return jsonify(r.json())
+    except requests.exceptions.ConnectionError:
+        return jsonify({'error': 'Pipeline API not reachable'}), 503
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
 
 
 @app.route('/api/data')
