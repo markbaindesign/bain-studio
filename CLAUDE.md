@@ -52,6 +52,7 @@ Studio output (specs, finance, pipeline, portfolio, briefs) lives in Dropbox, no
 |--------|------|------|
 | MCF | Mhairi McFarlane | `/home/bain/code/misc/js/astrojs/client/mhairi_mcf` |
 | PIPE | Upwork Pipeline | `/media/data/dev/misc/upwork-proposals` |
+| DOM | Premium Domains | `/media/data/dev/misc/premium_domains` |
 | NORE | The Nature of Real Estate | `/home/bain/code/vvv/clients/www/nore` |
 
 ## Skills
