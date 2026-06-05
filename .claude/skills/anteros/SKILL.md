@@ -18,9 +18,9 @@ Accept either:
 
 ### 2. Load the brand reference
 
-For client work: read `context/pipeline/design/{slug}-aphrodite-*.md` for the brand stance, type choices, and colour decisions.
+For client work: read `{CONTENT_DIR}/pipeline/design/{slug}-aphrodite-*.md` for the brand stance, type choices, and colour decisions.
 
-For studio output (own website, social posts, proposals): read `context/internal/brand.md` if it exists. If it doesn't, apply the studio's standing standards: specific/honest voice, no marketing language, no em dashes, no filler.
+For studio output (own website, social posts, proposals): read `{CONTENT_DIR}/internal/brand.md` if it exists. If it doesn't, apply the studio's standing standards: specific/honest voice, no marketing language, no em dashes, no filler.
 
 ### 3. Run the brand check
 

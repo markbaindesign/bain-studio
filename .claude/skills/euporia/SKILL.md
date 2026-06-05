@@ -16,9 +16,9 @@ Accept a quarter argument (e.g. `Q1 2026` = Jan–Mar, `Q2 2026` = Apr–Jun). I
 
 ### 2. Read financial data
 
-Read `context/finance/accounts.json` (GnuCash snapshot). If more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh.
+Read `{CONTENT_DIR}/finance/accounts.json` (GnuCash snapshot). If more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh.
 
-Read `context/finance/invoices.md` for all invoices issued in the quarter.
+Read `{CONTENT_DIR}/finance/invoices.md` for all invoices issued in the quarter.
 
 ### 3. Modelo 303 — IVA
 
@@ -55,7 +55,7 @@ Deadline: same as 303 — 20th of the month following quarter end.
 
 ### 5. Output
 
-Save to `context/finance/tax-{YYYY}-Q{N}.md`. Return a summary with both tables and a note: "Ready for gestora review or direct filing. Deadline: {date}."
+Save to `{CONTENT_DIR}/finance/tax-{YYYY}-Q{N}.md`. Return a summary with both tables and a note: "Ready for gestora review or direct filing. Deadline: {date}."
 
 ### Guard rails
 

@@ -12,7 +12,7 @@ Erichthonius bridges strategy and build. He turns a brief into numbers by readin
 
 ### 1. Load the brief
 
-Read `context/pipeline/briefs/{slug}.md` if a slug is provided, or use the scope description passed inline.
+Read `{CONTENT_DIR}/pipeline/briefs/{slug}.md` if a slug is provided, or use the scope description passed inline.
 
 Extract: primary tech stack, scope signals (e.g. WooCommerce site, custom plugin, CMS migration), sector, rough size.
 

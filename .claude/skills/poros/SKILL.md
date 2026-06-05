@@ -21,7 +21,7 @@ If the project is not in Mnemosyne, stop and ask Mark to log it first via `/log-
 
 ### 2. Load rate and tax configuration
 
-Read `context/finance/rates.yaml` for: studio rate, Upwork rate, IVA rate (21%), IRPF rate (15%).
+Read `{CONTENT_DIR}/finance/rates.yaml` for: studio rate, Upwork rate, IVA rate (21%), IRPF rate (15%).
 
 ### 3. Determine tax treatment
 
@@ -65,7 +65,7 @@ Referencia: {invoice number}
 
 ### 5. Log the invoice
 
-Append to `context/finance/invoices.md` (create if it doesn't exist):
+Append to `{CONTENT_DIR}/finance/invoices.md` (create if it doesn't exist):
 
 ```
 | {Invoice #} | {YYYY-MM-DD} | {Client} | {Project} | €{total} | pending |

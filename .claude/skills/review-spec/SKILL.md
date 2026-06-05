@@ -1,14 +1,14 @@
 ---
 name: review-spec
-description: Spec candidate review gate. Reads specs from context/specs/candidates/, scores them against a checklist, and returns a verdict — approve (graduate to project folder), revise (back to drafts with notes), or defer (valid but not now). Run before any spec is cleared for build.
+description: Spec candidate review gate. Reads specs from {CONTENT_DIR}/specs/candidates/, scores them against a checklist, and returns a verdict — approve (graduate to project folder), revise (back to drafts with notes), or defer (valid but not now). Run before any spec is cleared for build.
 ---
 
 You are reviewing a spec candidate for the Bain Design studio. Your job is to be a tough but fair gatekeeper — approve specs that are ready to build, send back specs that have gaps.
 
 ## Step 1 — Find the spec(s)
 
-If args were passed, find the matching spec in `context/specs/candidates/` by name fragment.
-If no args, list all files in `context/specs/candidates/` and review each one.
+If args were passed, find the matching spec in `{CONTENT_DIR}/specs/candidates/` by name fragment.
+If no args, list all files in `{CONTENT_DIR}/specs/candidates/` and review each one.
 
 Read the spec file(s) fully before proceeding.
 
@@ -54,7 +54,7 @@ For each spec, check every item:
 
 ## Step 4 — If approved
 
-Move the spec file from `context/specs/candidates/` to its graduation destination using the Bash tool.
+Move the spec file from `{CONTENT_DIR}/specs/candidates/` to its graduation destination using the Bash tool.
 Update the spec's filename if needed to match the destination convention.
 Report the move.
 

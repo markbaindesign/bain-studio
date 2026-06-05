@@ -13,9 +13,9 @@ Nike structures victories. She writes scope documents and proposals in the studi
 ### 1. Load context
 
 If a brief slug is provided, read:
-- `context/pipeline/briefs/{slug}.md`
-- `context/pipeline/athena/{slug}-*.md` (latest Athena report, for scope and estimates)
-- `context/snippets/proposal-intros.md`, `context/snippets/closing-lines.md`, `context/snippets/milestones.md`
+- `{CONTENT_DIR}/pipeline/briefs/{slug}.md`
+- `{CONTENT_DIR}/pipeline/athena/{slug}-*.md` (latest Athena report, for scope and estimates)
+- `{CONTENT_DIR}/snippets/proposal-intros.md`, `{CONTENT_DIR}/snippets/closing-lines.md`, `{CONTENT_DIR}/snippets/milestones.md`
 
 If content is pasted inline, use it directly.
 
@@ -40,4 +40,4 @@ Produce the requested output. Common modes:
 
 ### Output
 
-Return the full written output. If saving to file, write to `context/pipeline/proposals/{slug}-{YYYY-MM-DD}.md`.
+Return the full written output. If saving to file, write to `{CONTENT_DIR}/pipeline/proposals/{slug}-{YYYY-MM-DD}.md`.

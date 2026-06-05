@@ -13,7 +13,7 @@ Generate the three harvest outputs for a completed project and update Mnemosyne.
 
 ### 1. Identify the project
 
-If invoked with a project name argument, use it. Otherwise read `context/portfolio/project-database.csv` and show the last 5 entries — ask which project to harvest.
+If invoked with a project name argument, use it. Otherwise read `{CONTENT_DIR}/portfolio/project-database.csv` and show the last 5 entries — ask which project to harvest.
 
 ### 2. Read the project record
 
@@ -33,7 +33,7 @@ Do not invent details not present in the data or these files.
 
 ### 4. Generate the case study
 
-Create `context/portfolio/harvest/{slug}/case-study.md`:
+Create `{CONTENT_DIR}/portfolio/harvest/{slug}/case-study.md`:
 
 ```
 # {Project Name}
@@ -61,7 +61,7 @@ Keep it under 500 words. Studio voice: specific, honest, no marketing language.
 
 ### 5. Generate the blog post
 
-Create `context/portfolio/harvest/{slug}/blog-post.md`:
+Create `{CONTENT_DIR}/portfolio/harvest/{slug}/blog-post.md`:
 
 Rules:
 - Pick **one** interesting thing: a technique used, a constraint overcome, a decision that worked. Not a summary.
@@ -75,7 +75,7 @@ Rules:
 
 If Testimonial Status is already `received` or `published`, skip this step and note it in the report.
 
-Otherwise create `context/portfolio/harvest/{slug}/testimonial-request.md`:
+Otherwise create `{CONTENT_DIR}/portfolio/harvest/{slug}/testimonial-request.md`:
 
 ```
 Subject: {Project Name} — quick favour?

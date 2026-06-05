@@ -27,7 +27,7 @@ If the signal is ambiguous, note the ambiguity and classify as the most likely t
 
 ### 2. Check for known client
 
-Scan `context/portfolio/project-database.csv` for the client name or company. If found, note the project history: year, outcome grade, would-repeat flag. This is relevant context for qualification.
+Scan `{CONTENT_DIR}/portfolio/project-database.csv` for the client name or company. If found, note the project history: year, outcome grade, would-repeat flag. This is relevant context for qualification.
 
 ### 3. Qualify (RFQs and general enquiries only)
 
@@ -86,7 +86,7 @@ Note it and discard. No draft reply needed.
 
 ### 5. Log to triage log
 
-Append an entry to `context/pipeline/triage-log.md` using this format:
+Append an entry to `{CONTENT_DIR}/pipeline/triage-log.md` using this format:
 
 ```markdown
 ---
@@ -107,7 +107,7 @@ One paragraph: what they're asking for and any notable context.
 What was produced: Athena brief / investigation questions / decline draft / routing note.
 ```
 
-If `context/pipeline/triage-log.md` does not exist, create it with a heading `# Triage Log` before the first entry.
+If `{CONTENT_DIR}/pipeline/triage-log.md` does not exist, create it with a heading `# Triage Log` before the first entry.
 
 ### 6. Output
 
@@ -142,7 +142,7 @@ Present to Mark:
 - [Things that need clarifying before scope can be set]
 ```
 
-Athena briefs are saved to `context/pipeline/briefs/[slug]-[date].md`.
+Athena briefs are saved to `{CONTENT_DIR}/pipeline/briefs/[slug]-[date].md`.
 
 ### Decline draft
 
