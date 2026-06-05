@@ -41,6 +41,19 @@ python3 studio/sync.py --create --name "Client Name" --prefix "CLN" --path /path
 | PIPE | Upwork Pipeline | `/media/data/dev/misc/upwork-proposals` |
 | NORE | The Nature of Real Estate | `/home/bain/code/vvv/clients/www/nore` |
 
+## Skills
+
+Skills created while working in this project live in `.claude/skills/` at the project root, not in `~/.claude/skills/` (global). This keeps studio tooling versioned and committed with the repo.
+
+**Global exceptions** (kept in `~/.claude/skills/` because they're used in client project contexts):
+- `grill-me` — general planning, useful everywhere
+- `web-researcher` — general research
+- `wp-css-override` — used in client WordPress projects
+- `wp-plugin-expert` — used in client WordPress projects
+- `copywriter` — used for client copy
+
+All other skills must be explicitly noted as global exceptions when created.
+
 ## Asana access rule
 
 The PM agent must **never use Asana MCP tools** to make changes (the MCP uses your human OAuth account). All Asana mutations go through `sync.py`, which uses the bainbot PAT. The Asana MCP is disabled for this project via `disabledMcpjsonServers` in `.claude/settings.json`.
