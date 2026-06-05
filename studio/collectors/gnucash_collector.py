@@ -24,7 +24,7 @@ import gnucash_parser
 
 CONTENT_DIR  = Path(os.getenv("STUDIO_CONTENT_DIR", Path(__file__).parents[2] / "context"))
 GNUCASH_DIR  = Path(os.getenv("GNUCASH_DIR", '/media/data/Dropbox/Work/Admin/Financial/Accounting/GNUCash'))
-GNUCASH_FILE = GNUCASH_DIR / 'accounts.bu.gnucash'
+GNUCASH_FILE = Path(os.getenv("GNUCASH_FILE", GNUCASH_DIR / 'accounts.gnucash'))
 DASHBOARD_URL = 'http://localhost:5555/api/data'
 OUTPUT_FILE  = CONTENT_DIR / 'finance' / 'accounts.json'
 
