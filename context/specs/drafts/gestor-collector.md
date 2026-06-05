@@ -1,3 +1,5 @@
+status: defer
+
 # Gestor Collector — Spec
 
 A CLI tool that collects invoices and expenses from all sources each quarter and files them into a Dropbox folder ready for the gestor.
