@@ -275,11 +275,24 @@ def find_pending():
     return pending
 
 
+def postman_sweep():
+    """Dispatch any pending postman messages across all project inboxes."""
+    try:
+        import sys
+        sys.path.insert(0, str(PROJECT_ROOT / 'studio'))
+        from postman import sweep
+        n = sweep()
+        print(f"{LOG_PREFIX}: postman sweep — {n} message(s) dispatched")
+    except Exception as e:
+        print(f"{LOG_PREFIX}: postman sweep error — {e}", file=sys.stderr)
+
+
 def main():
     pending = find_pending()
 
     if not pending:
         print(f"{LOG_PREFIX}: inbox empty, nothing to route")
+        postman_sweep()
         return
 
     print(f"{LOG_PREFIX}: {len(pending)} pending signal(s)")
@@ -335,6 +348,7 @@ def main():
         ok += 1
 
     print(f"{LOG_PREFIX}: done — {ok} triaged, {skipped} skipped, {failed} failed — total ${total_cost:.3f}")
+    postman_sweep()
 
 
 if __name__ == "__main__":

@@ -13,3 +13,4 @@ studio/.gmail_state.json
 studio/collectors/gmail_watch.log
 context/foundation-wordpress-prospecting-plan.md
 context/outreach/
+.claude/scheduled_tasks.lock

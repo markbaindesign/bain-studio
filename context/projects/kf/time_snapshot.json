@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-02T09:58:28.238561+00:00",
+  "generated_at": "2026-06-04T05:33:12.616892+00:00",
   "project": "Khyentse Foundation",
   "harvest_project_id": 46865825,
   "year": 2026,
@@ -15,20 +15,20 @@
   "paced_monthly_target": 15.62,
   "completed_hours": 75.06,
   "months_remaining": 7,
-  "year_hours_logged": 76.14,
+  "year_hours_logged": 79.0,
   "year_target_to_date": 90.68,
-  "year_variance": -14.54,
+  "year_variance": -11.68,
   "months_elapsed": 6,
   "current_month": "2026-06",
-  "month_hours_logged": 1.08,
+  "month_hours_logged": 3.94,
   "month_hours_target": 15.62,
-  "month_variance": -14.54,
+  "month_variance": -11.68,
   "by_month": {
     "2026-01": 2.15,
     "2026-02": 23.59,
     "2026-03": 26.25,
     "2026-04": 12.95,
     "2026-05": 10.12,
-    "2026-06": 1.08
+    "2026-06": 3.94
   }
 }

@@ -1,0 +1,329 @@
+{
+  "generated_at": "2026-06-05T06:10:02.817234+00:00",
+  "fx": {
+    "USD_TO_EUR": 0.859107,
+    "GBP_TO_EUR": 1.156203,
+    "source": "frankfurter.app (2026-06-04)"
+  },
+  "bank_balances": [
+    {
+      "name": "BBVA (EUR) ...1735",
+      "balance": 1470.84,
+      "currency": "EUR",
+      "eur": 1470.84
+    },
+    {
+      "name": "Funds Upwork (USD)",
+      "balance": 1012.01,
+      "currency": "USD",
+      "eur": 869.42
+    },
+    {
+      "name": "PayPal:PayPal (USD)",
+      "balance": 15.0,
+      "currency": "USD",
+      "eur": 12.89
+    },
+    {
+      "name": "Wise (Personal):Wise (EUR)",
+      "balance": 199.89,
+      "currency": "EUR",
+      "eur": 199.89
+    },
+    {
+      "name": "Wise (Personal):Wise (GBP)",
+      "balance": 53.18,
+      "currency": "GBP",
+      "eur": 61.49
+    },
+    {
+      "name": "Wise (Personal):Wise (USD)",
+      "balance": 1234.73,
+      "currency": "USD",
+      "eur": 1060.77
+    }
+  ],
+  "total_eur": 3675.29,
+  "monthly_pl_recent": [
+    {
+      "month": "2026-03",
+      "income": 1319.61,
+      "expenses": 2455.38,
+      "draw": 2566.67,
+      "net": -3702.44
+    },
+    {
+      "month": "2026-04",
+      "income": 4181.02,
+      "expenses": 3045.0,
+      "draw": 2566.67,
+      "net": -1430.64
+    },
+    {
+      "month": "2026-05",
+      "income": 0.0,
+      "expenses": 123.42,
+      "draw": 2566.67,
+      "net": -2690.09
+    }
+  ],
+  "current_month": null,
+  "breakeven_allin": 4115.0,
+  "fixed_costs": 717.38,
+  "owner_draw": 2566.67,
+  "upcoming_all": [
+    {
+      "label": "Cloudways Hosting",
+      "date": "2026-06-07",
+      "amount": 10.11,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 2
+    },
+    {
+      "label": "Crashplan Backup",
+      "date": "2026-06-10",
+      "amount": 44.08,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 5
+    },
+    {
+      "label": "Asana",
+      "date": "2026-06-12",
+      "amount": 26.98,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 7
+    },
+    {
+      "label": "Algolia",
+      "date": "2026-06-19",
+      "amount": 4.04,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 14
+    },
+    {
+      "label": "Claude (Anthropic)",
+      "date": "2026-06-23",
+      "amount": 18.0,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 18
+    },
+    {
+      "label": "Aut\u00f3nomos (Social Security)",
+      "date": "2026-06-29",
+      "amount": 379.97,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 24
+    },
+    {
+      "label": "Owner's Draw",
+      "date": "2026-06-30",
+      "amount": 2567,
+      "currency": "EUR",
+      "type": "draw",
+      "days": 25
+    },
+    {
+      "label": "Movistar (Phone/Internet)",
+      "date": "2026-07-01",
+      "amount": 102.81,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 26
+    },
+    {
+      "label": "Mod 130 (Income Tax)",
+      "date": "2026-07-20",
+      "amount": 1834.26,
+      "currency": "EUR",
+      "type": "tax",
+      "days": 45
+    },
+    {
+      "label": "Mod 111 (Withholding)",
+      "date": "2026-07-20",
+      "amount": 30.0,
+      "currency": "EUR",
+      "type": "tax",
+      "days": 45
+    },
+    {
+      "label": "IVA",
+      "date": "2026-07-20",
+      "amount": 315.38,
+      "currency": "EUR",
+      "type": "tax",
+      "days": 45
+    },
+    {
+      "label": "Gestor (Accountant)",
+      "date": "2026-07-30",
+      "amount": 212.0,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 55
+    },
+    {
+      "label": "Owner's Draw",
+      "date": "2026-07-31",
+      "amount": 2567,
+      "currency": "EUR",
+      "type": "draw",
+      "days": 56
+    },
+    {
+      "label": "Owner's Draw",
+      "date": "2026-08-31",
+      "amount": 2567,
+      "currency": "EUR",
+      "type": "draw",
+      "days": 87
+    }
+  ],
+  "upcoming_30d": [
+    {
+      "label": "Cloudways Hosting",
+      "date": "2026-06-07",
+      "amount": 10.11,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 2
+    },
+    {
+      "label": "Crashplan Backup",
+      "date": "2026-06-10",
+      "amount": 44.08,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 5
+    },
+    {
+      "label": "Asana",
+      "date": "2026-06-12",
+      "amount": 26.98,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 7
+    },
+    {
+      "label": "Algolia",
+      "date": "2026-06-19",
+      "amount": 4.04,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 14
+    },
+    {
+      "label": "Claude (Anthropic)",
+      "date": "2026-06-23",
+      "amount": 18.0,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 18
+    },
+    {
+      "label": "Aut\u00f3nomos (Social Security)",
+      "date": "2026-06-29",
+      "amount": 379.97,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 24
+    },
+    {
+      "label": "Owner's Draw",
+      "date": "2026-06-30",
+      "amount": 2567,
+      "currency": "EUR",
+      "type": "draw",
+      "days": 25
+    },
+    {
+      "label": "Movistar (Phone/Internet)",
+      "date": "2026-07-01",
+      "amount": 102.81,
+      "currency": "EUR",
+      "type": "fixed",
+      "days": 26
+    }
+  ],
+  "upcoming_30d_total": 3152.99,
+  "balance_after_30d": 522.3,
+  "recent_income": [
+    {
+      "date": "2026-04-06",
+      "desc": "Cashback",
+      "eur": 1.07,
+      "cur": "USD",
+      "amount": 1.24
+    },
+    {
+      "date": "2026-04-06",
+      "desc": "Cashback",
+      "eur": 0.09,
+      "cur": "GBP",
+      "amount": 0.08
+    },
+    {
+      "date": "2026-04-02",
+      "desc": "Khyentse Foundation",
+      "eur": 859.11,
+      "cur": "USD",
+      "amount": 1000.0
+    },
+    {
+      "date": "2026-04-02",
+      "desc": "Jaume Beato",
+      "eur": 718.99,
+      "cur": "EUR",
+      "amount": 718.99
+    },
+    {
+      "date": "2026-04-02",
+      "desc": "Draw deposit for JBP Project",
+      "eur": 2340.0,
+      "cur": "EUR",
+      "amount": 2340.0
+    },
+    {
+      "date": "2026-04-02",
+      "desc": "Retainer draw",
+      "eur": 261.77,
+      "cur": "USD",
+      "amount": 304.7
+    },
+    {
+      "date": "2026-03-27",
+      "desc": "Part-Time WordPress Technical Assistant (Light Ongoing Support & Cleanup)",
+      "eur": 297.83,
+      "cur": "USD",
+      "amount": 346.67
+    },
+    {
+      "date": "2026-03-26",
+      "desc": "Upwork Earnings for Mar 16-Mar 22, 2026",
+      "eur": 268.04,
+      "cur": "USD",
+      "amount": 312.0
+    },
+    {
+      "date": "2026-03-20",
+      "desc": "Part-Time WordPress Technical Assistant (Light Ongoing Support & Cleanup)",
+      "eur": 297.83,
+      "cur": "USD",
+      "amount": 346.67
+    },
+    {
+      "date": "2026-03-20",
+      "desc": "Alex Wright",
+      "eur": 67.01,
+      "cur": "USD",
+      "amount": 78.0
+    }
+  ],
+  "harvest": {}
+}
