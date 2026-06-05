@@ -112,21 +112,45 @@ class ProjectConfig:
 PROJECTS_FILE = STUDIO_DIR / "projects.json"
 
 
-def discover_projects(filter_prefix=None) -> list:
+def load_projects_registry() -> list:
+    """Load projects.json, migrating flat path arrays to object format."""
     if not PROJECTS_FILE.exists():
-        log.error(f"No projects.json found at {PROJECTS_FILE}. Copy projects.example.json to get started.")
         return []
-
     try:
-        roots = json.loads(PROJECTS_FILE.read_text())
+        data = json.loads(PROJECTS_FILE.read_text())
     except Exception as e:
         log.error(f"Could not parse {PROJECTS_FILE}: {e}")
+        return []
+    # Migrate flat list of strings → list of {path, status} objects
+    migrated = False
+    result = []
+    for entry in data:
+        if isinstance(entry, str):
+            result.append({"path": entry, "status": "active"})
+            migrated = True
+        else:
+            result.append(entry)
+    if migrated:
+        PROJECTS_FILE.write_text(json.dumps(result, indent=2) + "\n")
+        log.info("projects.json migrated to object format")
+    return result
+
+
+def discover_projects(filter_prefix=None) -> list:
+    registry = load_projects_registry()
+    if not registry:
+        log.error(f"No projects.json found at {PROJECTS_FILE}. Copy projects.example.json to get started.")
         return []
 
     projects = []
     seen_gids = set()
 
-    for raw in roots:
+    for entry in registry:
+        raw    = entry["path"]
+        status = entry.get("status", "active")
+        # Skip paused and archived projects unless explicitly filtered by prefix
+        if status in ("paused", "archived") and not filter_prefix:
+            continue
         root = Path(raw).expanduser()
         claude_md = root / "CLAUDE.md"
         if not claude_md.exists():
@@ -968,10 +992,11 @@ def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_r
         else:
             claude_md.write_text(f"# {name}\n{asana_block}")
 
-        roots = json.loads(PROJECTS_FILE.read_text())
-        if str(path) not in roots:
-            roots.append(str(path))
-            PROJECTS_FILE.write_text(json.dumps(roots, indent=2) + "\n")
+        registry = load_projects_registry()
+        paths_in_registry = [e["path"] for e in registry]
+        if str(path) not in paths_in_registry:
+            registry.append({"path": str(path), "status": "active"})
+            PROJECTS_FILE.write_text(json.dumps(registry, indent=2) + "\n")
             log.info(f"  Registered in {PROJECTS_FILE}")
     else:
         log.info(f"  [DRY-RUN] Would scaffold {path}/.claude/ and update CLAUDE.md + projects.json")
