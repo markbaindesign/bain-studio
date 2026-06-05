@@ -921,6 +921,43 @@ def write_registry(projects: list, results: dict):
 
 
 # ---------------------------------------------------------------------------
+# Task creation (--create-task)
+# ---------------------------------------------------------------------------
+
+def create_task(project_gid: str, name: str, notes: str = '', assignee_gid: str = None,
+                depends_on_gid: str = None, dry_run: bool = False) -> str:
+    """
+    Create a task in the given Asana project via bainbot, return the new task GID.
+    Optionally set it as a dependency of depends_on_gid.
+    """
+    payload = {
+        "data": {
+            "name": name,
+            "projects": [project_gid],
+            "workspace": WORKSPACE_GID,
+        }
+    }
+    if notes:
+        payload["data"]["notes"] = notes
+    if assignee_gid:
+        payload["data"]["assignee"] = assignee_gid
+
+    if dry_run:
+        log.info(f"  [DRY-RUN] Would create task: {name!r}")
+        return "dry-run-gid"
+
+    resp = _post("/tasks", payload)
+    new_gid = resp["data"]["gid"]
+    log.info(f"  Task created: {name!r} ({new_gid})")
+
+    if depends_on_gid:
+        _post(f"/tasks/{depends_on_gid}/addDependencies", {"data": {"dependencies": [new_gid]}})
+        log.info(f"  Linked as dependency of {depends_on_gid}")
+
+    return new_gid
+
+
+# ---------------------------------------------------------------------------
 # Project scaffold (--create)
 # ---------------------------------------------------------------------------
 
@@ -1058,6 +1095,16 @@ def main():
                         help="Extra workspace member GIDs to add, comma-separated")
     parser.add_argument("--yes", action="store_true",
                         help="Skip the task-deletion confirmation gate (for scripted use)")
+    parser.add_argument("--create-task", action="store_true",
+                        help="Create a new task in a project (use with --project, --task-name)")
+    parser.add_argument("--task-name", metavar="NAME",
+                        help="Task name (required with --create-task)")
+    parser.add_argument("--task-notes", metavar="NOTES", default="",
+                        help="Task notes/description (optional with --create-task)")
+    parser.add_argument("--task-assignee", metavar="GID", default="",
+                        help="Assignee GID (optional; defaults to Mark's GID if not set)")
+    parser.add_argument("--task-depends-on", metavar="GID", default="",
+                        help="GID of the task this new task unblocks (optional)")
     args = parser.parse_args()
 
     if not ASANA_PAT:
@@ -1081,6 +1128,28 @@ def main():
             dry_run=args.dry_run,
             yes=args.yes,
         )
+        sys.exit(0)
+
+    if args.create_task:
+        if not args.task_name:
+            parser.error("--create-task requires --task-name")
+        if not args.project:
+            parser.error("--create-task requires --project (the task prefix, e.g. BD)")
+        projects = discover_projects(filter_prefix=args.project)
+        if not projects:
+            log.error(f"No project found with prefix '{args.project}'.")
+            sys.exit(1)
+        proj = projects[0]
+        assignee = args.task_assignee or USER_GID
+        gid = create_task(
+            project_gid=proj.gid,
+            name=args.task_name,
+            notes=args.task_notes,
+            assignee_gid=assignee,
+            depends_on_gid=args.task_depends_on or None,
+            dry_run=args.dry_run,
+        )
+        print(gid)
         sys.exit(0)
 
     if args.setup:
