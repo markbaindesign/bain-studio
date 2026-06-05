@@ -13,7 +13,7 @@ Athena is the second Olympus god. She receives a qualified brief (marked Pursue 
 
 ### 1. Load the brief
 
-Read the brief from `context/pipeline/briefs/{slug}.md`. If the briefing prompt does not specify a slug, ask Mark to provide one or paste the brief inline.
+Read the brief from `{CONTENT_DIR}/pipeline/briefs/{slug}.md`. If the briefing prompt does not specify a slug, ask Mark to provide one or paste the brief inline.
 
 The brief format is structured YAML + markdown:
 
@@ -36,7 +36,7 @@ timeline: [3 weeks | 6 months | Open]
 [Questions to clarify scope before estimation]
 ```
 
-If you cannot find the brief file, ask for it. If it is pasted inline, save it to `context/pipeline/briefs/{slug}.md` before proceeding.
+If you cannot find the brief file, ask for it. If it is pasted inline, save it to `{CONTENT_DIR}/pipeline/briefs/{slug}.md` before proceeding.
 
 ### 2. Pallas: Research the client and context
 
@@ -45,7 +45,7 @@ Perform a web search for:
 2. Their current tech stack (CMS, hosting provider, plugins visible in headers, APIs mentioned)
 3. Any relevant competitors or adjacent projects
 
-Record findings in the Research section. Cross-reference with `context/portfolio/project-database.csv` (Mnemosyne) to find prior studio projects in the same sector or with the same tech stack. Note whether this is repeat business (same client) or a new sector/tech for the studio.
+Record findings in the Research section. Cross-reference with `{CONTENT_DIR}/portfolio/project-database.csv` (Mnemosyne) to find prior studio projects in the same sector or with the same tech stack. Note whether this is repeat business (same client) or a new sector/tech for the studio.
 
 ### 3. Erichthonius: Qualify and estimate
 
@@ -66,7 +66,7 @@ Produce a fit score (1–10) and a qualification verdict:
 - **Watch** — Interesting but not now. Recommend revisiting in N weeks (state timeframe) when capacity/market conditions change.
 - **Pass** — Decline. State the reason clearly (outside tech fit, insufficient budget, timeline mismatch, risk too high).
 
-**Estimation:** Find 2–4 comparable projects in `context/portfolio/project-database.csv` with:
+**Estimation:** Find 2–4 comparable projects in `{CONTENT_DIR}/portfolio/project-database.csv` with:
 - Same primary tech (e.g. WordPress + WooCommerce)
 - Similar scope signals (e.g. e-commerce site, CMS migration, custom plugin)
 - Ideally, same or adjacent sector
@@ -98,19 +98,19 @@ Phrase questions as open (not yes/no). For example: "What does 'SEO-ready' look 
 
 ### 5. Nike: Proposal draft
 
-Write the full proposal in plain text following `context/AGENT_INSTRUCTIONS/FORMAT.md`, `STYLE.md`, and `ACCURACY.md`. Use approved snippets from `context/snippets/` (intros, closings, QA answers, milestones).
+Write the full proposal in plain text following `{CONTENT_DIR}/AGENT_INSTRUCTIONS/FORMAT.md`, `STYLE.md`, and `ACCURACY.md`. Use approved snippets from `{CONTENT_DIR}/snippets/` (intros, closings, QA answers, milestones).
 
 **Mandatory sections:**
 
-1. **SKILL VERIFICATION table** — Required by `ACCURACY.md`. For each claimed skill, cite where it was used (e.g. "React: {Project A} (2024)"). Skills must exist in `context/portfolio/project-database.csv` or `context/profile/PROFILE.md`. Never invent.
+1. **SKILL VERIFICATION table** — Required by `ACCURACY.md`. For each claimed skill, cite where it was used (e.g. "React: {Project A} (2024)"). Skills must exist in `{CONTENT_DIR}/portfolio/project-database.csv` or `{CONTENT_DIR}/profile/PROFILE.md`. Never invent.
 
 2. **PROJECT BRIEF** — Client, project scope, key requirements, tech stack, timeline, deliverables.
 
-3. **PROPOSAL OUTPUT** — Plain text, 5,000 char limit. Opening hook from `context/snippets/proposal-intros.md`. Scope summary, approach, timeline, investment. Closing from `context/snippets/closing-lines.md`. Sign-off.
+3. **PROPOSAL OUTPUT** — Plain text, 5,000 char limit. Opening hook from `{CONTENT_DIR}/snippets/proposal-intros.md`. Scope summary, approach, timeline, investment. Closing from `{CONTENT_DIR}/snippets/closing-lines.md`. Sign-off.
 
-4. **SCREENING QUESTIONS** — Separate section at end. Pre-approved answers from `context/snippets/questions-and-answers.md` only; never invent alternative answers.
+4. **SCREENING QUESTIONS** — Separate section at end. Pre-approved answers from `{CONTENT_DIR}/snippets/questions-and-answers.md` only; never invent alternative answers.
 
-5. **MILESTONES** (if fixed-price) — Phases with deliverables and dates. Use language from `context/snippets/milestones.md`.
+5. **MILESTONES** (if fixed-price) — Phases with deliverables and dates. Use language from `{CONTENT_DIR}/snippets/milestones.md`.
 
 **Guard rails:**
 
@@ -123,7 +123,7 @@ Write the full proposal in plain text following `context/AGENT_INSTRUCTIONS/FORM
 
 ### 6. Gate prep — Assemble the Athena report
 
-Compile all outputs into a single markdown document. Save to `context/pipeline/athena/{slug}-{timestamp}.md` where timestamp is YYYY-MM-DD.
+Compile all outputs into a single markdown document. Save to `{CONTENT_DIR}/pipeline/athena/{slug}-{timestamp}.md` where timestamp is YYYY-MM-DD.
 
 Format:
 
@@ -189,7 +189,7 @@ Do not send the client any part of this report. This is for Mark's review only.
 ## Output format
 
 ```
-Athena Report saved to: context/pipeline/athena/{slug}-{YYYY-MM-DD}.md
+Athena Report saved to: {CONTENT_DIR}/pipeline/athena/{slug}-{YYYY-MM-DD}.md
 Status: Ready for proposal gate (Mark review)
 ```
 
@@ -199,7 +199,7 @@ Status: Ready for proposal gate (Mark review)
 
 - **The law of the gate:** Mark holds the proposal gate. Never send a proposal to a client without Mark's approval.
 - **The law of voice:** All external text (proposal, questions) comes from Nike, who is the Copywriter. Never invent alternative phrasing; use approved snippets only.
-- **The law of memory:** If this becomes a real project, record it in Mnemosyne (`context/portfolio/project-database.csv`) after completion.
+- **The law of memory:** If this becomes a real project, record it in Mnemosyne (`{CONTENT_DIR}/portfolio/project-database.csv`) after completion.
 - **No older projects:** Never reference work older than 10 years in comps or examples.
 - **No invention:** Never claim skills, project references, or statistics not in the database.
 - **Phased rollout:** Fixed-price proposals must include milestones; hourly proposals must not. This is a format requirement in ACCURACY.md.

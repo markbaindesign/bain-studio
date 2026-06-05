@@ -12,7 +12,7 @@ Check every time-sensitive obligation in the studio and surface what needs actio
 Read all of the following that exist:
 
 1. `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv` — End Date, harvest status fields (Case Study, Blog Post, Testimonial Status)
-2. `context/pipeline/triage-log.md` — inbound signals logged as "Investigate" with no follow-up recorded
+2. `{CONTENT_DIR}/pipeline/triage-log.md` — inbound signals logged as "Investigate" with no follow-up recorded
 3. Active project Asana mirrors — `.claude/asana-mirror.md` in each active project directory (paths from CLAUDE.md active projects table)
 
 Today's date is available from context. Use it to calculate days elapsed.
@@ -36,7 +36,7 @@ For every row where Testimonial Status is `requested`:
 
 ### 3. Stale triage entries
 
-In `context/pipeline/triage-log.md`, find any entry with:
+In `{CONTENT_DIR}/pipeline/triage-log.md`, find any entry with:
 - Verdict: `Investigate`
 - No follow-up action logged (no subsequent entry for the same client)
 - Date more than 5 days ago
@@ -68,7 +68,7 @@ Produce a concise sweep report. Omit any section that has nothing to flag — no
 
 ### Stale triage
 - **[Client name] ([date])** — marked Investigate, no follow-up in [N] days.
-  → Check context/pipeline/triage-log.md and decide: pursue, decline, or close.
+  → Check {CONTENT_DIR}/pipeline/triage-log.md and decide: pursue, decline, or close.
 
 ### Project health
 - **[Project]** — Asana mirror [N] days old. [X] overdue tasks.

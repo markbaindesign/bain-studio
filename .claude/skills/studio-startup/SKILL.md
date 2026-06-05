@@ -49,10 +49,10 @@ If the file doesn't exist or `spec_stubs` is 0 and `ideas` is 0, skip this secti
 
 ### 5. Check the financial pulse
 
-Read `/media/data/dev/bain-studio/context/finance/accounts.json`. Surface:
+Read `{CONTENT_DIR}/finance/accounts.json`. Surface:
 - Current bank balance (`total_eur`)
 - Cash after 30-day obligations (`balance_after_30d`)
-- Any overdue invoices from `context/finance/invoices.md`
+- Any overdue invoices from `{CONTENT_DIR}/finance/invoices.md`
 
 If `balance_after_30d` is below €1,000, flag as **low cash warning**.
 

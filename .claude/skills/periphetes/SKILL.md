@@ -34,7 +34,7 @@ Given a project brief or Hephaestus plan:
 
 7. **Deployment**: Define how code moves from local → staging → production. Git-based deploy or manual SFTP? Confirm backup frequency.
 
-Output to `context/pipeline/build/{slug}-periphetes-{YYYY-MM-DD}.md`.
+Output to `{CONTENT_DIR}/pipeline/build/{slug}-periphetes-{YYYY-MM-DD}.md`.
 
 ---
 

@@ -17,9 +17,9 @@ Every quarter, without being asked, Plutus produces three documents: a profit-pe
 
 ### 1. Load the brief (or Athena report)
 
-Read the Athena report from `context/pipeline/athena/{slug}-{date}.md`. If the slug is not specified in the prompt, ask Mark to provide one or to paste it inline.
+Read the Athena report from `{CONTENT_DIR}/pipeline/athena/{slug}-{date}.md`. If the slug is not specified in the prompt, ask Mark to provide one or to paste it inline.
 
-If an Athena report is provided inline, save it to `context/pipeline/athena/{slug}-{date}.md` before proceeding.
+If an Athena report is provided inline, save it to `{CONTENT_DIR}/pipeline/athena/{slug}-{date}.md` before proceeding.
 
 Extract the key fields from the **Estimate** section:
 - Estimated hours (low, mid, high scenario)
@@ -34,8 +34,8 @@ Extract the key fields from the **Estimate** section:
 Poros is the one who always finds a way to make things balance. He runs the financial math.
 
 **Load configuration:**
-- Read `context/finance/rates.yaml` — studio rate (€60/hr), Upwork rate ($65/hr), minimum margin threshold (30%), platform fee structure
-- Read `context/finance/overheads.yaml` — monthly fixed costs (API credits €20, autónomo quota €300)
+- Read `{CONTENT_DIR}/finance/rates.yaml` — studio rate (€60/hr), Upwork rate ($65/hr), minimum margin threshold (30%), platform fee structure
+- Read `{CONTENT_DIR}/finance/overheads.yaml` — monthly fixed costs (API credits €20, autónomo quota €300)
 
 **Calculate gross revenue:**
 - For fixed-price projects: use the **mid-range estimate** (unless Mark specifies otherwise)
@@ -92,7 +92,7 @@ Output: pre-tax revenue, IVA collected (if any), IRPF withheld (if any), autóno
 Penia is the spirit of scarcity and need — not as an enemy but as a warning. She models the risk so it never actually arrives.
 
 **Read the financial snapshot:**
-Read `context/finance/accounts.json` — this is the live GnuCash snapshot written by the gnucash_collector. If it does not exist or is more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh it.
+Read `{CONTENT_DIR}/finance/accounts.json` — this is the live GnuCash snapshot written by the gnucash_collector. If it does not exist or is more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh it.
 
 Key fields to read:
 - `total_eur` — current total bank balance in EUR
@@ -162,7 +162,7 @@ Plutus does not gate the proposal — that is Mark's domain (the Law of the Gate
 ```
 Plutus review complete.
 Margin: X% — [PASS / BELOW THRESHOLD]
-Report updated: context/pipeline/athena/{slug}-{date}.md
+Report updated: {CONTENT_DIR}/pipeline/athena/{slug}-{date}.md
 Status: Ready for proposal gate
 ```
 

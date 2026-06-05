@@ -12,7 +12,7 @@ Pallas gathers context before strategy is formed. She does not speculate — she
 
 ### 1. Identify the subject
 
-If a brief slug is provided, read `context/pipeline/briefs/{slug}.md` and extract: client name, URL, sector, and any tech mentioned.
+If a brief slug is provided, read `{CONTENT_DIR}/pipeline/briefs/{slug}.md` and extract: client name, URL, sector, and any tech mentioned.
 
 If a client name or URL is provided directly, use that.
 

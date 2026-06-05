@@ -12,7 +12,7 @@ Harmonia makes design feel inevitable rather than arranged. She defines the stru
 
 ### 1. Load context
 
-Read the Aphrodite direction document if one exists (`context/pipeline/design/{slug}-aphrodite-*.md`). Extract: visual thesis, brand stance, type choices, colour palette.
+Read the Aphrodite direction document if one exists (`{CONTENT_DIR}/pipeline/design/{slug}-aphrodite-*.md`). Extract: visual thesis, brand stance, type choices, colour palette.
 
 If no direction doc exists, ask for the brief or design context before proceeding.
 
@@ -45,4 +45,4 @@ For the key page sections likely in this project, define the expected vertical r
 
 ### Output
 
-Write to `context/pipeline/design/{slug}-harmonia-{YYYY-MM-DD}.md`. Return a layout spec document. Be specific — "16px" not "comfortable spacing."
+Write to `{CONTENT_DIR}/pipeline/design/{slug}-harmonia-{YYYY-MM-DD}.md`. Return a layout spec document. Be specific — "16px" not "comfortable spacing."

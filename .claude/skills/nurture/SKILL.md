@@ -5,7 +5,7 @@ description: Spec nursery manager. No args = triage pass over all drafts (pursue
 
 ## Mode A — Triage (no args)
 
-List every file in `context/specs/drafts/`. For each one:
+List every file in `{CONTENT_DIR}/specs/drafts/`. For each one:
 1. Read the file
 2. Print a one-line summary: `[filename] — {title} ({source tag if present})`
 3. Ask the user: **pursue**, **defer**, or **discard**?
@@ -24,7 +24,7 @@ Run `/nurture {name}` to flesh out any of these.
 
 ## Mode B — Flesh out a stub (arg = spec name fragment)
 
-Find the matching file in `context/specs/drafts/` by name fragment. Read it fully.
+Find the matching file in `{CONTENT_DIR}/specs/drafts/` by name fragment. Read it fully.
 
 Then run a focused grill-me interview to build it into a complete spec. Follow the grill-me rules:
 - One question at a time
@@ -41,8 +41,8 @@ Branches to cover (skip any already answered in the stub):
 6. **Risk** — what's the hardest part?
 7. **Prerequisites** — any one-time setup needed?
 
-When the interview is complete, rewrite the stub file as a full spec using the gestor-collector spec at `context/specs/gestor-collector.md` as a format reference.
+When the interview is complete, rewrite the stub file as a full spec using the gestor-collector spec at `{CONTENT_DIR}/specs/gestor-collector.md` as a format reference.
 
 Ask the user: "Move to candidates for `/review-spec`?"
-- Yes → move file from `context/specs/drafts/` to `context/specs/candidates/`
+- Yes → move file from `{CONTENT_DIR}/specs/drafts/` to `{CONTENT_DIR}/specs/candidates/`
 - No → leave in drafts

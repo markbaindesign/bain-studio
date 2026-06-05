@@ -27,7 +27,7 @@ Given a brief or Hephaestus build plan:
 4. Define the **deployment target**: Vercel, Cloudways, or static export — and any build pipeline requirements.
 5. Flag any **integration dependencies** on Periphetes (infrastructure must be in place before X can be built).
 
-Output to `context/pipeline/build/{slug}-caeculus-{YYYY-MM-DD}.md`.
+Output to `{CONTENT_DIR}/pipeline/build/{slug}-caeculus-{YYYY-MM-DD}.md`.
 
 ---
 

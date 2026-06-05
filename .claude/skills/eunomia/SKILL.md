@@ -13,8 +13,8 @@ Eunomia ensures things are as they were agreed. She reads the original brief and
 ### 1. Load the agreed scope
 
 Read:
-- `context/pipeline/briefs/{slug}.md` — original brief
-- `context/pipeline/athena/{slug}-*.md` — agreed deliverables from the Athena report
+- `{CONTENT_DIR}/pipeline/briefs/{slug}.md` — original brief
+- `{CONTENT_DIR}/pipeline/athena/{slug}-*.md` — agreed deliverables from the Athena report
 - Any scope change records or signed-off additions
 
 Extract the explicit deliverables list.

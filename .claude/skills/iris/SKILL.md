@@ -77,7 +77,7 @@ If the moment also suits a shorter format (a technical snippet for X/Twitter, or
 
 ### 4. Kairos: Timing note
 
-Kairos reviews the studio's recent broadcast history. Read `context/social/broadcast-log.md` if it exists.
+Kairos reviews the studio's recent broadcast history. Read `{CONTENT_DIR}/social/broadcast-log.md` if it exists.
 
 Recommend a publish window: immediately, or a specific delay (e.g., "hold until the project is officially live", "publish Thursday morning — last post was Monday"). Flag if the studio has posted within the last 48 hours — cadence matters.
 
@@ -90,12 +90,12 @@ Invoked at project close (lifecycle station 13). Iris reads all project artefact
 ### 1. Load all project artefacts
 
 Read:
-- `context/pipeline/briefs/{slug}.md` — the original brief
-- `context/pipeline/athena/{slug}-*.md` — the Athena report (scope, tech, proposal)
-- `context/pipeline/build/{slug}-hephaestus-*.md` — the build plan and any technical notes
-- `context/pipeline/design/{slug}-aphrodite-*.md` — the design direction
-- `context/pipeline/review/{slug}-themis-*.md` — the QA report
-- Any case study notes at `context/portfolio/harvest/{slug}/`
+- `{CONTENT_DIR}/pipeline/briefs/{slug}.md` — the original brief
+- `{CONTENT_DIR}/pipeline/athena/{slug}-*.md` — the Athena report (scope, tech, proposal)
+- `{CONTENT_DIR}/pipeline/build/{slug}-hephaestus-*.md` — the build plan and any technical notes
+- `{CONTENT_DIR}/pipeline/design/{slug}-aphrodite-*.md` — the design direction
+- `{CONTENT_DIR}/pipeline/review/{slug}-themis-*.md` — the QA report
+- Any case study notes at `{CONTENT_DIR}/portfolio/harvest/{slug}/`
 
 ### 2. Arke: Mine the artefacts
 
@@ -135,10 +135,10 @@ Accept the moment description and any context Mark provides. Run steps 3 (Aura) 
 
 ## Output format
 
-Save all output to `context/social/{slug}-iris-{YYYY-MM-DD}.md`. Append if the file exists; never overwrite. Update `context/social/broadcast-log.md` with any posts approved for publishing.
+Save all output to `{CONTENT_DIR}/social/{slug}-iris-{YYYY-MM-DD}.md`. Append if the file exists; never overwrite. Update `{CONTENT_DIR}/social/broadcast-log.md` with any posts approved for publishing.
 
 ```
-Iris report saved to: context/social/{slug}-iris-{YYYY-MM-DD}.md
+Iris report saved to: {CONTENT_DIR}/social/{slug}-iris-{YYYY-MM-DD}.md
 Mode: signal | harvest | draft
 Arke verdict: BROADCAST | HOLD
 Posts drafted: N

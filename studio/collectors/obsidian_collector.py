@@ -33,9 +33,10 @@ VAULT = Path(os.getenv("OBSIDIAN_VAULT", Path.home() / "dropbox/Notes"))
 _daily_subdir = os.getenv("OBSIDIAN_DAILY_SUBDIR", "")
 DAILY_DIR = VAULT / _daily_subdir if _daily_subdir else VAULT
 
+CONTENT_DIR = Path(os.getenv("STUDIO_CONTENT_DIR", Path(__file__).parent.parent.parent / "context"))
 IDEAS_DIR = VAULT / "Ideas"
 STATE_FILE = Path(__file__).parent / "obsidian_collector_state.json"
-SPEC_DRAFTS = Path(__file__).parent.parent.parent / "context/specs/drafts"
+SPEC_DRAFTS = CONTENT_DIR / "specs" / "drafts"
 STANDUP_SUMMARY = Path(__file__).parent / "obsidian_standup.json"
 
 LOG_PREFIX = f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] obsidian"

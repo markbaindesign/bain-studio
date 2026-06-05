@@ -12,7 +12,7 @@ Penia models risk so it never actually arrives. She is not an enemy — she is a
 
 ### 1. Read the financial snapshot
 
-Read `context/finance/accounts.json`. If more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh.
+Read `{CONTENT_DIR}/finance/accounts.json`. If more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh.
 
 Key fields:
 - `total_eur` — current bank balance
@@ -27,7 +27,7 @@ Key fields:
 
 Read `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv`. Identify active projects (no End Date or End Date in the future). For each, note expected invoice amount and approximate timing.
 
-Read `context/finance/invoices.md` for outstanding (unpaid) invoices.
+Read `{CONTENT_DIR}/finance/invoices.md` for outstanding (unpaid) invoices.
 
 ### 3. Build the 90-day projection
 
@@ -49,6 +49,6 @@ Model three months from today. For each month:
 
 ### 5. Output
 
-Return the projection table and a 2–3 bullet risk summary. Save to `context/finance/cashflow-{YYYY-MM}.md`.
+Return the projection table and a 2–3 bullet risk summary. Save to `{CONTENT_DIR}/finance/cashflow-{YYYY-MM}.md`.
 
 Be direct. If month 2 looks thin, say so.

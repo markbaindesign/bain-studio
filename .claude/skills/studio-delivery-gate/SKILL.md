@@ -17,7 +17,7 @@ The delivery gate is the moment between "done" and "shipped." Themis holds it op
 
 Read `CLAUDE.md` in the current project directory. Extract: project name, prefix, client name, delivery URL or artefacts.
 
-Read the Athena report from `context/pipeline/athena/{slug}-*.md` for the agreed scope and deliverables.
+Read the Athena report from `{CONTENT_DIR}/pipeline/athena/{slug}-*.md` for the agreed scope and deliverables.
 
 If no slug is provided, ask for it.
 
@@ -36,7 +36,7 @@ If **GATE BLOCKED**: stop here. List every blocker with its owner (Hephaestus or
 
 ```bash
 python3 /media/data/dev/bain-studio/studio/notifier.py \
-  "{Project} delivery gate BLOCKED — {N} issues. Review Themis report at context/pipeline/review/{slug}-themis-{date}.md" \
+  "{Project} delivery gate BLOCKED — {N} issues. Review Themis report at {CONTENT_DIR}/pipeline/review/{slug}-themis-{date}.md" \
   --priority high --sender hermes --project {prefix}
 ```
 
@@ -44,7 +44,7 @@ python3 /media/data/dev/bain-studio/studio/notifier.py \
 
 ## Step 3 — Gate package for Mark
 
-Assemble a delivery gate review package at `context/pipeline/delivery/{slug}-gate-{YYYY-MM-DD}.md`:
+Assemble a delivery gate review package at `{CONTENT_DIR}/pipeline/delivery/{slug}-gate-{YYYY-MM-DD}.md`:
 
 ```markdown
 # Delivery Gate — {Project Name} — {Date}
@@ -66,7 +66,7 @@ Themis: GATE CLEAR (or CLEAR WITH FLAGS)
 ## Delivery details
 - Live URL: {url or TBC}
 - Staging: {url}
-- Themis report: context/pipeline/review/{slug}-themis-{date}.md
+- Themis report: {CONTENT_DIR}/pipeline/review/{slug}-themis-{date}.md
 
 ## What happens next (pending your approval)
 1. Iris announces the launch (LinkedIn post, details below)
@@ -85,7 +85,7 @@ GATE DECISION: [ ] Approve delivery  [ ] Request changes
 Notify Mark:
 ```bash
 python3 /media/data/dev/bain-studio/studio/notifier.py \
-  "{Project} is at the delivery gate — Themis cleared it. Gate package at context/pipeline/delivery/{slug}-gate-{date}.md — your approval needed." \
+  "{Project} is at the delivery gate — Themis cleared it. Gate package at {CONTENT_DIR}/pipeline/delivery/{slug}-gate-{date}.md — your approval needed." \
   --priority high --sender hermes --project {prefix}
 ```
 

@@ -18,7 +18,7 @@ Accept either:
 
 ### 2. Load voice reference
 
-Read `context/internal/brand.md` or `context/snippets/` for tone guidance if available. If not available, apply standing voice rules:
+Read `{CONTENT_DIR}/internal/brand.md` or `{CONTENT_DIR}/snippets/` for tone guidance if available. If not available, apply standing voice rules:
 - First person, direct, specific
 - Sounds like a craftsperson sharing something real — not a brand performing
 - No hashtag spam (maximum 2, only if genuinely relevant)

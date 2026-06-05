@@ -12,12 +12,12 @@ Kairos is the spirit of the opportune moment — the fleeting instant that, once
 
 ### 1. Read the broadcast log
 
-Read `context/social/broadcast-log.md` if it exists. Note:
+Read `{CONTENT_DIR}/social/broadcast-log.md` if it exists. Note:
 - Date of the most recent post
 - Cadence over the last 30 days (number of posts)
 - Any patterns: what topics, what day/time performed well
 
-If the log does not exist, create it at `context/social/broadcast-log.md` with an empty template.
+If the log does not exist, create it at `{CONTENT_DIR}/social/broadcast-log.md` with an empty template.
 
 ### 2. Apply the cadence rules
 
@@ -37,7 +37,7 @@ Given the constraints, state:
 
 ### 4. Update the broadcast log
 
-When a post is confirmed for publishing, append to `context/social/broadcast-log.md`:
+When a post is confirmed for publishing, append to `{CONTENT_DIR}/social/broadcast-log.md`:
 
 ```
 | {YYYY-MM-DD} | {Post title or first line} | LinkedIn | scheduled |

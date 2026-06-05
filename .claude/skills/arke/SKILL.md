@@ -13,7 +13,7 @@ Arke watches for signals others miss. Not every commit is a post, but some momen
 ### 1. Identify the source
 
 Accept one of:
-- A project slug → read `context/pipeline/` artefacts, `TODO.md`, recent git log
+- A project slug → read `{CONTENT_DIR}/pipeline/` artefacts, `TODO.md`, recent git log
 - A description of what just happened (pasted inline)
 - "session" → scan the current conversation context for notable moments
 

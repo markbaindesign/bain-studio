@@ -16,7 +16,7 @@ Arguments: $ARGUMENTS — spec name fragment or path to spec file.
 
 Find the spec:
 - If args look like a path, read it directly
-- Otherwise search `context/specs/candidates/` then `context/specs/drafts/` for a filename matching the fragment
+- Otherwise search `{CONTENT_DIR}/specs/candidates/` then `{CONTENT_DIR}/specs/drafts/` for a filename matching the fragment
 - Read the spec fully
 
 Extract these fields (ask if missing):

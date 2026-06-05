@@ -81,13 +81,13 @@ Note: `--template` is optional — `sync.py` will use `ASANA_TEMPLATE_PROJECT_GI
 
 ## Saving the brief
 
-Save the brief to `context/specs/drafts/{slug}.md` in the bain-studio repo.
+Save the brief to `{CONTENT_DIR}/specs/drafts/{slug}.md` in the bain-studio repo.
 
 ## Handoff
 
 After saving, tell Mark:
 
-> Brief saved to `context/specs/drafts/{slug}.md`.
+> Brief saved to `{CONTENT_DIR}/specs/drafts/{slug}.md`.
 > Run `/nurture {slug}` to flesh it into a full spec, then `/review-spec` to approve it.
 > Once approved, `/commission {slug}` will scaffold the project, create the Asana project, and seed tasks.
 
