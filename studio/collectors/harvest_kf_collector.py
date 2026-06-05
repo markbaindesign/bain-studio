@@ -13,9 +13,14 @@ from pathlib import Path
 import requests
 import yaml
 
-ROOT        = Path(__file__).parents[2]
-BUDGET_FILE = ROOT / 'context' / 'projects' / 'kf' / 'budget.yaml'
-OUTPUT_FILE = ROOT / 'context' / 'projects' / 'kf' / 'time_snapshot.json'
+import os
+from dotenv import load_dotenv as _load_dotenv
+_load_dotenv(Path(__file__).parent.parent / ".env")
+
+ROOT         = Path(__file__).parents[2]
+CONTENT_DIR  = Path(os.getenv("STUDIO_CONTENT_DIR", ROOT / "context"))
+BUDGET_FILE  = CONTENT_DIR / 'projects' / 'kf' / 'budget.yaml'
+OUTPUT_FILE  = CONTENT_DIR / 'projects' / 'kf' / 'time_snapshot.json'
 ENV_FILE    = ROOT / 'studio' / 'dashboard' / '.env'
 
 BASE = 'https://api.harvestapp.com/api/v2'

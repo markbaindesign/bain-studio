@@ -25,8 +25,15 @@ python3 studio/sync.py --create --name "Client Name" --prefix "CLN" --path /path
 
 ## Content locations
 
-- Case studies: `context/portfolio/{project-slug}/` — `workshop.md` → `upwork.md` + `website.md`
-- Internal project briefs: `context/internal/`
+Studio output (specs, finance, pipeline, portfolio, briefs) lives in Dropbox, not this repo:
+
+- **Root:** `~/Dropbox/Studio/context/` (set via `STUDIO_CONTENT_DIR` in `studio/.env`)
+- Case studies: `$STUDIO_CONTENT_DIR/portfolio/{project-slug}/`
+- Internal briefs: `$STUDIO_CONTENT_DIR/internal/`
+- Specs nursery: `$STUDIO_CONTENT_DIR/specs/`
+- Finance: `$STUDIO_CONTENT_DIR/finance/`
+
+`context/` is gitignored — all content is Dropbox-synced only.
 
 ## Custom fields (workspace-level)
 
