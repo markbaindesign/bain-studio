@@ -12,7 +12,7 @@ Ghost projects are registered but going nowhere: no activity, no tasks moving, n
 
 ### 1. Read the project registry
 
-Read `/media/data/dev/bain-studio/studio/projects.json`. List all registered projects.
+Read `/media/data/dev/bain-studio/studio/projects.json`. Each entry is `{"path": "...", "status": "..."}`. List all projects where status is `active` or `featured` — skip `paused` and `archived`.
 
 ### 2. Check last sync date
 

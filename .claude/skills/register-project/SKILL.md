@@ -16,7 +16,8 @@ Arguments: $ARGUMENTS
 ## Step 1 — Add to projects.json
 
 Read `/media/data/dev/bain-studio/studio/projects.json`.
-Append the path if it's not already present.
+Each entry is an object: `{"path": "...", "status": "active"}`.
+If the path is not already present, append `{"path": "{path}", "status": "active"}`.
 Write the updated JSON back.
 
 ## Step 2 — Add to CLAUDE.md active projects table
