@@ -134,15 +134,13 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
                     'eur':  eur,
                 })
 
-    # --- Current balances (asset/bank accounts) ---
+    # --- Current balances (all asset accounts, matching GnuCash total) ---
     balances = []
     total_eur = 0.0
     for aid, a in sorted(accounts.items(), key=lambda x: x[1]['path']):
         if a['type'] not in ('BANK', 'CASH', 'ASSET'):
             continue
-        if 'Current Assets' not in a['path']:
-            continue
-        if 'Suspense' in a['path']:
+        if 'Root Account:Assets' not in a['path']:
             continue
         qty = qty_balances.get(aid, 0.0)
         if abs(qty) < 0.01:
@@ -150,7 +148,7 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
         cur = a['currency'] or 'EUR'
         eur = _to_eur(qty, cur, usd_rate, gbp_rate)
         total_eur += eur
-        name = a['path'].replace('Root Account:Assets:Current Assets:', '')
+        name = a['path'].replace('Root Account:Assets:', '')
         balances.append({
             'name':     name,
             'balance':  round(qty, 2),
