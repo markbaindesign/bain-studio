@@ -21,7 +21,7 @@ app = Flask(__name__)
 
 GNUCASH_PATH = os.getenv(
     'GNUCASH_PATH',
-    '/media/data/Dropbox/Work/Admin/Financial/Accounting/GNUCash/accounts.gnucash',
+    '/media/data/Dropbox/Work/Admin/Financial/Accounting/GNUCash/accounts.bu.gnucash',
 )
 HARVEST_TOKEN      = os.getenv('HARVEST_TOKEN', '')
 HARVEST_ACCOUNT_ID = os.getenv('HARVEST_ACCOUNT_ID', '')

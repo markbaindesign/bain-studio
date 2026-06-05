@@ -10,7 +10,6 @@ Run: python3 studio/collectors/gnucash_collector.py
 
 import json
 import sys
-import importlib.util
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -20,8 +19,11 @@ import os
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
+sys.path.insert(0, str(Path(__file__).parent.parent / "dashboard"))
+import gnucash_parser
+
 CONTENT_DIR  = Path(os.getenv("STUDIO_CONTENT_DIR", Path(__file__).parents[2] / "context"))
-GNUCASH_DIR  = Path('/media/data/Dropbox/Work/Admin/Financial/Accounting/GNUCash')
+GNUCASH_DIR  = Path(os.getenv("GNUCASH_DIR", '/media/data/Dropbox/Work/Admin/Financial/Accounting/GNUCash'))
 GNUCASH_FILE = GNUCASH_DIR / 'accounts.bu.gnucash'
 DASHBOARD_URL = 'http://localhost:5555/api/data'
 OUTPUT_FILE  = CONTENT_DIR / 'finance' / 'accounts.json'
@@ -41,14 +43,8 @@ def fetch_from_server():
 
 def fetch_direct() -> dict:
     """Parse the GnuCash file directly, without the server."""
-    spec = importlib.util.spec_from_file_location(
-        'gnucash_parser', GNUCASH_DIR / 'gnucash_parser.py'
-    )
-    parser = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(parser)
-
     fx = _get_fx_rates()
-    gnucash = parser.parse(str(GNUCASH_FILE), usd_rate=fx['USD'], gbp_rate=fx['GBP'])
+    gnucash = gnucash_parser.parse(str(GNUCASH_FILE), usd_rate=fx['USD'], gbp_rate=fx['GBP'])
 
     return {
         'generated_at': datetime.now(timezone.utc).isoformat(),
