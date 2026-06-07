@@ -68,6 +68,10 @@ Skills created while working in this project live in `.claude/skills/` at the pr
 
 All other skills must be explicitly noted as global exceptions when created.
 
+## Project inboxes
+
+Each project can receive messages from other agents via `.claude/inbox/`. Run `/check-inbox` at the start of any session to process pending messages. Messages are written by `studio/postman.py` and archived to `.claude/inbox/processed/` once read.
+
 ## Asana access rule
 
 The PM agent must **never use Asana MCP tools** to make changes (the MCP uses your human OAuth account). All Asana mutations go through `sync.py`, which uses the bainbot PAT. The Asana MCP is disabled for this project via `disabledMcpjsonServers` in `.claude/settings.json`.

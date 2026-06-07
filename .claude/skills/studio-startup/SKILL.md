@@ -47,7 +47,13 @@ Surface:
 
 If the file doesn't exist or `spec_stubs` is 0 and `ideas` is 0, skip this section.
 
-### 5. Check the financial pulse
+### 5. Check the studio inbox
+
+Run `/check-inbox` to process any pending messages in `studio/inbox/`.
+
+If any urgent or high-priority messages are found, surface them at the top of the startup report before anything else.
+
+### 6. Check the financial pulse
 
 Read `{CONTENT_DIR}/finance/accounts.json`. Surface:
 - Current bank balance (`total_eur`)
@@ -56,7 +62,7 @@ Read `{CONTENT_DIR}/finance/accounts.json`. Surface:
 
 If `balance_after_30d` is below €1,000, flag as **low cash warning**.
 
-### 5. Startup report
+### 7. Startup report
 
 Output a concise startup report:
 
