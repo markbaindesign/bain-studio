@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""
+shutter-profile — manage Shutter profiles from the command line.
+
+Usage:
+  shutter-profile create <name> <folder>   Create (or overwrite) a profile
+  shutter-profile list                      List existing profiles
+  shutter-profile delete <name>             Delete a profile
+  shutter-profile launch <name>             Launch Shutter with a profile loaded
+"""
+
+import sys, os, shutil, subprocess
+import xml.etree.ElementTree as ET
+
+PROFILES_DIR = os.path.expanduser("~/.shutter/profiles")
+SETTINGS_FILE = os.path.expanduser("~/.shutter/settings.xml")
+ACCOUNTS_FILE = os.path.expanduser("~/.shutter/accounts.xml")
+TEMPLATE_PREFERENCE = ["QA_Beato", "QA", "*"]
+
+def profile_path(name): return os.path.join(PROFILES_DIR, f"{name}.xml")
+def accounts_path(name): return os.path.join(PROFILES_DIR, f"{name}_accounts.xml")
+
+def find_template():
+    for name in TEMPLATE_PREFERENCE:
+        p = profile_path(name)
+        if os.path.exists(p): return p
+    return SETTINGS_FILE
+
+def cmd_list():
+    files = sorted(f for f in os.listdir(PROFILES_DIR) if f.endswith(".xml") and not f.endswith("_accounts.xml"))
+    if not files:
+        print("No profiles found."); return
+    for f in files:
+        name = f[:-4]
+        try:
+            folder = ET.parse(os.path.join(PROFILES_DIR, f)).getroot().find("general").get("folder", "")
+        except Exception:
+            folder = "(unreadable)"
+        print(f"  {name:<30} → {folder}")
+
+def cmd_create(name, folder):
+    invalid = set('/\\?%*:|"<>,;#&')
+    bad = [c for c in name if c in invalid]
+    if bad:
+        print(f"Error: invalid chars in name: {''.join(bad)}", file=sys.stderr); sys.exit(1)
+
+    folder = os.path.expanduser(folder)
+    os.makedirs(folder, exist_ok=True)
+    os.makedirs(PROFILES_DIR, exist_ok=True)
+
+    tree = ET.parse(find_template())
+    general = tree.getroot().find("general")
+    general.set("folder", folder)
+    general.set("last_profile_name", name)
+    general.set("last_profile", "0")
+
+    dest = profile_path(name)
+    tree.write(dest, encoding="unicode", xml_declaration=False)
+
+    template_accounts = find_template().replace(".xml", "_accounts.xml")
+    if not os.path.exists(template_accounts): template_accounts = ACCOUNTS_FILE
+    if os.path.exists(template_accounts): shutil.copy2(template_accounts, accounts_path(name))
+
+    print(f"Created profile '{name}' → {folder}")
+    print(f"  Launch with: shutter --profile='{name}'")
+
+def cmd_delete(name):
+    removed = [p for p in [profile_path(name), accounts_path(name)] if os.path.exists(p)]
+    if not removed:
+        print(f"Profile '{name}' not found.", file=sys.stderr); sys.exit(1)
+    for p in removed: os.remove(p)
+    print(f"Deleted profile '{name}'")
+
+def cmd_launch(name):
+    if not os.path.exists(profile_path(name)):
+        print(f"Profile '{name}' not found.", file=sys.stderr); cmd_list(); sys.exit(1)
+    subprocess.Popen(["shutter", f"--profile={name}"])
+    print(f"Launched Shutter with profile '{name}'")
+
+def main():
+    if len(sys.argv) < 2: print(__doc__); sys.exit(0)
+    cmd = sys.argv[1]
+    if   cmd == "list":                            cmd_list()
+    elif cmd == "create" and len(sys.argv) == 4:  cmd_create(sys.argv[2], sys.argv[3])
+    elif cmd == "delete" and len(sys.argv) == 3:  cmd_delete(sys.argv[2])
+    elif cmd == "launch" and len(sys.argv) == 3:  cmd_launch(sys.argv[2])
+    else: print(__doc__); sys.exit(1)
+
+if __name__ == "__main__": main()
