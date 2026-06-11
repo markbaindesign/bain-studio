@@ -1,3 +1,14 @@
+---
+description: Timing sweep — surfaces harvest gaps, overdue tasks, stale leads, and
+  pending follow-ups
+god: hermes
+invoke: /abderus
+role: Scheduler
+tags:
+- skill
+- agent
+---
+
 # Abderus — Timing Sweep
 
 Checks every time-sensitive obligation in the studio and surfaces what needs action today. Named after Hermes's scheduler — he is the one who notices what is slipping.

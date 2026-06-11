@@ -1,3 +1,12 @@
+---
+description: End-of-session — checks open loops, syncs mirrors, runs retro, flags
+  unfinished work
+god: hermes
+invoke: /studio-shutdown
+tags:
+- skill
+---
+
 # Studio Shutdown
 
 End-of-session routine. Commits mirror edits, captures learnings, flags unfinished work, and leaves the studio clean. Run at the end of every work session.

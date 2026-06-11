@@ -1,3 +1,12 @@
+---
+description: Registers a new project in the studio registry and sets up its Asana
+  mirror
+god: hermes
+invoke: /register-project
+tags:
+- skill
+---
+
 # register-project
 
 Registers an existing project directory in the studio system so it appears in Asana syncs and the morning startup report.

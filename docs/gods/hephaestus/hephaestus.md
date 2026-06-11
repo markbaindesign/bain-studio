@@ -1,3 +1,14 @@
+---
+description: Technical build planning — architecture, implementation plans, stack
+  decisions
+god: hephaestus
+invoke: /hephaestus
+role: Developer
+tags:
+- skill
+- agent
+---
+
 # Hephaestus — Technical Build Planning and Architecture
 
 The sixth Olympus god. Translates an approved Athena scope doc into a concrete technical implementation plan, and reviews code for correctness and studio conventions.

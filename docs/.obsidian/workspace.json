@@ -1,0 +1,224 @@
+{
+  "main": {
+    "id": "55aeb5437319dc1b",
+    "type": "split",
+    "children": [
+      {
+        "id": "49814121b8476b01",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "80e02ec73f73711b",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "gods/hermes/abderus.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "abderus"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "e611640a2b2541bb",
+    "type": "split",
+    "children": [
+      {
+        "id": "c5120302294bfc19",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "5b3378b511235302",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "9f16771d47fdc0d8",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "0845d7a0502fc42a",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "666307ddd95e424c",
+    "type": "split",
+    "children": [
+      {
+        "id": "78866b8cdae6d7ad",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "9b67cb5370b09970",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "tools/iris.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for iris"
+            }
+          },
+          {
+            "id": "ce67fe5e2821b5f2",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "tools/iris.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from iris"
+            }
+          },
+          {
+            "id": "637236f6a17561d8",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "9251ce33ca5a0741",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "70380f4914871ead",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "tools/iris.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of iris"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "80e02ec73f73711b",
+  "lastOpenFiles": [
+    "skills.base",
+    "tools.base",
+    "utilities/notifier.md",
+    "gods",
+    "agents.base",
+    "Pantheon.md",
+    "utilities/harvest.md",
+    "gods/hephaestus/hephaestus.md",
+    "gods/aphrodite/aphrodite.md",
+    "indexes/tools.md",
+    "indexes/skills.md",
+    "gods/aphrodite/shutter.md",
+    "indexes/agents.md",
+    "tools/sync.md",
+    "gods/plutus/plutus.md",
+    "gods/iris/iris.md",
+    "gods/themis/studio-delivery-gate.md",
+    "gods/themis/themis.md",
+    "gods/hephaestus/scaffold-dir.md",
+    "gods/athena/athena.md",
+    "gods/hermes/abderus.md",
+    "gods/hermes/commission.md",
+    "gods/hermes/register-project.md",
+    "gods/hermes/triage.md",
+    "gods/hermes/postman.md",
+    "gods/hermes/studio-shutdown.md",
+    "gods/hermes/studio-startup.md",
+    "gods/hermes/sync.md",
+    "image-prompts.md",
+    "indexes",
+    "utilities",
+    "gods/plutus",
+    "gods/iris",
+    "gods/themis",
+    "gods/hephaestus"
+  ]
+}

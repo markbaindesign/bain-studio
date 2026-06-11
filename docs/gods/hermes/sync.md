@@ -1,3 +1,11 @@
+---
+command: python3 studio/sync.py
+description: Pulls Asana task state into local markdown mirrors for all active projects
+god: hermes
+tags:
+- tool
+---
+
 # sync.py — Asana Sync
 
 Bidirectional sync between local project mirrors and Asana. Each project's tasks are mirrored to `{project}/.claude/asana-mirror.md`.

@@ -1,3 +1,11 @@
+---
+command: shutter <url>
+description: Captures full-page screenshots of URLs for visual review and QA
+god: aphrodite
+tags:
+- tool
+---
+
 # Shutter — Screen Capture
 
 Shutter is the studio's screen capture tool, used primarily for QA workflows. Each client project gets its own Shutter profile pointing to that project's `qa/qa-inbox` folder.

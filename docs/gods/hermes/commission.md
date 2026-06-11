@@ -1,3 +1,12 @@
+---
+description: Full commission workflow — kicks off a new project from brief to Asana
+  setup
+god: hermes
+invoke: /commission
+tags:
+- skill
+---
+
 # commission
 
 The full project setup ceremony — turns an approved spec into a live studio project. Orchestrates `scaffold-dir`, Asana, Claude bootstrap, studio registration, and task seeding in one flow.

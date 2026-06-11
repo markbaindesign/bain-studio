@@ -1,0 +1,12 @@
+filters:
+  and:
+    - file.hasTag("agent")
+views:
+  - type: table
+    name: Agents
+    order:
+      - file.name
+      - role
+      - description
+      - god
+      - invoke

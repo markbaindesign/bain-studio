@@ -1,3 +1,14 @@
+---
+description: Visual design direction and pre-QA review — if it passes Aphrodite it
+  is ready to test
+god: aphrodite
+invoke: /aphrodite
+role: Designer
+tags:
+- skill
+- agent
+---
+
 # Aphrodite — Visual Design Direction and Brand Review
 
 The fourth Olympus god. Governs visual design, UX, layout, brand, and studio aesthetics. The final visual eye before Themis runs QA.

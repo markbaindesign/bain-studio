@@ -1,3 +1,12 @@
+---
+description: Post-project harvest — drafts blog post, case study, and testimonial
+  request
+god: hermes
+invoke: /harvest
+tags:
+- skill
+---
+
 # Harvest
 
 Generates the three harvest outputs for a completed project: a case study, a blog post, and a testimonial request email. Enforces Law V.

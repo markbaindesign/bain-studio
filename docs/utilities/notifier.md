@@ -1,3 +1,11 @@
+---
+command: python3 studio/notifier.py
+description: Sends Slack notifications from any agent — urgent, high, normal, or low
+  priority
+tags:
+- tool
+---
+
 # notifier.py — Slack Notifications
 
 Sends formatted alerts to Slack. Used directly by agents and internally by `postman.py` for high/urgent messages.

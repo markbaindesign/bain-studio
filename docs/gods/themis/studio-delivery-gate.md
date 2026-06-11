@@ -1,3 +1,11 @@
+---
+description: Pre-delivery checklist — last gate before work reaches Mark for approval
+god: themis
+invoke: /studio-delivery-gate
+tags:
+- skill
+---
+
 # Studio Delivery Gate
 
 The moment between "done" and "shipped." Orchestrates the full delivery sequence: Themis QA → gate report for Mark → (Mark approves) → Iris announces → Harvest triggers.

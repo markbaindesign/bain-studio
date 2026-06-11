@@ -1,3 +1,14 @@
+---
+description: Classifies and routes an inbound signal — RFQ, support, referral, or
+  noise
+god: hermes
+invoke: /triage
+role: Triage clerk
+tags:
+- skill
+- agent
+---
+
 # Triage (Autolycus)
 
 Reads an inbound signal, classifies it, qualifies it if it's a project enquiry, and produces a routing decision. First step in the studio pipeline for any new inquiry.

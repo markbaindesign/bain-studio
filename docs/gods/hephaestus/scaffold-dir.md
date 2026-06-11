@@ -1,3 +1,11 @@
+---
+description: Creates and initialises a new project directory as a git repo
+god: hephaestus
+invoke: /scaffold-dir
+tags:
+- skill
+---
+
 # scaffold-dir
 
 Creates a new project directory, initialises git, and wires up studio tooling. It's a standalone step but is also called by `/commission` as part of the full project setup flow.

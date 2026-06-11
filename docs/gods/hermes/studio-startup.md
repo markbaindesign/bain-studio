@@ -1,3 +1,12 @@
+---
+description: Morning routine — syncs all mirrors, runs Abderus sweep, delivers a pulse
+  report
+god: hermes
+invoke: /studio-startup
+tags:
+- skill
+---
+
 # Studio Startup
 
 Morning routine. Syncs all project mirrors, runs Abderus, surfaces what matters today. Run at the start of every work session.

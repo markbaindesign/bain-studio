@@ -1,3 +1,11 @@
+---
+command: python3 studio/postman.py
+description: Routes messages from agents into project .claude/inbox/ directories
+god: hermes
+tags:
+- tool
+---
+
 # postman.py — Inter-Agent Messaging
 
 Async message passing between agents and projects. Messages are written to inbox directories as markdown files and dispatched to Slack on sweep.
