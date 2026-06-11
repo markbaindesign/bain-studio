@@ -1010,13 +1010,20 @@ def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_r
     else:
         log.info("  [DRY-RUN] Would delete placeholder tasks")
 
-    # 3. Add members
+    # 3. Add members and transfer ownership to Mark
     members = [m for m in ([BAINBOT_GID, USER_GID] + (extra_members or [])) if m]
     if not dry_run:
         _post(f"/projects/{new_gid}/addMembers", {"data": {"members": members}})
         log.info(f"  Added {len(members)} member(s)")
+        if USER_GID:
+            try:
+                _put(f"/projects/{new_gid}", {"owner": {"gid": USER_GID}})
+                log.info(f"  Ownership transferred to Mark ({USER_GID})")
+            except Exception as e:
+                log.warning(f"  Could not transfer ownership (set manually in Asana): {e}")
     else:
         log.info(f"  [DRY-RUN] Would add members: {members}")
+        log.info(f"  [DRY-RUN] Would transfer ownership to Mark ({USER_GID})")
 
     # 4. Scaffold local directory
     log.info(f"  Scaffolding {path} ...")
