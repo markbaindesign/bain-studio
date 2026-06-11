@@ -59,14 +59,22 @@ Studio output (specs, finance, pipeline, portfolio, briefs) lives in Dropbox, no
 
 Skills created while working in this project live in `.claude/skills/` at the project root, not in `~/.claude/skills/` (global). This keeps studio tooling versioned and committed with the repo.
 
-**Global exceptions** (kept in `~/.claude/skills/` because they're used in client project contexts):
+**Studio skills available globally** — symlinked from this repo into `~/.claude/skills/` so they work in any project context:
+
+```bash
+ln -s /media/data/dev/bain-studio/.claude/skills/{name} ~/.claude/skills/{name}
+```
+
+| Skill | Reason |
+|-------|--------|
+| `brand-doc` | brands any .md file as a Bain Design PDF |
+
+**Global-only skills** (not in this repo — live directly in `~/.claude/skills/`):
 - `grill-me` — general planning, useful everywhere
 - `web-researcher` — general research
 - `wp-css-override` — used in client WordPress projects
 - `wp-plugin-expert` — used in client WordPress projects
 - `copywriter` — used for client copy
-
-All other skills must be explicitly noted as global exceptions when created.
 
 ## Project inboxes
 
