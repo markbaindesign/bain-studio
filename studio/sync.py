@@ -43,6 +43,8 @@ STUDIO_DIR = Path(__file__).parent
 load_dotenv(STUDIO_DIR / ".env")
 
 ASANA_PAT            = os.getenv("ASANA_PAT") or os.getenv("ASANA_TOKEN")
+ASANA_USER_PAT       = os.getenv("ASANA_USER_PAT")   # Mark's token — used only for --create
+_scaffold_mode       = False   # set True during --create so all API calls use user token
 WORKSPACE_GID        = os.getenv("ASANA_WORKSPACE_GID")
 BAINBOT_GID          = os.getenv("ASANA_BAINBOT_GID")
 ASSIGNEE_NAME        = os.getenv("STUDIO_ASSIGNEE_NAME", "Bot")
@@ -193,6 +195,8 @@ def discover_projects(filter_prefix=None) -> list:
 # ---------------------------------------------------------------------------
 
 def _h():
+    if _scaffold_mode and ASANA_USER_PAT:
+        return {"Authorization": f"Bearer {ASANA_USER_PAT}", "Accept": "application/json"}
     return {"Authorization": f"Bearer {ASANA_PAT}", "Accept": "application/json"}
 
 def _get(path, params=None):
@@ -962,8 +966,21 @@ def create_task(project_gid: str, name: str, notes: str = '', assignee_gid: str 
 # ---------------------------------------------------------------------------
 
 def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_run=False, yes=False):
+    global _scaffold_mode
     path = Path(path).expanduser().resolve()
     log.info(f"\n=== Creating project: {name} ({prefix}) ===")
+    if ASANA_USER_PAT:
+        log.info(f"  Using Mark's API token for project creation")
+    else:
+        log.warning("  ASANA_USER_PAT not set — project will be owned by bainbot. Add it to .env.")
+    _scaffold_mode = True
+    try:
+        _scaffold_project_inner(name, prefix, path, template_gid, extra_members, dry_run, yes)
+    finally:
+        _scaffold_mode = False
+
+
+def _scaffold_project_inner(name, prefix, path, template_gid, extra_members=None, dry_run=False, yes=False):
 
     if not template_gid:
         log.error("No template project GID. Set ASANA_TEMPLATE_PROJECT_GID in .env or use --template.")
@@ -1010,20 +1027,13 @@ def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_r
     else:
         log.info("  [DRY-RUN] Would delete placeholder tasks")
 
-    # 3. Add members and transfer ownership to Mark
+    # 3. Add members (bainbot must be a member so sync can read tasks)
     members = [m for m in ([BAINBOT_GID, USER_GID] + (extra_members or [])) if m]
     if not dry_run:
         _post(f"/projects/{new_gid}/addMembers", {"data": {"members": members}})
         log.info(f"  Added {len(members)} member(s)")
-        if USER_GID:
-            try:
-                _put(f"/projects/{new_gid}", {"owner": {"gid": USER_GID}})
-                log.info(f"  Ownership transferred to Mark ({USER_GID})")
-            except Exception as e:
-                log.warning(f"  Could not transfer ownership (set manually in Asana): {e}")
     else:
         log.info(f"  [DRY-RUN] Would add members: {members}")
-        log.info(f"  [DRY-RUN] Would transfer ownership to Mark ({USER_GID})")
 
     # 4. Scaffold local directory
     log.info(f"  Scaffolding {path} ...")
