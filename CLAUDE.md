@@ -94,3 +94,7 @@ The PM workflow is:
 ASANA_PROJECT_GID: 1215208851588912
 ASANA_TASK_PREFIX: BSTD
 ASANA_PROJECT_NAME: Bain Studio
+
+## Definition of done
+
+Nothing is considered built until the docs are written. Every tool, skill, or agent that ships must have a corresponding note in `docs/` under its god's folder (or `docs/utilities/` for shared utilities). The note must include frontmatter (`tags`, `god`, `invoke`/`command`, `description`) so it appears in the Obsidian bases indexes.
