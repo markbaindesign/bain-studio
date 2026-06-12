@@ -1,19 +1,19 @@
 ---
 tags: [skill]
 god: hermes
-invoke: /bd-task-looper
+invoke: /task-looper
 description: Self-driving task queue — works BainBot-assigned tasks one at a time, driven by a stop hook, until the queue is empty
 ---
 
-# bd-task-looper
+# task-looper
 
 Runs BainBot-assigned tasks autonomously, one at a time. Reads the Asana mirror, builds a prioritised queue, works the first task, outputs a completion promise, and the stop hook advances the queue automatically.
 
 ## Usage
 
 ```
-/bd-task-looper
-/bd-task-looper <note>
+/task-looper
+/task-looper <note>
 ```
 
 The optional note is context for the current run (e.g. a specific task to prioritise, or a constraint to observe).
@@ -22,7 +22,7 @@ The optional note is context for the current run (e.g. a specific task to priori
 
 1. Syncs from Asana to get the latest task state
 2. Builds a queue of all tasks where `Assignee: BainBot` and `Section ≠ DONE`, ordered by due date then dependency readiness
-3. Writes `.claude/bd-task-looper.local.md` with the queue state
+3. Writes `.claude/task-looper.local.md` with the queue state
 4. Works the first task (code tasks get a feature branch; non-code tasks do not touch git)
 5. Outputs `<promise>{ID}_COMPLETE</promise>` or `<promise>{ID}_BLOCKED</promise>`
 6. Stop hook advances the queue and re-injects the next task automatically
@@ -34,7 +34,21 @@ The optional note is context for the current run (e.g. a specific task to priori
 
 ## State file
 
-`.claude/bd-task-looper.local.md` — written at queue start, deleted when the queue empties. Gitignored.
+`.claude/task-looper.local.md` — written at queue start, deleted when the queue empties. Gitignored.
+
+## Running unattended
+
+`/task-looper` can be invoked headlessly via `claude -p`. Use this with the `at` command to fire it at a specific time — useful when waiting for a rate limit reset.
+
+```bash
+# Enable atd if not already running (one-time)
+sudo systemctl enable --now atd
+
+# Schedule a run at a specific time
+echo "cd /path/to/project && claude -p '/task-looper'" | at 20:10
+```
+
+Run from the project directory (not the studio root) so Claude picks up the right project context.
 
 ## Guard rails
 
