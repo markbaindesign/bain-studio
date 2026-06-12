@@ -1,6 +1,6 @@
 ---
 name: recap
-description: Project re-entry brief. Run from inside a project directory when opening a new terminal tab or switching focus. Surfaces Asana state, git context, inbox, open questions, and a synthesised next action.
+description: Project re-entry brief. Run from inside a project directory when opening a new terminal tab or switching focus. Surfaces Asana state, git context, QA inbox/review counts, inbox, open questions, and a synthesised next action.
 allowed-tools: [Read, Bash]
 ---
 
@@ -45,17 +45,32 @@ Read `.claude/asana-mirror.md`. Extract:
 
 Check `.claude/inbox/` for any `.md` files (unread messages). If any exist, list their filenames and first line.
 
-### 5. Open questions
+### 5. QA status
+
+Check if a `qa/` directory exists. If it does:
+
+```bash
+ls qa/qa-inbox/ 2>/dev/null | wc -l
+ls qa/qa-review/ 2>/dev/null | wc -l
+```
+
+Report:
+- **qa-inbox** count — items waiting to be worked on
+- **qa-review** count — items awaiting sign-off
+
+Skip this section silently if `qa/` doesn't exist.
+
+### 6. Open questions
 
 Read `.claude/open-questions.md` if it exists. List any unchecked items (`- [ ]`).
 
-### 6. Synthesise next action
+### 7. Synthesise next action
 
 Cross-reference the last commit message(s) with in-progress task titles:
 - If a commit message mentions keywords that overlap with an in-progress task title, surface: "You were probably working on **{task}** (last commit: _{message}_)"
 - If no overlap, surface the highest-priority in-progress task, or the first open task if none are in progress
 
-### 7. Output the recap
+### 8. Output the recap
 
 ```
 ## Recap — {PROJECT_NAME} — {YYYY-MM-DD HH:MM}
@@ -69,6 +84,9 @@ Recent: {last 3 commits, one per line}
 
 ### Blocked
 {list of blocked tasks, or "None"}
+
+### QA  _(omit section if no qa/ folder)_
+Inbox: {N} | Review: {N}
 
 ### Inbox
 {list of unread messages, or "Clear"}
