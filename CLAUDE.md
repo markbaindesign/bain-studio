@@ -2,6 +2,14 @@
 
 Studio PM tooling for client project management.
 
+## Architecture decisions
+
+Before answering a question or starting work, check `docs/adr/` for relevant ADRs. If a decision has already been made, follow it rather than re-litigating it.
+
+## Studio Dashboard
+
+A local web dashboard (`studio/dashboard/`) for monitoring studio finances and time tracking. Flask server with a single-page HTML frontend. Data sources: GnuCash (finances) and Harvest (time). Run via `python3 studio/dashboard/server.py`. Lives in this repo — see ADR 004.
+
 ## Git workflow
 
 - Always work on `develop`. Never commit directly to `main`.
