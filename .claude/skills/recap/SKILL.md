@@ -47,18 +47,18 @@ Check `.claude/inbox/` for any `.md` files (unread messages). If any exist, list
 
 ### 5. QA status
 
-Check if a `qa/` directory exists. If it does:
+Check if a `qa/` directory exists:
 
 ```bash
 ls qa/qa-inbox/ 2>/dev/null | wc -l
 ls qa/qa-review/ 2>/dev/null | wc -l
 ```
 
-Report:
+If it exists, report:
 - **qa-inbox** count — items waiting to be worked on
 - **qa-review** count — items awaiting sign-off
 
-Skip this section silently if `qa/` doesn't exist.
+If `qa/` does not exist, report: `⚠ Not set up`
 
 ### 6. Open questions
 
@@ -85,8 +85,8 @@ Recent: {last 3 commits, one per line}
 ### Blocked
 {list of blocked tasks, or "None"}
 
-### QA  _(omit section if no qa/ folder)_
-Inbox: {N} | Review: {N}
+### QA
+Inbox: {N} | Review: {N}  _or_  ⚠ Not set up
 
 ### Inbox
 {list of unread messages, or "Clear"}
