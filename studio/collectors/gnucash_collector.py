@@ -91,18 +91,25 @@ def build_plutus_snapshot(data: dict) -> dict:
     # Upcoming bills in the next 30 days
     upcoming_30 = [u for u in g.get('upcoming', []) if u.get('days', 999) <= 30]
 
-    # Cashflow risk: total upcoming bills in next 30 days vs current balance
+    # Liquid cash = Current Assets only (excludes Future Assets: IRPF, IVA, debts owed)
+    balances = g.get('balances', [])
+    liquid_eur = round(sum(
+        b['eur'] for b in balances
+        if b.get('name', '').startswith('Current Assets')
+    ), 2)
+
+    # Cashflow risk: upcoming 30d obligations vs liquid cash only
     upcoming_total = sum(u['amount'] for u in upcoming_30)
-    total_balance  = g.get('total_eur', 0)
-    balance_after  = total_balance - upcoming_total
+    balance_after  = liquid_eur - upcoming_total
 
     return {
         'generated_at': data['generated_at'],
         'fx': data.get('fx', {}),
 
         # Cash position
-        'bank_balances': g.get('balances', []),
-        'total_eur': g.get('total_eur', 0),
+        'bank_balances': balances,
+        'total_eur': g.get('total_eur', 0),   # all accounts incl. future assets
+        'liquid_eur': liquid_eur,              # spendable cash (Current Assets only)
 
         # P&L
         'monthly_pl_recent': monthly_pl,
@@ -142,9 +149,10 @@ def main():
 
     OUTPUT_FILE.write_text(json.dumps(snapshot, indent=2))
     print(f'  Written: {OUTPUT_FILE}')
-    print(f'  Balance: €{snapshot["total_eur"]:,.2f}')
+    print(f'  Liquid cash: €{snapshot["liquid_eur"]:,.2f} (Current Assets only)')
+    print(f'  Total incl. future assets: €{snapshot["total_eur"]:,.2f}')
     print(f'  Upcoming 30d: €{snapshot["upcoming_30d_total"]:,.2f}')
-    print(f'  Balance after: €{snapshot["balance_after_30d"]:,.2f}')
+    print(f'  Liquid after 30d: €{snapshot["balance_after_30d"]:,.2f}')
 
     errors = data.get('errors', [])
     if errors:

@@ -155,10 +155,35 @@ class CodeBlock(Flowable):
             y -= line_h
 
 
+# ─── Slug helper (GitHub-flavoured anchor convention) ─────────────────────────
+
+def _slug(heading_text):
+    """Convert a heading string to a GitHub-style anchor slug."""
+    s = heading_text.lower()
+    s = re.sub(r'[^\w\s-]', '', s)   # strip punctuation (keep spaces, hyphens, word chars)
+    s = re.sub(r'_', '-', s)           # underscores → hyphens
+    s = re.sub(r' ', '-', s)           # each space → hyphen (no collapsing, matches GitHub)
+    s = s.strip('-')
+    return s
+
+
 # ─── Inline markdown → ReportLab XML ─────────────────────────────────────────
 
 def _inline(text, F):
+    # Escape XML special chars first
     text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    # Internal anchor links [label](#anchor) → clickable link
+    text = re.sub(
+        r'\[([^\]]+)\]\(#([^)]+)\)',
+        lambda m: f'<a href="#{m.group(2)}" color="#{CLAY_HEX}">{m.group(1)}</a>',
+        text,
+    )
+    # External links [label](url) → coloured clickable link
+    text = re.sub(
+        r'\[([^\]]+)\]\((https?://[^)]+)\)',
+        lambda m: f'<a href="{m.group(2)}" color="#{CLAY_HEX}">{m.group(1)}</a>',
+        text,
+    )
     text = re.sub(r'\*\*(.+?)\*\*', lambda m: f'<font name="{F["MonoBold"]}">{m.group(1)}</font>', text)
     text = re.sub(r'__(.+?)__',     lambda m: f'<font name="{F["MonoBold"]}">{m.group(1)}</font>', text)
     text = re.sub(r'\*(.+?)\*',     lambda m: f'<font name="{F["MonoMedium"]}">{m.group(1)}</font>', text)
@@ -169,7 +194,7 @@ def _inline(text, F):
 
 # ─── Markdown → story ─────────────────────────────────────────────────────────
 
-def md_to_story(md_text, ST, F, skip_h1=False):
+def md_to_story(md_text, ST, F, skip_h1=False, base_dir=None):
     story = []
     lines = md_text.split('\n')
     TW = W - 36 * mm
@@ -206,7 +231,9 @@ def md_to_story(md_text, ST, F, skip_h1=False):
             continue
         if hm:
             level = len(hm.group(1))
-            text  = _inline(hm.group(2), F)
+            raw_heading = hm.group(2)
+            anchor = _slug(raw_heading)
+            text  = f'<a name="{anchor}"/>' + _inline(raw_heading, F)
             smap  = {1:'BH1', 2:'BH2', 3:'BH3', 4:'BH4', 5:'BH5', 6:'BH6'}
             if level == 1:
                 story.append(Spacer(1, 4 * mm))
@@ -300,6 +327,29 @@ def md_to_story(md_text, ST, F, skip_h1=False):
         # Page break directive
         if line.strip().lower() in ('---pagebreak---', '<!-- pagebreak -->'):
             story.append(PageBreak())
+            i += 1
+            continue
+
+        # Image
+        im = re.match(r'^!\[([^\]]*)\]\(([^)]+)\)\s*$', line)
+        if im:
+            img_path = Path(im.group(2))
+            if not img_path.is_absolute() and base_dir:
+                img_path = base_dir / img_path
+            if img_path.exists():
+                try:
+                    from PIL import Image as PILImage
+                    with PILImage.open(img_path) as pil_img:
+                        iw, ih = pil_img.size
+                    max_w = TW
+                    scale = min(max_w / iw, 60 * mm / ih, 1.0)
+                    story.append(Spacer(1, 3 * mm))
+                    story.append(RLImage(str(img_path), width=iw * scale, height=ih * scale))
+                    story.append(Spacer(1, 3 * mm))
+                except Exception as e:
+                    story.append(Paragraph(f'[image: {img_path.name}]', ST['BCaption']))
+            else:
+                story.append(Paragraph(f'[image not found: {img_path.name}]', ST['BCaption']))
             i += 1
             continue
 
@@ -461,7 +511,7 @@ def build(input_path, output_path=None, one_pager=False):
             topMargin=24 * mm,  bottomMargin=16 * mm,
             title=title, author='Bain Design',
         )
-        story = md_to_story(md_text, ST, F, skip_h1=True)
+        story = md_to_story(md_text, ST, F, skip_h1=True, base_dir=input_path.parent)
         hf = lambda c, d: _one_pager_header(c, d, title, F)
         doc.build(story, onFirstPage=hf, onLaterPages=hf)
     else:
@@ -473,7 +523,7 @@ def build(input_path, output_path=None, one_pager=False):
             title=title, author='Bain Design',
         )
         story = [Spacer(1, 720)]   # fill cover page
-        story.extend(md_to_story(md_text, ST, F))
+        story.extend(md_to_story(md_text, ST, F, base_dir=input_path.parent))
         doc.build(
             story,
             onFirstPage=lambda c, d: _cover(c, d, title, subtitle, F),
