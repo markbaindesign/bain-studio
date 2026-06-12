@@ -5,6 +5,21 @@ description: Common studio tooling issues and their fixes
 
 # Studio Troubleshooting
 
+## Tasks exist in Asana but have no Local ID
+
+**Symptom:** Tasks are visible in Asana but the Local ID custom field (e.g. `WTF-001`) is blank.
+
+**Cause:** `--setup` was never run for the project, so `asana-ids.json` has `custom_field_gid: null` and sync can't write Local IDs back to Asana.
+
+**Fix:** Run setup for the project, then sync:
+
+```bash
+python3 studio/sync.py --setup --project WTF
+python3 studio/sync.py
+```
+
+Setup wires up the custom field GIDs; the following sync backfills Local IDs on all existing tasks.
+
 ## Tasks missing from Asana after project setup
 
 **Symptom:** You set up a new project and tasks you expected are not visible in Asana.
@@ -14,7 +29,6 @@ description: Common studio tooling issues and their fixes
 **Fix:** Create tasks via the Asana API first. Once they exist in Asana, the next sync will pull them into the mirror.
 
 ```bash
-# Trigger a sync to confirm what's actually in Asana
 python3 studio/sync.py
 ```
 
