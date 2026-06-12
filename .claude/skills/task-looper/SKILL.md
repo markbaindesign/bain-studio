@@ -42,10 +42,36 @@ python3 - {PREFIX}
 
 2. If `NOT_FOUND`, abort: "No project with prefix {PREFIX} found in projects.json."
 
-3. If found, schedule the run:
+3. If found, schedule the run. Try `at` first; fall back to a Python sleep script if `at` is unavailable:
 
 ```bash
-echo "cd {PROJECT_PATH} && claude -p '/task-looper'" | at {TIME}
+if command -v at &>/dev/null; then
+    echo "cd {PROJECT_PATH} && claude -p '/task-looper'" | at {TIME}
+else
+    python3 - <<'EOF'
+import time, subprocess, sys
+from datetime import datetime
+
+hh, mm = map(int, sys.argv[1].split(":"))
+project_path = sys.argv[2]
+target = datetime.now().replace(hour=hh, minute=mm, second=0, microsecond=0)
+delay = (target - datetime.now()).total_seconds()
+if delay <= 0:
+    print(f"ERROR: {sys.argv[1]} is in the past.")
+    sys.exit(1)
+
+script = f"""import time, subprocess, os
+time.sleep({delay})
+subprocess.run(["claude", "-p", "/task-looper"], cwd="{project_path}")
+"""
+with open("/tmp/task-looper-scheduled.py", "w") as f:
+    f.write(script)
+print(f"Scheduled via Python sleep ({int(delay)}s). Log: ~/logs/task-looper.log")
+EOF
+    python3 - {TIME} {PROJECT_PATH}
+    nohup python3 /tmp/task-looper-scheduled.py >> ~/logs/task-looper.log 2>&1 &
+    echo "PID: $!"
+fi
 ```
 
 4. Confirm: "Scheduled /task-looper for {PREFIX} ({PROJECT_PATH}) at {TIME}." Then stop — do not proceed to Step 1.
