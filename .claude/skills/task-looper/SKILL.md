@@ -1,6 +1,6 @@
 ---
-name: bd-task-looper
-description: Work through outstanding tasks assigned to BD Task Looper in the current project's Asana mirror. Self-driving via stop hook — sets up a task queue, works each task to completion or a clear blocker, raises PRs, and loops automatically until the queue is empty.
+name: task-looper
+description: Work through outstanding tasks assigned to BainBot in the current project's Asana mirror. Self-driving via stop hook — sets up a task queue, works each task to completion or a clear blocker, raises PRs, and loops automatically until the queue is empty.
 allowed-tools:
   - Read
   - Edit
