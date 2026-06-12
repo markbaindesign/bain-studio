@@ -16,6 +16,42 @@ Sets up a self-driving task queue backed by a stop hook. Works one task at a tim
 
 ---
 
+## Step 0 — Check for --at flag
+
+If the arguments contain `--at TIME PREFIX` (e.g. `/task-looper --at 20:10 WTF`):
+
+1. Look up the project path from `studio/projects.json` by matching the prefix against each project's `CLAUDE.md`:
+
+```bash
+python3 - <<'EOF'
+import json, subprocess, os, sys
+
+prefix = sys.argv[1].upper()
+projects = json.load(open("/media/data/dev/bain-studio/studio/projects.json"))
+for p in projects:
+    claude_md = os.path.join(p["path"], "CLAUDE.md")
+    if os.path.exists(claude_md):
+        content = open(claude_md).read()
+        if f"ASANA_TASK_PREFIX: {prefix}" in content:
+            print(p["path"])
+            sys.exit(0)
+print("NOT_FOUND")
+EOF
+python3 - {PREFIX}
+```
+
+2. If `NOT_FOUND`, abort: "No project with prefix {PREFIX} found in projects.json."
+
+3. If found, schedule the run:
+
+```bash
+echo "cd {PROJECT_PATH} && claude -p '/task-looper'" | at {TIME}
+```
+
+4. Confirm: "Scheduled /task-looper for {PREFIX} ({PROJECT_PATH}) at {TIME}." Then stop — do not proceed to Step 1.
+
+---
+
 ## Step 1 — Load project context
 
 Read `CLAUDE.md` in the current working directory. Extract:
@@ -47,8 +83,8 @@ Read `.claude/asana-mirror.md`. Extract all tasks where:
 If none found, notify via Hermes and stop:
 ```bash
 python3 /media/data/dev/bain-studio/studio/notifier.py \
-  "bd-task-looper: no outstanding BainBot tasks in {Project}." \
-  --priority normal --sender bd-task-looper --project {PREFIX}
+  "task-looper: no outstanding BainBot tasks in {Project}." \
+  --priority normal --sender task-looper --project {PREFIX}
 ```
 
 Order the queue:
@@ -60,7 +96,7 @@ Order the queue:
 
 ## Step 3 — Write the state file
 
-Write `.claude/bd-task-looper.local.md`. The first task in the queue goes in `current_task`; the rest go in the body, one ID per line.
+Write `.claude/task-looper.local.md`. The first task in the queue goes in `current_task`; the rest go in the body, one ID per line.
 
 ```
 ---
@@ -81,8 +117,8 @@ If there is only one task, the body is empty.
 Notify via Hermes that the run is starting:
 ```bash
 python3 /media/data/dev/bain-studio/studio/notifier.py \
-  "bd-task-looper starting on {Project} — {N} tasks: {IDs}" \
-  --priority normal --sender bd-task-looper --project {PREFIX}
+  "task-looper starting on {Project} — {N} tasks: {IDs}" \
+  --priority normal --sender task-looper --project {PREFIX}
 ```
 
 ---
@@ -154,7 +190,7 @@ gh pr create \
 ## Test notes
 {How to verify — specific steps or observations}
 
-🤖 bd-task-looper — [Claude Code](https://claude.com/claude-code)
+🤖 task-looper — [Claude Code](https://claude.com/claude-code)
 EOF
 )"
 ```
@@ -163,7 +199,7 @@ Notify:
 ```bash
 python3 /media/data/dev/bain-studio/studio/notifier.py \
   "{ID} complete: {task name}. PR at {url or 'branch pushed'}." \
-  --priority normal --sender bd-task-looper --project {PREFIX}
+  --priority normal --sender task-looper --project {PREFIX}
 ```
 
 Then output the completion promise:
@@ -193,7 +229,7 @@ Notify:
 ```bash
 python3 /media/data/dev/bain-studio/studio/notifier.py \
   "{ID} blocked: {task name}. {One sentence blocker summary}. Branch {branch-name} has partial work." \
-  --priority high --sender bd-task-looper --project {PREFIX}
+  --priority high --sender task-looper --project {PREFIX}
 ```
 
 Then output the blocked promise:
