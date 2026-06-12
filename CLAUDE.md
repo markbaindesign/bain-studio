@@ -68,6 +68,8 @@ ln -s /media/data/dev/bain-studio/.claude/skills/{name} ~/.claude/skills/{name}
 | Skill | Reason |
 |-------|--------|
 | `brand-doc` | brands any .md file as a Bain Design PDF |
+| `recap` | per-project re-entry brief: git, Asana, inbox, next action |
+| `focus` | mid-day context switch — `/focus MCF` from studio dir |
 
 **Global-only skills** (not in this repo — live directly in `~/.claude/skills/`):
 - `grill-me` — general planning, useful everywhere

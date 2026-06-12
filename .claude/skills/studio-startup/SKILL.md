@@ -94,3 +94,22 @@ Balance: €{total_eur} | After 30d obligations: €{balance_after_30d}
 ```
 
 Keep it scannable. No padding.
+
+### 8. Optional project focus
+
+After outputting the startup report, ask:
+
+```
+AskUserQuestion:
+  question: "Want to focus on a project?"
+  header: "Focus"
+  multiSelect: false
+  options:
+    - one option per active project (prefix + name, e.g. "MCF — Mhairi McFarlane")
+    - label: "Skip"
+      description: "End startup here"
+```
+
+Read the active project list from `studio/projects.md` to populate the options dynamically.
+
+If a project is selected (not "Skip"), run `/recap` for that project inline — look up its path from `studio/projects.json` and produce the full re-entry brief.
