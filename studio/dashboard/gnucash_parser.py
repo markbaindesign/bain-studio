@@ -220,6 +220,10 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
     }
 
 
+def _quarter_start(d):
+    return date(d.year, ((d.month - 1) // 3) * 3 + 1, 1)
+
+
 def _compute_upcoming(rows, today, owner_draw):
     upcoming = []
 
@@ -295,13 +299,28 @@ def _compute_upcoming(rows, today, owner_draw):
         max_day = calendar.monthrange(next_y, next_m)[1]
         d = date(next_y, next_m, min(last_date.day, max_day))
         if d >= today:
+            entry_amt = avg_amt
+            extra = {}
+            if keyword == 'Mod. 130':
+                # Deduct IRPF withheld by Spanish clients this quarter
+                q_start = str(_quarter_start(today))
+                irpf_withheld = sum(
+                    r['eur'] for r in rows
+                    if 'IRPF Retenido' in r.get('path', '')
+                    and r['date'] >= q_start
+                    and r['val'] > 0  # debit = asset increase (withheld from client)
+                )
+                if irpf_withheld > 0:
+                    entry_amt = max(0.0, avg_amt - irpf_withheld)
+                    extra['irpf_deducted'] = round(irpf_withheld, 2)
             upcoming.append({
                 'label':    label,
                 'date':     str(d),
-                'amount':   round(avg_amt, 2),
+                'amount':   round(entry_amt, 2),
                 'currency': 'EUR',
                 'type':     bill_type,
                 'days':     (d - today).days,
+                **extra,
             })
 
     upcoming.sort(key=lambda x: x['date'])

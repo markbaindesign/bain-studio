@@ -31,6 +31,16 @@ Athena works through her household — each handles a distinct phase:
 | **Ericthonius** (estimator) | Estimates scope and hours from the brief |
 | **Nike** (proposal writer) | Writes the final proposal document |
 
+## Prospecting (Upwork Pipeline)
+
+The Upwork Pipeline (PIPE) is part of Athena's domain — it covers the earliest lifecycle stations (Signal → Qualification) as a self-contained automation loop.
+
+- **Repo:** `git@bitbucket.org:markbaindesign/upwork-proposals.git`
+- **Path:** `/media/data/dev/misc/upwork-proposals`
+- **What it does:** Scrapes Upwork, scores job fit, emails Mark a stage-1 brief request, waits for Mark to reply with the job description, then generates and sends the proposal via Claude directly
+
+This pipeline is fully autonomous — Mark's reply email is the brief. It does not hand off to Athena's household; proposal generation is handled internally. Athena's domain over PIPE is strategic (scoring thresholds, proposal voice, profile positioning) rather than operational.
+
 ## Brief format
 
 Briefs live at `{CONTENT_DIR}/pipeline/briefs/{slug}.md` as structured YAML + markdown:
