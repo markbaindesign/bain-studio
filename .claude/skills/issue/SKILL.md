@@ -105,16 +105,24 @@ If type is `image` or `bundle`, add a note: "Attach screenshot(s) to this folder
 
 ### 5. Append to the log
 
-Append one row to `qa/qa-log.md`:
+Append one line to `qa/qa-log.md`:
 
 ```
-| {ref} | {YYYY-MM-DD} | {description} | open | |
+[YYYY-MM-DD HH:MM] {ref} registered — {description} ({severity} / {feature area})
+```
+
+Example:
+```
+[2026-06-19 10:45] NORE-QA-007 registered — contact form broken on mobile (high / contact-form)
 ```
 
 If `qa-log.md` doesn't exist, create it with the header first:
 ```
-| ref | opened | description | status | closed |
-|-----|--------|-------------|--------|--------|
+# QA Log — {PREFIX}
+
+Append-only event log. One line per lifecycle event.
+Format: [YYYY-MM-DD HH:MM] {ref} {event} — {details}
+
 ```
 
 ### 6. Confirm

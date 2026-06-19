@@ -1,6 +1,8 @@
 # QA Log — BSTD
 
-Append-only. One row per item. Updated at intake and at final resolution.
+Append-only event log. One line per lifecycle event.
+Format: [YYYY-MM-DD HH:MM] {ref} {event} — {details}
 
-| ref | opened | description | status | closed |
-|-----|--------|-------------|--------|--------|
+To check status of an item: grep {ref} qa/qa-log.md
+To list all open items: grep -v "passed\|wontfix" qa/qa-log.md | grep "registered"
+
