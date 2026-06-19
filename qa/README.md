@@ -38,35 +38,39 @@ If an item arrives without a ref (e.g. a plain screenshot or file dropped manual
 
 ## QA log
 
-A running log is maintained at `qa/qa-log.md`. It is append-only — one line per item, written when the item is first assigned a ref, updated at each lifecycle transition.
+A running event log is maintained at `qa/qa-log.md`. It is append-only — one line per event, written at every lifecycle transition.
 
 **Format:**
 
 ```
-| BSTD-QA-001 | 2026-06-19 | dashboard fails to load gnucash data | open    |            |
-| BSTD-QA-001 | 2026-06-19 | dashboard fails to load gnucash data | passed  | 2026-06-20 |
+[2026-06-19 10:45] BSTD-QA-001 registered — dashboard fails to load gnucash data (high / studio-dashboard)
+[2026-06-19 11:02] BSTD-QA-001 → wip
+[2026-06-19 11:45] BSTD-QA-001 → review — gnucash path resolution fixed, verified clean output
+[2026-06-19 11:47] BSTD-QA-001 passed
+[2026-06-19 14:10] BSTD-QA-002 registered — sync script drops tasks on retry (medium / sync)
+[2026-06-19 14:55] BSTD-QA-002 → wip
+[2026-06-19 15:30] BSTD-QA-002 → review (failed) — still dropping on second retry
+[2026-06-19 15:31] BSTD-QA-002 → inbox (re-opened)
 ```
 
-**Columns:**
+**Event types:**
 
-| Column | Content |
+| Event | When to write |
 |---|---|
-| ref | `{PREFIX}-QA-{NNN}` |
-| opened | Date item entered qa-inbox (YYYY-MM-DD) |
-| description | Short plain-English description of the issue |
-| status | `open` / `passed` / `failed` / `wontfix` |
-| closed | Date of final resolution (blank while open) |
+| `registered` | Item first assigned a ref — include description, severity, feature area |
+| `→ wip` | Item moved from inbox to wip |
+| `→ review` | Item moved from wip to review — include a brief note on what was fixed |
+| `passed` | Item signed off by Mark |
+| `→ inbox (re-opened)` | Item failed sign-off and returned to inbox |
+| `wontfix` | Item closed without fixing — include reason |
 
-**Log update rules:**
+**Log rules:**
 
-- **Intake** — append a new row with status `open`, closed blank
-- **Inbox → wip** — no log change (status stays `open`)
-- **wip → review** — no log change (status stays `open`)
-- **review → passed** — update the row: status `passed`, closed = today
-- **review → failed (back to inbox)** — no log change (stays `open`; the item re-enters the flow)
-- **Abandoned / wontfix** — update the row: status `wontfix`, closed = today
-
-The log row is found by matching the ref column. When updating, replace the full row in place.
+- Append only — never edit or delete lines
+- Timestamp format: `[YYYY-MM-DD HH:MM]` (local time, 24h, minute precision is enough)
+- `registered` line is the only one that includes the description and severity — subsequent events just reference the ref
+- Current status of any item is determined by its most recent event line
+- To find all events for a ref: `grep BSTD-QA-001 qa/qa-log.md`
 
 ## How issues enter the workflow
 

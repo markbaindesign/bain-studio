@@ -100,8 +100,8 @@ For each failed item, assign a QA reference number and create an inbox file.
 1. Read `qa/qa-counter.json` — get `prefix` and `next`. If the file doesn't exist, read `CLAUDE.md` for `ASANA_TASK_PREFIX` and create the counter file with `next: 1`.
 2. Mint the ref: `{prefix}-QA-{next:03d}` (zero-padded to 3 digits minimum)
 3. Increment `next` and write `qa-counter.json` back
-4. Append a row to `qa/qa-log.md` (create the file with a header row if it doesn't exist):
-   `| {ref} | {YYYY-MM-DD} | {short description from item} | open | |`
+4. Append a line to `qa/qa-log.md` (create the file with the standard header if it doesn't exist):
+   `[YYYY-MM-DD HH:MM] {ref} registered — {description} (high / release-checklist v{version})`
 
 **Filename convention:**
 
