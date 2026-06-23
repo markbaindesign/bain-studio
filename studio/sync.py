@@ -961,6 +961,106 @@ def create_task(project_gid: str, name: str, notes: str = '', assignee_gid: str 
     return new_gid
 
 
+def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT UP",
+                     notes: str = "", due: str = "", dry_run: bool = False) -> str:
+    """
+    Create a task in Asana, assign a local ID, place it in the correct section,
+    and append it to the local mirror. Returns the local ID (e.g. NORE-042).
+    """
+    from datetime import datetime
+
+    # 1. Resolve section GID
+    sections = fetch_sections(proj)
+    section_name_upper = section_name.upper()
+    section_gid = sections.get(section_name_upper)
+    if not section_gid:
+        available = ", ".join(sections.keys())
+        raise ValueError(f"Section '{section_name_upper}' not found in {proj.prefix}. Available: {available}")
+
+    # 2. Create in Asana
+    payload = {
+        "data": {
+            "name": name,
+            "projects": [proj.gid],
+            "workspace": WORKSPACE_GID,
+            "assignee": BAINBOT_GID,
+        }
+    }
+    if notes:
+        payload["data"]["notes"] = notes
+    if due:
+        payload["data"]["due_on"] = due
+
+    if dry_run:
+        log.info(f"  [DRY-RUN] Would create task: {name!r} in {proj.prefix}/{section_name_upper}")
+        return f"{proj.prefix}-DRY"
+
+    resp = _post("/tasks", payload)
+    new_gid = resp["data"]["gid"]
+    log.info(f"  Task created in Asana: {name!r} ({new_gid})")
+
+    # 3. Move to section
+    _post(f"/sections/{section_gid}/addTask", {"data": {"task": new_gid}})
+    log.info(f"  Placed in section: {section_name_upper}")
+
+    # 4. Assign local ID
+    state = load_ids(proj)
+    field_gid = state.get("custom_field_gid") or SHARED_FIELD_GID
+    lid = _next_lid(state, proj.prefix)
+    state["tasks"][new_gid] = lid
+    save_ids(proj, state, dry_run=False)
+    if field_gid:
+        try:
+            _put(f"/tasks/{new_gid}", {"data": {"custom_fields": {field_gid: lid}}})
+            log.info(f"  Local ID set: {lid}")
+        except Exception as e:
+            log.warning(f"  Could not write Local ID to Asana: {e}")
+
+    # 5. Append to mirror
+    today = date.today().isoformat()
+    now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    permalink = f"https://app.asana.com/1/{WORKSPACE_GID}/project/{proj.gid}/task/{new_gid}"
+    entry = "\n".join([
+        f"### {lid} — {name}",
+        f"- **Local ID:** {lid}",
+        f"- **Asana ID:** {new_gid}",
+        f"- **Section:** {section_name_upper}",
+        f"- **Due:** {due if due else 'none'}",
+        f"- **Start:** none",
+        f"- **Assignee:** {ASSIGNEE_NAME} ({BAINBOT_GID})",
+        f"- **Assignee Status:** inbox",
+        f"- **Tags:** none",
+        f"- **Followers:** none",
+        f"- **Dependencies:** none",
+        f"- **Dependents:** none",
+        f"- **Notes:** {notes if notes else 'none'}",
+        f"- **Blockers:** None identified.",
+        f"- **Progress:** none",
+        f"- **Comments:** none",
+        f"- **Modified:** {now}",
+        f"- **URL:** {permalink}",
+        "",
+    ])
+
+    mirror = proj.mirror_file
+    if mirror.exists():
+        content = mirror.read_text()
+        # Insert before the summary table (last --- block) or append
+        if "\n---\n" in content:
+            insert_at = content.rfind("\n---\n")
+            content = content[:insert_at] + "\n" + entry + content[insert_at:]
+        else:
+            content = content.rstrip() + "\n\n" + entry
+        mirror.write_text(content)
+        log.info(f"  Appended to mirror: {mirror}")
+    else:
+        log.warning(f"  Mirror not found at {mirror} — run sync to generate it")
+
+    log.info(f"\n  Created: {lid} — {name}")
+    log.info(f"  Section: {section_name_upper} | Project: {proj.prefix}")
+    return lid
+
+
 # ---------------------------------------------------------------------------
 # Project scaffold (--create)
 # ---------------------------------------------------------------------------
@@ -1118,6 +1218,10 @@ def main():
                         help="Task name (required with --create-task)")
     parser.add_argument("--task-notes", metavar="NOTES", default="",
                         help="Task notes/description (optional with --create-task)")
+    parser.add_argument("--task-section", metavar="SECTION", default="NEXT UP",
+                        help="Section to place the task in (default: NEXT UP)")
+    parser.add_argument("--task-due", metavar="YYYY-MM-DD", default="",
+                        help="Due date for the new task (optional)")
     parser.add_argument("--task-assignee", metavar="GID", default="",
                         help="Assignee GID (optional; defaults to Mark's GID if not set)")
     parser.add_argument("--task-depends-on", metavar="GID", default="",
@@ -1157,16 +1261,15 @@ def main():
             log.error(f"No project found with prefix '{args.project}'.")
             sys.exit(1)
         proj = projects[0]
-        assignee = args.task_assignee or USER_GID
-        gid = create_task(
-            project_gid=proj.gid,
+        lid = create_task_full(
+            proj=proj,
             name=args.task_name,
+            section_name=args.task_section,
             notes=args.task_notes,
-            assignee_gid=assignee,
-            depends_on_gid=args.task_depends_on or None,
+            due=args.task_due,
             dry_run=args.dry_run,
         )
-        print(gid)
+        print(lid)
         sys.exit(0)
 
     if args.setup:
