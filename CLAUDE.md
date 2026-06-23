@@ -97,6 +97,7 @@ ln -s /media/data/dev/bain-studio/.claude/skills/{name} ~/.claude/skills/{name}
 - `wp-css-override` — used in client WordPress projects
 - `wp-plugin-expert` — used in client WordPress projects
 - `copywriter` — used for client copy
+- `notify` — Slack ping on task/script completion, works from any project
 
 ## Project inboxes
 
