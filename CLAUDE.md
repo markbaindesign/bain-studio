@@ -67,6 +67,7 @@ Quick reference (paths only — see project file for full details):
 | Prefix | Path |
 |--------|------|
 | BSTD | `/media/data/dev/bain-studio` |
+| KF-WEB | `/media/data/dev/vvv/clients/www/kf-21` |
 | MCF | `/home/bain/code/misc/js/astrojs/client/mhairi_mcf` |
 | PIPE | `/media/data/dev/misc/upwork-proposals` |
 | DOM | `/media/data/dev/misc/premium_domains` |
@@ -88,6 +89,7 @@ ln -s /media/data/dev/bain-studio/.claude/skills/{name} ~/.claude/skills/{name}
 | `brand-doc` | brands any .md file as a Bain Design PDF |
 | `recap` | per-project re-entry brief: git, Asana, inbox, next action |
 | `focus` | mid-day context switch — `/focus MCF` from studio dir |
+| `end-session` | project-level wrap-up: commit, sync mirror, write handoff note |
 
 **Global-only skills** (not in this repo — live directly in `~/.claude/skills/`):
 - `grill-me` — general planning, useful everywhere
