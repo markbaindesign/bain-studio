@@ -13,16 +13,3 @@
 **Next action:** Review the 6 template diffs one by one using `context/prod-sync-2026-06-23.md` as the guide, then clear DB overrides (7 tasks queued)
 
 **Blockers:** None - diffs are staged, report is written, tasks are clear
-
-## 2026-06-23 17:30 — Khyentse Foundation Website session
-
-**Done:**
-- Investigated WP Engine storage overage (~2.1 GB over allowance)
-- Deleted duplicate theme copies (kf-21_x, kf-21_xx, kf-21_2.7.2, kf-21_2.8.0, theme.zip) - freed ~387 MB
-- Deleted wpallimport/wpallexport leftovers - freed ~88 MB
-- Total freed: ~475 MB, production now at ~1.6 GB
-- Logged KF-WEB-031 (local-only) for remaining 404 MB uploads S3 offload
-
-**Next action:** Create KF-WEB-031 in Asana manually, then run WP Offload Media bulk offload from WP admin to clear the remaining 404 MB from uploads/
-
-**Blockers:** None
