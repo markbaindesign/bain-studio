@@ -1226,6 +1226,12 @@ def main():
                         help="Assignee GID (optional; defaults to Mark's GID if not set)")
     parser.add_argument("--task-depends-on", metavar="GID", default="",
                         help="GID of the task this new task unblocks (optional)")
+    parser.add_argument("--comment", action="store_true",
+                        help="Post a comment to an Asana task via bainbot (use with --task-gid and --comment-text)")
+    parser.add_argument("--task-gid", metavar="GID", default="",
+                        help="Asana task GID to comment on (required with --comment)")
+    parser.add_argument("--comment-text", metavar="TEXT", default="",
+                        help="Comment text to post (required with --comment)")
     args = parser.parse_args()
 
     if not ASANA_PAT:
@@ -1234,6 +1240,13 @@ def main():
     if not WORKSPACE_GID or not BAINBOT_GID:
         log.error("ERROR: ASANA_WORKSPACE_GID and ASANA_BAINBOT_GID must be set in .env")
         sys.exit(2)
+
+    if args.comment:
+        if not args.task_gid or not args.comment_text:
+            parser.error("--comment requires --task-gid and --comment-text")
+        leave_comment(args.task_gid, args.comment_text, dry_run=args.dry_run)
+        log.info(f"Commented on task {args.task_gid}.")
+        sys.exit(0)
 
     if args.create:
         missing = [f for f, v in [("--name", args.name), ("--prefix", args.prefix), ("--path", args.path)] if not v]
