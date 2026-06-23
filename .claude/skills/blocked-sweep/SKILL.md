@@ -20,8 +20,21 @@ For each path, check if `{path}/.claude/asana-mirror.md` exists.
 
 A task is blocked if ANY of the following:
 - `Section: STALLED`
-- `Blockers:` field is non-empty and not `None identified`
-- Task has been `In Progress` or `DOING` with no `Progress:` update in 7+ days (stale)
+- `Blockers:` field is non-empty and not a "none" variant (see matching rules below)
+- Task is in `DOING` or `IN PROGRESS` section and is stale (see stale rules below)
+
+**Blocker matching rules:**
+Strip punctuation and lowercase the Blockers field before comparing. Treat the following as "no blocker":
+- `none identified`
+- `none`
+- empty string
+
+So `"None identified."`, `"None."`, `"None Identified."` all count as no blocker.
+
+**Stale rules:**
+A task is stale only if it is in `DOING` or `IN PROGRESS` section AND the Progress field contains a date that is 7+ days old. Exclude auto-stamps: if Progress starts with `"Checked "` it is a bainbot audit stamp, not a real progress note — do not use it to calculate staleness. If Progress is empty or only contains a Checked stamp, the task is not considered stale unless it has been in DOING for an unusually long time (use Modified date if available).
+
+**Exclude DONE section tasks entirely.** Tasks in DONE are complete — never flag them regardless of other fields.
 
 For each blocked task extract:
 - Local ID (e.g. `NORE-014`)
