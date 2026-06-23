@@ -11,25 +11,33 @@ Log a screenshot as an Asana task in under 30 seconds. No QA pipeline, no review
 ## Usage
 
 ```
-/qa-capture qa/qa-inbox/screenshot.png
-/qa-capture qa/qa-inbox/screenshot.png "optional extra context"
+/qa-capture
+/qa-capture "optional extra context for all items"
 ```
 
-Screenshots are saved to `qa/qa-inbox/` in the current project. Drop the screenshot there, then invoke with the filename. Extra context is optional — use it to add detail that isn't visible in the image (e.g. "happens only on mobile", "introduced after the last deploy").
+Drop screenshots into `qa/qa-inbox/` in the current project, then invoke. The skill finds them automatically — no path needed.
 
 ---
 
 ## Steps
 
-### 1. Read the screenshot
-
-Use the Read tool on the provided path. If the file does not exist, report that and stop.
-
-### 2. Identify the project
+### 1. Identify the project
 
 Read `CLAUDE.md` in the current directory to get `ASANA_TASK_PREFIX` and `ASANA_PROJECT_NAME`.
 
 If not in a project directory, ask: "Which project is this for?" and accept a prefix (e.g. `NORE`, `BSTD`, `KF-WEB`).
+
+### 2. Find screenshots in qa-inbox
+
+```bash
+ls {PROJECT_ROOT}/qa/qa-inbox/
+```
+
+Filter for image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) and files that do NOT already start with a `{PREFIX}-QA-` ref (those are already registered).
+
+If no unregistered images found, report "No screenshots in qa/qa-inbox/ to log." and stop.
+
+If multiple images found, list them and process each one in turn (one confirmation per image).
 
 ### 3. Analyse the screenshot
 
@@ -94,6 +102,7 @@ Nothing else. The user is back to work.
 
 ## Notes
 
-- Screenshot lives in `qa/qa-inbox/` — do not move it. The path in the task notes is the reference.
+- Screenshots stay in `qa/qa-inbox/` — do not move them. The path in the task notes is the reference.
+- Already-registered images (filename starts with `{PREFIX}-QA-`) are skipped — they've been through `/qa` already.
 - If the screenshot is ambiguous (e.g. blank, or you can't tell what's wrong), say so and ask for a one-line description before proposing a title.
 - This skill does NOT go through the qa-inbox pipeline. Use `/qa` for interactive QA sessions with review and sign-off.
