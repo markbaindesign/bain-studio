@@ -54,11 +54,37 @@ From what you see in the image, determine:
 - **Feature area** — one or two words: e.g. `dashboard`, `forms`, `mobile`, `nav`, `sync`
 - **Description** — one sentence of what's wrong, incorporating any extra context the user provided
 
-### 4. Confirm with the user
+### 4. Dedupe check
 
-Present a single `AskUserQuestion` with the proposed task:
+Before asking the user anything, grep the project mirror for possible duplicates.
+
+Extract keywords from the proposed title: split on spaces, drop words shorter than 4 characters and common stop words (the, and, for, with, on, in, at, to, of, is, are, was). Use the remaining words.
+
+```bash
+grep -i "{keyword1}\|{keyword2}\|{keyword3}" {PROJECT_ROOT}/.claude/asana-mirror.md | grep "^### "
+```
+
+Score each match by how many keywords appear in the task title. Flag any task with 2+ keyword matches as a likely duplicate.
+
+**If likely duplicates found**, prepend a warning to the confirmation question:
 
 ```
+Possible duplicate(s):
+- {LOCAL_ID} — {task title} ({section})
+- {LOCAL_ID} — {task title} ({section})
+```
+
+Do not block — the user decides. Just surface it.
+
+**If no matches**, proceed silently.
+
+### 5. Confirm with the user
+
+Present a single `AskUserQuestion` with the proposed task (and any duplicate warning from step 4):
+
+```
+[Possible duplicate: BSTD-021 — Dashboard gnucash totals incorrect (DOING)]
+
 Title: {title}
 Severity: {severity}
 Area: {feature area}
@@ -73,7 +99,7 @@ Options:
 If "Edit title" is chosen, use the corrected title and proceed.
 If "Skip", stop.
 
-### 5. Create the Asana task
+### 6. Create the Asana task
 
 ```bash
 python3 /media/data/dev/bain-studio/studio/sync.py \
@@ -88,7 +114,7 @@ Screenshot: {absolute path}" \
   --task-section "NEXT UP"
 ```
 
-### 6. Confirm and get out of the way
+### 7. Confirm and get out of the way
 
 Report one line:
 
