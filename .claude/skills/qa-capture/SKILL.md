@@ -11,11 +11,11 @@ Log a screenshot as an Asana task in under 30 seconds. No QA pipeline, no review
 ## Usage
 
 ```
-/qa-capture /path/to/screenshot.png
-/qa-capture /path/to/screenshot.png "optional extra context"
+/qa-capture qa/qa-inbox/screenshot.png
+/qa-capture qa/qa-inbox/screenshot.png "optional extra context"
 ```
 
-The screenshot path is required. Extra context is optional — use it to add detail that isn't visible in the image (e.g. "happens only on mobile", "introduced after the last deploy").
+Screenshots are saved to `qa/qa-inbox/` in the current project. Drop the screenshot there, then invoke with the filename. Extra context is optional — use it to add detail that isn't visible in the image (e.g. "happens only on mobile", "introduced after the last deploy").
 
 ---
 
@@ -94,6 +94,6 @@ Nothing else. The user is back to work.
 
 ## Notes
 
-- Screenshot stays wherever it is — do not move it. The path in the task notes is the reference.
+- Screenshot lives in `qa/qa-inbox/` — do not move it. The path in the task notes is the reference.
 - If the screenshot is ambiguous (e.g. blank, or you can't tell what's wrong), say so and ask for a one-line description before proposing a title.
 - This skill does NOT go through the qa-inbox pipeline. Use `/qa` for interactive QA sessions with review and sign-off.
