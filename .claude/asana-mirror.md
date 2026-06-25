@@ -8,7 +8,7 @@ Assignee GID: 1209202434387214
 ### BSTD-039 — Research Cloudways API — script application/server management
 - **Local ID:** BSTD-039
 - **Asana ID:** 1215964166735169
-- **Section:** NEXT UP
+- **Section:** DONE
 - **Due:** none
 - **Start:** none
 - **Assignee:** BainBot (1209202434387214)
