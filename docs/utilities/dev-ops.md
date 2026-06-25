@@ -1,5 +1,7 @@
 ---
-tags: [utility, devops, hosting, template]
+tags: [template, devops, hosting, docs]
+god: none
+command: "cp from docs/utilities/dev-ops.md → project root"
 description: Template for project dev-ops documentation. Copy to the project root as dev-ops.md and fill in the blanks. No passwords or keys.
 ---
 
