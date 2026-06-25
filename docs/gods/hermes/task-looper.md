@@ -50,6 +50,17 @@ echo "cd /path/to/project && claude -p '/task-looper'" | at 20:10
 
 Run from the project directory (not the studio root) so Claude picks up the right project context.
 
+## Usage tracking
+
+At task start and end, the rate-limit percentage is read from `~/.claude/ratelimit-current.json` and appended to `~/logs/task-looper.log`:
+
+```
+2026-06-25 20:00:01 INFO    [BSTD] BSTD-046 usage-start: 35% — resets 2026-07-01 04:00
+2026-06-25 20:05:00 INFO    [BSTD] BSTD-046 usage-end:   38% — resets 2026-07-01 04:00
+```
+
+The delta is the rate-limit cost of that task. The reset timestamp shows when the window refreshes. The Asana progress comment also includes the end percentage so usage is visible per task in the mirror.
+
 ## Guard rails
 
 - Never merges PRs — all PRs are for Mark's review

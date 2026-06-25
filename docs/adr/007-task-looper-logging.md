@@ -19,7 +19,16 @@ The `[PREFIX]` tag (e.g. `[BD]`, `[WTF]`) makes individual project runs greppabl
 grep "\[BD\]" ~/logs/task-looper.log
 ```
 
-What gets logged: session start/end, task lifecycle (started/complete/blocked with reason), git ops (branch, commits, push, PR URL), sync.py calls, notifier.py calls, non-zero exit errors (command + stderr).
+Usage lines use two sub-events per task:
+
+```
+YYYY-MM-DD HH:MM:SS INFO    [BD] BD-039 usage-start: 35% — resets 2026-07-01 04:00
+YYYY-MM-DD HH:MM:SS INFO    [BD] BD-039 usage-end:   38% — resets 2026-07-01 04:00
+```
+
+The delta between `usage-start` and `usage-end` shows the rate-limit consumption for that task. The reset timestamp tells Mark when the window refreshes. Usage data comes from `~/.claude/ratelimit-current.json`.
+
+What gets logged: session start/end, task lifecycle (started/complete/blocked with reason), git ops (branch, commits, push, PR URL), sync.py calls, notifier.py calls, non-zero exit errors (command + stderr), and rate-limit usage at task start and end.
 
 No log rotation. A review task is scheduled for 2026-07-09 to check file size and decide if rotation is needed.
 
