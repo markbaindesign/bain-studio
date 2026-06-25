@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+# bb-pr — create a Bitbucket pull request from the current branch
+#
+# Credentials are read from ~/.config/bb-pr (created on first run),
+# or from BITBUCKET_USER / BITBUCKET_APP_PASSWORD env vars.
+#
+# Usage:
+#   bb-pr [options]
+#
+# Options:
+#   -b, --base BRANCH    Target branch (default: develop)
+#   -t, --title TEXT     PR title (default: current branch name)
+#   -d, --description    PR description (opens $EDITOR if set)
+#   --body TEXT          PR body text (inline alternative to --description)
+#   --setup              Re-run credential setup
+#   -h, --help           Show this help
+
+set -euo pipefail
+
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/bb-pr"
+
+# ── help ──────────────────────────────────────────────────────────────────────
+usage() {
+  grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//'
+  exit 0
+}
+
+# ── credential setup ──────────────────────────────────────────────────────────
+setup() {
+  echo "Bitbucket credentials setup"
+  echo "Create an app password at: https://bitbucket.org/account/settings/app-passwords"
+  echo "Required permissions: Repositories (Read + Write), Pull Requests (Read + Write)"
+  echo ""
+  read -rp "Bitbucket username: " input_user
+  read -rsp "App password: " input_pass
+  echo ""
+  mkdir -p "$(dirname "$CONFIG_FILE")"
+  cat > "$CONFIG_FILE" <<EOF
+BITBUCKET_USER=$input_user
+BITBUCKET_APP_PASSWORD=$input_pass
+EOF
+  chmod 600 "$CONFIG_FILE"
+  echo "Credentials saved to $CONFIG_FILE"
+}
+
+# ── load credentials ──────────────────────────────────────────────────────────
+load_credentials() {
+  # env vars take precedence over config file
+  if [[ -z "${BITBUCKET_USER:-}" || -z "${BITBUCKET_APP_PASSWORD:-}" ]]; then
+    if [[ -f "$CONFIG_FILE" ]]; then
+      # shellcheck source=/dev/null
+      source "$CONFIG_FILE"
+    fi
+  fi
+
+  if [[ -z "${BITBUCKET_USER:-}" || -z "${BITBUCKET_APP_PASSWORD:-}" ]]; then
+    echo "No Bitbucket credentials found. Running setup..."
+    echo ""
+    setup
+    source "$CONFIG_FILE"
+  fi
+}
+
+# ── parse args ────────────────────────────────────────────────────────────────
+BASE="develop"
+TITLE=""
+BODY=""
+USE_EDITOR=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)        usage ;;
+    --setup)          setup; exit 0 ;;
+    -b|--base)        BASE="$2"; shift 2 ;;
+    -t|--title)       TITLE="$2"; shift 2 ;;
+    --body)           BODY="$2"; shift 2 ;;
+    -d|--description) USE_EDITOR=1; shift ;;
+    *)
+      # positional fallback: bb-pr [base] [title] [body]
+      if [[ -z "$BASE" || "$BASE" == "develop" ]]; then BASE="$1"
+      elif [[ -z "$TITLE" ]]; then TITLE="$1"
+      elif [[ -z "$BODY" ]]; then BODY="$1"
+      fi
+      shift ;;
+  esac
+done
+
+# ── repo + branch ─────────────────────────────────────────────────────────────
+if ! git rev-parse --git-dir &>/dev/null; then
+  echo "Error: not inside a git repository." >&2
+  exit 1
+fi
+
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
+if [[ -z "$REMOTE_URL" ]]; then
+  echo "Error: no 'origin' remote found." >&2
+  exit 1
+fi
+
+# support both SSH (git@bitbucket.org:owner/repo.git) and HTTPS
+if [[ "$REMOTE_URL" =~ bitbucket\.org[:/](.+/.+?)(.git)?$ ]]; then
+  SLUG="${BASH_REMATCH[1]}"
+else
+  echo "Error: origin does not look like a Bitbucket remote." >&2
+  echo "       Remote: $REMOTE_URL" >&2
+  exit 1
+fi
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+[[ -z "$TITLE" ]] && TITLE="$BRANCH"
+
+# ── optional editor for body ──────────────────────────────────────────────────
+if [[ "$USE_EDITOR" -eq 1 ]]; then
+  TMPFILE=$(mktemp /tmp/bb-pr-body.XXXXXX)
+  echo "# Enter PR description. Lines starting with # are ignored." >> "$TMPFILE"
+  ${EDITOR:-vi} "$TMPFILE"
+  BODY=$(grep -v '^#' "$TMPFILE" | sed '/^[[:space:]]*$/d' || true)
+  rm -f "$TMPFILE"
+fi
+
+# ── credentials ───────────────────────────────────────────────────────────────
+load_credentials
+
+# ── confirm ───────────────────────────────────────────────────────────────────
+echo ""
+echo "  repo:  $SLUG"
+echo "  from:  $BRANCH"
+echo "  into:  $BASE"
+echo "  title: $TITLE"
+[[ -n "$BODY" ]] && echo "  body:  ${BODY:0:60}..."
+echo ""
+read -rp "Create PR? [Y/n] " confirm
+[[ "${confirm,,}" == "n" ]] && echo "Cancelled." && exit 0
+
+# ── build payload ─────────────────────────────────────────────────────────────
+PAYLOAD=$(python3 -c "
+import json, sys
+print(json.dumps({
+    'title': sys.argv[1],
+    'source': {'branch': {'name': sys.argv[2]}},
+    'destination': {'branch': {'name': sys.argv[3]}},
+    'description': sys.argv[4],
+    'close_source_branch': True
+}))
+" "$TITLE" "$BRANCH" "$BASE" "$BODY")
+
+# ── call API ──────────────────────────────────────────────────────────────────
+RESPONSE=$(curl -s \
+  -u "$BITBUCKET_USER:$BITBUCKET_APP_PASSWORD" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d "$PAYLOAD" \
+  "https://api.bitbucket.org/2.0/repositories/$SLUG/pullrequests")
+
+python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+href = d.get('links', {}).get('html', {}).get('href', '')
+if href:
+    print('PR created: ' + href)
+else:
+    err = d.get('error', {}).get('message', json.dumps(d, indent=2))
+    print('Error: ' + err, file=sys.stderr)
+    sys.exit(1)
+" <<< "$RESPONSE"
