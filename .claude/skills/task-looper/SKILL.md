@@ -228,6 +228,25 @@ python3 /media/data/dev/bain-studio/studio/notifier.py \
   --priority normal --sender task-looper --project {PREFIX}
 ```
 
+Log token usage:
+```bash
+python3 - <<'PYEOF'
+import json, datetime
+from pathlib import Path
+rl = Path.home() / ".claude/ratelimit-current.json"
+if rl.exists():
+    data = json.loads(rl.read_text())
+    pct = data.get("current_pct", "?")
+    reset_ts = data.get("reset_ts")
+    reset_dt = datetime.datetime.fromtimestamp(reset_ts).strftime("%Y-%m-%d %H:%M") if reset_ts else "unknown"
+else:
+    pct, reset_dt = "?", "unknown"
+log = Path.home() / "logs/task-looper.log"
+ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+log.open("a").write(f"{ts} INFO    [BSTD] usage: {pct}% — resets {reset_dt}\n")
+PYEOF
+```
+
 Then output the completion promise:
 ```
 <promise>{TASK_ID}_COMPLETE</promise>
@@ -256,6 +275,25 @@ Notify:
 python3 /media/data/dev/bain-studio/studio/notifier.py \
   "{ID} blocked: {task name}. {One sentence blocker summary}. Branch {branch-name} has partial work." \
   --priority high --sender task-looper --project {PREFIX}
+```
+
+Log token usage:
+```bash
+python3 - <<'PYEOF'
+import json, datetime
+from pathlib import Path
+rl = Path.home() / ".claude/ratelimit-current.json"
+if rl.exists():
+    data = json.loads(rl.read_text())
+    pct = data.get("current_pct", "?")
+    reset_ts = data.get("reset_ts")
+    reset_dt = datetime.datetime.fromtimestamp(reset_ts).strftime("%Y-%m-%d %H:%M") if reset_ts else "unknown"
+else:
+    pct, reset_dt = "?", "unknown"
+log = Path.home() / "logs/task-looper.log"
+ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+log.open("a").write(f"{ts} INFO    [BSTD] usage: {pct}% — resets {reset_dt}\n")
+PYEOF
 ```
 
 Then output the blocked promise:
