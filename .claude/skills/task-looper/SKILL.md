@@ -100,6 +100,86 @@ Then read `.claude/asana-mirror.md` and check for any tasks that were previously
 
 ---
 
+## Step 1c — Check usage headroom
+
+Before doing any work, check if there is enough token headroom to run a task. If usage is high, auto-schedule a re-run rather than starting work that will be cut off mid-task.
+
+```bash
+python3 - <<'PYEOF'
+import json, datetime, sys
+from pathlib import Path
+
+rl = Path.home() / ".claude/ratelimit-current.json"
+if not rl.exists():
+    sys.exit(0)  # no data — proceed
+
+data = json.loads(rl.read_text())
+pct = data.get("current_pct", 0)
+reset_ts = data.get("reset_ts")
+
+if pct < 85:
+    sys.exit(0)  # headroom OK — proceed
+
+if not reset_ts:
+    print(f"RATE_LIMITED: {pct}% used, no reset_ts available — stopping")
+    sys.exit(1)
+
+reset_dt = datetime.datetime.fromtimestamp(reset_ts)
+reset_h = reset_dt.hour + reset_dt.minute / 60
+
+# Work hours: 04:30–19:00. Only auto-schedule outside this window.
+if reset_h < 4.5 or reset_h >= 19:
+    reset_str = reset_dt.strftime("%H:%M")
+    print(f"SCHEDULE:{reset_str}")
+else:
+    print(f"WORK_HOURS:{reset_dt.strftime('%H:%M')}")
+PYEOF
+```
+
+Capture the output and branch:
+
+- **Output is empty / exit 0 with no output**: usage is fine, continue to Step 2.
+- **Output starts with `SCHEDULE:{TIME}`**: usage is high and reset falls outside work hours. Schedule a re-run:
+  ```bash
+  # Fall back to Python sleep since `at` is not installed
+  RESET_TIME={TIME}   # e.g. 02:20
+  python3 - <<'EOF'
+  import time, subprocess, sys, datetime
+  from pathlib import Path
+  hh, mm = map(int, sys.argv[1].split(":"))
+  target = datetime.datetime.now().replace(hour=hh, minute=mm, second=0, microsecond=0)
+  delay = (target - datetime.datetime.now()).total_seconds()
+  if delay <= 0:
+      delay += 86400  # next day
+  project = sys.argv[2]
+  script = f"""import time, subprocess
+  time.sleep({int(delay)})
+  subprocess.run(["claude", "--dangerously-skip-permissions", "-p", "/task-looper"], cwd="{project}")
+  """
+  p = Path("/tmp/task-looper-scheduled.py")
+  p.write_text(script)
+  print(f"Scheduled in {int(delay)}s ({sys.argv[1]})")
+  EOF
+  python3 - "$RESET_TIME" "$(pwd)"
+  nohup python3 /tmp/task-looper-scheduled.py >> ~/logs/task-looper.log 2>&1 &
+  echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] rate-limited at {PCT}% — scheduled re-run at {TIME} (PID $!)" >> ~/logs/task-looper.log
+  python3 /media/data/dev/bain-studio/studio/notifier.py \
+    "task-looper: rate-limited at {PCT}%. Re-run scheduled at {TIME}." \
+    --priority normal --sender task-looper --project {PREFIX}
+  ```
+  Then stop — do not output any promise. The stop hook will not re-inject because no promise was output.
+
+- **Output starts with `WORK_HOURS:{TIME}`**: usage is high but reset falls during work hours (04:30–19:00). Do not auto-schedule. Log and notify, then stop:
+  ```bash
+  echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] rate-limited at {PCT}% — reset at {TIME} is during work hours, not auto-scheduling" >> ~/logs/task-looper.log
+  python3 /media/data/dev/bain-studio/studio/notifier.py \
+    "task-looper: rate-limited at {PCT}%. Reset at {TIME} (work hours) — schedule manually." \
+    --priority high --sender task-looper --project {PREFIX}
+  ```
+  Then stop.
+
+---
+
 ## Step 2 — Build the queue
 
 Read `.claude/asana-mirror.md`. Extract all tasks where:
