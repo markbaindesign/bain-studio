@@ -78,6 +78,36 @@ fi
 
 ---
 
+## Logging
+
+All loggable events are written to `~/logs/task-looper.log` using inline `echo` appends. Format matches `studio/sync.log`:
+
+```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] message" >> ~/logs/task-looper.log
+```
+
+Replace `{PREFIX}` with the project prefix (e.g. `BD`, `WTF`). Until the prefix is known, use `TASK-LOOPER`.
+
+Log these events (examples):
+- Session start: `[BD] Session started — 3 tasks in queue: BD-039 BD-040 BD-041`
+- Session end: `[BD] Session ended — queue empty`
+- Task started: `[BD] BD-039 started: Add custom icons for all CPTs`
+- Branch created: `[BD] git checkout -b feature/bd-039-add-custom-icons-cpts`
+- Commit: `[BD] commit: "Set distinct dashicons for each custom post type" (register.php)`
+- Push: `[BD] pushed feature/bd-039-add-custom-icons-cpts`
+- PR raised: `[BD] PR: https://github.com/...`
+- Task complete: `[BD] BD-039 complete`
+- Task blocked: `[BD] BD-039 blocked: {one-sentence reason}`
+- Usage at start: `[BD] usage-start: 35% — resets 2026-07-01 04:00`
+- Usage at end: `[BD] usage-end: 38% — resets 2026-07-01 04:00`
+- Sync call: `[BD] sync.py --project BD → exit 0`
+- Notifier call: `[BD] notify: {message text}`
+- Error: `[BD] ERROR: {command} exited {code} — {stderr}`
+
+For errors (non-zero exit from any bash command), log before taking any recovery action.
+
+---
+
 ## Step 1 — Load project context
 
 Read `CLAUDE.md` in the current working directory. Extract:
@@ -106,8 +136,9 @@ Read `.claude/asana-mirror.md`. Extract all tasks where:
 - `**Assignee:**` contains `BainBot`
 - `**Section:**` is NOT `DONE`
 
-If none found, notify via Hermes and stop:
+If none found, log and notify via Hermes and stop:
 ```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] Session ended — no outstanding BainBot tasks" >> ~/logs/task-looper.log
 python3 /media/data/dev/bain-studio/studio/notifier.py \
   "task-looper: no outstanding BainBot tasks in {Project}." \
   --priority normal --sender task-looper --project {PREFIX}
@@ -122,7 +153,7 @@ Order the queue:
 
 ## Step 3 — Write the state file
 
-Write `.claude/task-looper.local.md`. The first task in the queue goes in `current_task`; the rest go in the body, one ID per line.
+Write `.claude/bd-task-looper.local.md`. The first task in the queue goes in `current_task`; the rest go in the body, one ID per line.
 
 ```
 ---
@@ -147,6 +178,11 @@ python3 /media/data/dev/bain-studio/studio/notifier.py \
   --priority normal --sender task-looper --project {PREFIX}
 ```
 
+Log session start:
+```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] Session started — {N} tasks in queue: {IDs}" >> ~/logs/task-looper.log
+```
+
 ---
 
 ## Step 4 — Work the first task
@@ -155,15 +191,40 @@ Work the task in `current_task`. The stop hook will drive all subsequent tasks a
 
 ### 4a. Create a feature branch
 
-Derive a slug from the task name: lowercase, spaces to hyphens, strip special characters.
+Derive a slug from the task name: lowercase, spaces to hyphens, strip special characters. Do not include the `feature/` prefix — git flow adds that.
 
 ```bash
-git checkout main 2>/dev/null || git checkout master
-git pull
-git checkout -b feature/{prefix-id}-{slug}
+git flow feature start {prefix-id}-{slug}
 ```
 
-Example: `BD-012 — Fix typewriter lines` → `feature/bd-012-fix-typewriter-lines`
+Example: `BD-012 — Fix typewriter lines` → `git flow feature start bd-012-fix-typewriter-lines` → creates `feature/bd-012-fix-typewriter-lines`
+
+git flow branches from the configured develop branch automatically. If `git flow feature start` fails (git flow not initialised), fall back to:
+
+```bash
+git checkout develop && git pull && git checkout -b feature/{prefix-id}-{slug}
+```
+
+Log task start, branch creation, and usage at start:
+```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} started: {task name}" >> ~/logs/task-looper.log
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] git flow feature start {prefix-id}-{slug}" >> ~/logs/task-looper.log
+python3 - <<'PYEOF'
+import json, datetime
+from pathlib import Path
+rl = Path.home() / ".claude/ratelimit-current.json"
+if rl.exists():
+    data = json.loads(rl.read_text())
+    pct = data.get("current_pct", "?")
+    reset_ts = data.get("reset_ts")
+    reset_dt = datetime.datetime.fromtimestamp(reset_ts).strftime("%Y-%m-%d %H:%M") if reset_ts else "unknown"
+else:
+    pct, reset_dt = "?", "unknown"
+log = Path.home() / "logs/task-looper.log"
+ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+log.open("a").write(f"{ts} INFO    [{PREFIX}] usage-start: {pct}% — resets {reset_dt}\n")
+PYEOF
+```
 
 ### 4b. Understand the task
 
@@ -180,6 +241,16 @@ Do the work. Use your full judgment and knowledge of the tech stack.
 - Never commit `.env` files, secrets, or large binaries
 - Never commit directly to main/master
 
+After each commit, log it:
+```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] commit: \"{commit message}\" ({files changed})" >> ~/logs/task-looper.log
+```
+
+If any bash command exits non-zero, log the error before recovering:
+```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] ERROR: {command} exited {code} — {stderr}" >> ~/logs/task-looper.log
+```
+
 ### 4d. Assess completion
 
 **Complete** means: the described problem is solved, the change works, nothing newly broken.
@@ -192,13 +263,40 @@ Do the work. Use your full judgment and knowledge of the tech stack.
 
 ### 4e — If complete
 
+Read the current rate limit usage before updating the mirror:
+```bash
+python3 - <<'PYEOF'
+import json, datetime
+from pathlib import Path
+rl = Path.home() / ".claude/ratelimit-current.json"
+if rl.exists():
+    data = json.loads(rl.read_text())
+    pct = data.get("current_pct", "?")
+    reset_ts = data.get("reset_ts")
+    reset_dt = datetime.datetime.fromtimestamp(reset_ts).strftime("%Y-%m-%d %H:%M") if reset_ts else "unknown"
+else:
+    pct, reset_dt = "?", "unknown"
+log = Path.home() / "logs/task-looper.log"
+ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+log.open("a").write(f"{ts} INFO    [{PREFIX}] usage-end: {pct}% — resets {reset_dt}\n")
+print(f"usage:{pct}:{reset_dt}")
+PYEOF
+```
+
+Capture the printed `usage:{pct}:{reset_dt}` line from stdout and include it in the Progress update below.
+
 Update the mirror:
 - Set `**Section:**` to `DONE`
-- Set `**Progress:**` to: `Completed {YYYY-MM-DD}. {One or two sentences: what changed, where, what it does.}`
+- Set `**Progress:**` to: `Completed {YYYY-MM-DD}. {One or two sentences: what changed, where, what it does.} Session: {pct}% used (resets {reset_dt}).`
 
 Run sync:
 ```bash
 cd /media/data/dev/bain-studio && python3 studio/sync.py --project {PREFIX}
+```
+
+Log sync call:
+```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] sync.py --project {PREFIX} → exit $?" >> ~/logs/task-looper.log
 ```
 
 Push branch and raise PR:
@@ -221,6 +319,13 @@ EOF
 )"
 ```
 
+Log push, PR, and completion:
+```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] pushed feature/{prefix-id}-{slug}" >> ~/logs/task-looper.log
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] PR: {pr_url}" >> ~/logs/task-looper.log
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} complete" >> ~/logs/task-looper.log
+```
+
 Notify:
 ```bash
 python3 /media/data/dev/bain-studio/studio/notifier.py \
@@ -228,23 +333,9 @@ python3 /media/data/dev/bain-studio/studio/notifier.py \
   --priority normal --sender task-looper --project {PREFIX}
 ```
 
-Log token usage:
+Log the notify call:
 ```bash
-python3 - <<'PYEOF'
-import json, datetime
-from pathlib import Path
-rl = Path.home() / ".claude/ratelimit-current.json"
-if rl.exists():
-    data = json.loads(rl.read_text())
-    pct = data.get("current_pct", "?")
-    reset_ts = data.get("reset_ts")
-    reset_dt = datetime.datetime.fromtimestamp(reset_ts).strftime("%Y-%m-%d %H:%M") if reset_ts else "unknown"
-else:
-    pct, reset_dt = "?", "unknown"
-log = Path.home() / "logs/task-looper.log"
-ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-log.open("a").write(f"{ts} INFO    [BSTD] usage: {pct}% — resets {reset_dt}\n")
-PYEOF
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] notify: {ID} complete: {task name}. PR at {url}." >> ~/logs/task-looper.log
 ```
 
 Then output the completion promise:
@@ -254,30 +345,12 @@ Then output the completion promise:
 
 ### 4f — If blocked
 
-Check out back to main/master (leave the branch — partial work is not lost):
+Check out back to the git flow develop branch (leave the feature branch — partial work is not lost):
 ```bash
-git checkout main 2>/dev/null || git checkout master
+git checkout "$(git config gitflow.branch.develop 2>/dev/null || echo develop)"
 ```
 
-Update the mirror — both fields:
-```
-**Blockers:** {YYYY-MM-DD} — {What is blocking. What information or decision is needed. Who can resolve it. What was attempted.}
-**Progress:** Blocked {YYYY-MM-DD}. {Same reason in one or two sentences — this is what gets posted as an Asana comment.}
-```
-
-Run sync:
-```bash
-cd /media/data/dev/bain-studio && python3 studio/sync.py --project {PREFIX}
-```
-
-Notify:
-```bash
-python3 /media/data/dev/bain-studio/studio/notifier.py \
-  "{ID} blocked: {task name}. {One sentence blocker summary}. Branch {branch-name} has partial work." \
-  --priority high --sender task-looper --project {PREFIX}
-```
-
-Log token usage:
+Read the current rate limit usage before updating the mirror:
 ```bash
 python3 - <<'PYEOF'
 import json, datetime
@@ -292,8 +365,44 @@ else:
     pct, reset_dt = "?", "unknown"
 log = Path.home() / "logs/task-looper.log"
 ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-log.open("a").write(f"{ts} INFO    [BSTD] usage: {pct}% — resets {reset_dt}\n")
+log.open("a").write(f"{ts} INFO    [{PREFIX}] usage-end: {pct}% — resets {reset_dt}\n")
+print(f"usage:{pct}:{reset_dt}")
 PYEOF
+```
+
+Capture the printed `usage:{pct}:{reset_dt}` line from stdout.
+
+Update the mirror — both fields:
+```
+**Blockers:** {YYYY-MM-DD} — {What is blocking. What information or decision is needed. Who can resolve it. What was attempted.}
+**Progress:** Blocked {YYYY-MM-DD}. {Same reason in one or two sentences — this is what gets posted as an Asana comment.} Session: {pct}% used (resets {reset_dt}).
+```
+
+Run sync:
+```bash
+cd /media/data/dev/bain-studio && python3 studio/sync.py --project {PREFIX}
+```
+
+Log sync call:
+```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] sync.py --project {PREFIX} → exit $?" >> ~/logs/task-looper.log
+```
+
+Log the blocker:
+```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} blocked: {one-sentence reason}" >> ~/logs/task-looper.log
+```
+
+Notify:
+```bash
+python3 /media/data/dev/bain-studio/studio/notifier.py \
+  "{ID} blocked: {task name}. {One sentence blocker summary}. Branch {branch-name} has partial work." \
+  --priority high --sender task-looper --project {PREFIX}
+```
+
+Log the notify call:
+```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] notify (high): {ID} blocked: {one-sentence reason}." >> ~/logs/task-looper.log
 ```
 
 Then output the blocked promise:
