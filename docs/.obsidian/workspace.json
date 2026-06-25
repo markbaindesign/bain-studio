@@ -11,13 +11,14 @@
             "id": "80e02ec73f73711b",
             "type": "leaf",
             "state": {
-              "type": "bases",
+              "type": "markdown",
               "state": {
-                "file": "projects.base",
-                "viewName": "Active Projects"
+                "file": "gods/plutus/plutus.md",
+                "mode": "source",
+                "source": false
               },
-              "icon": "lucide-table",
-              "title": "projects"
+              "icon": "lucide-file",
+              "title": "plutus"
             }
           }
         ]
@@ -184,6 +185,12 @@
   },
   "active": "80e02ec73f73711b",
   "lastOpenFiles": [
+    "utilities/wp-theme-review.md",
+    "utilities/wp-contributor.md",
+    "studio-map.md",
+    "adr/007-task-looper-logging.md",
+    "adr/008-task-looper-git-flow.md",
+    "projects.base",
     "utilities/seo-audit.md",
     "utilities/seo-audit.md.tmp.23102.c2ee6708fa2e",
     "gods/aura/aura.md",
@@ -196,10 +203,8 @@
     "projects.base.tmp.2052285.42a7a218eb31",
     "projects/sed2Uu3Wt",
     "skills.base",
-    "projects.base",
     "projects/bd.md",
     "projects/dom.md",
-    "studio-map.md",
     "projects/nore.md",
     "projects/pipe.md",
     "projects/mcf.md",
@@ -215,10 +220,6 @@
     "gods/themis/themis.md",
     "adr/003-multi-agent-studio-architecture.md",
     "gods/themis/studio-delivery-gate.md",
-    "gods/hermes/abderus.md",
-    "utilities/notifier.md",
-    "Pantheon.md",
-    "utilities/harvest.md",
-    "indexes/tools.md"
+    "gods/hermes/abderus.md"
   ]
 }
