@@ -265,7 +265,7 @@ Received: Fri, 19 Jun 2026 09:39:52 +0200
 ### BSTD-046 — Add token usage to log, on task completion
 - **Local ID:** BSTD-046
 - **Asana ID:** 1216038155193227
-- **Section:** NEXT UP
+- **Section:** DONE
 - **Due:** none
 - **Start:** none
 - **Assignee:** BainBot (1209202434387214)
@@ -276,7 +276,7 @@ Received: Fri, 19 Jun 2026 09:39:52 +0200
 - **Dependents:** none
 - **Notes:** Add how many tokens a task has burned when the task reaches a conclusion. Add to log and to asana comment. Keep a running total per task. Show /usage when each task completes. Show in log when /usage is finished and when resets.
 - **Blockers:** None identified.
-- **Progress:** Checked 2026-06-25.
+- **Progress:** Completed 2026-06-25. Added usage % and reset timestamp logging to task-looper SKILL.md after both complete and blocked paths. Reads ~/.claude/ratelimit-current.json.
 - **Comments:** none
 - **Modified:** 2026-06-25T19:04:09
 - **URL:** https://app.asana.com/1/512209774840/project/1215208851588912/task/1216038155193227
