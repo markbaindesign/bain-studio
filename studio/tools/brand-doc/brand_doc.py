@@ -488,15 +488,30 @@ def build(input_path, output_path=None, one_pager=False):
 
     md_text = input_path.read_text(encoding='utf-8')
 
-    title_match = re.match(r'^#\s+(.+)', md_text, re.MULTILINE)
-    title = (title_match.group(1) if title_match
-             else input_path.stem.replace('-', ' ').replace('_', ' ').title())
+    # Extract YAML frontmatter if present
+    fm_title = ''
+    fm_subtitle = ''
+    body_text = md_text
+    fm_match = re.match(r'^---\n(.*?)\n---\n', md_text, re.DOTALL)
+    if fm_match:
+        for ln in fm_match.group(1).splitlines():
+            if ln.startswith('title:'):
+                fm_title = ln[6:].strip().strip('"\'')
+            elif ln.startswith('subtitle:'):
+                fm_subtitle = ln[9:].strip().strip('"\'')
+        body_text = md_text[fm_match.end():]
 
-    subtitle = ''
-    for ln in md_text.split('\n')[1:6]:
-        if ln.startswith('> '):
-            subtitle = ln[2:].strip()
-            break
+    title_match = re.match(r'^#\s+(.+)', body_text, re.MULTILINE)
+    title = (title_match.group(1) if title_match
+             else fm_title
+             or input_path.stem.replace('-', ' ').replace('_', ' ').title())
+
+    subtitle = fm_subtitle
+    if not subtitle:
+        for ln in md_text.split('\n')[1:6]:
+            if ln.startswith('> '):
+                subtitle = ln[2:].strip()
+                break
 
     print(f'Input:  {input_path}')
     print(f'Output: {output_path}')

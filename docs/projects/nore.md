@@ -8,10 +8,11 @@ client: Suze
 type: client
 repo: git@bitbucket.org:markbaindesign/the-nature-of-real-estate.git
 sector: Education · Real Estate
-stack: WordPress · MemberPress · VVV
+stack: WordPress · VVV
 path: /home/bain/code/vvv/clients/www/nore
 asana: "yes"
 qa: "yes"
+ga4_property: "542141660"
 inbox: "yes"
 open_tasks: 9
 current_focus: SEO, user registration flow, and staging hardening
