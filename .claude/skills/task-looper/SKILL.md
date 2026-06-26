@@ -1,6 +1,6 @@
 ---
 name: task-looper
-description: Work through outstanding tasks assigned to BainBot in the current project's Asana mirror. Self-driving via stop hook — sets up a task queue, works each task to completion or a clear blocker, raises PRs, and loops automatically until the queue is empty.
+description: Work through outstanding tasks assigned to BainBot in the current project's Asana mirror. Self-driving via stop hook — sets up a task queue, works each task to completion or a clear blocker, pushes the branch, and loops automatically until the queue is empty.
 allowed-tools:
   - Read
   - Edit
@@ -92,9 +92,8 @@ Log these events (examples):
 - Session start: `[BD] Session started — 3 tasks in queue: BD-039 BD-040 BD-041`
 - Session end: `[BD] Session ended — queue empty`
 - Task started: `[BD] BD-039 started: Add custom icons for all CPTs`
-- Branch created: `[BD] git checkout -b feature/bd-039-add-custom-icons-cpts`
 - Commit: `[BD] commit: "Set distinct dashicons for each custom post type" (register.php)`
-- Push: `[BD] pushed feature/bd-039-add-custom-icons-cpts`
+- Push: `[BD] pushed develop`
 - Task complete: `[BD] BD-039 complete`
 - Task blocked: `[BD] BD-039 blocked: {one-sentence reason}`
 - Usage at start: `[BD] usage-start: 35% — resets 2026-07-01 04:00`
@@ -268,43 +267,12 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] Session started — {N} ta
 
 Work the task in `current_task`. The stop hook will drive all subsequent tasks automatically.
 
-### 4a. Create a feature branch
+### 4a. Start the task
 
-Derive a slug from the task name: lowercase, spaces to hyphens, strip special characters. Do not include the `feature/` prefix — git flow adds that.
-
-```bash
-git flow feature start {prefix-id}-{slug}
-```
-
-Example: `BD-012 — Fix typewriter lines` → `git flow feature start bd-012-fix-typewriter-lines` → creates `feature/bd-012-fix-typewriter-lines`
-
-git flow branches from the configured develop branch automatically. If `git flow feature start` fails (git flow not initialised), fall back to:
-
-```bash
-git checkout develop && git pull && git checkout -b feature/{prefix-id}-{slug}
-```
-
-Log task start, branch creation, and usage at start:
+Log task start:
 ```bash
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} started: {task name}" >> ~/logs/task-looper.log
-echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] git flow feature start {prefix-id}-{slug}" >> ~/logs/task-looper.log
-python3 - <<'PYEOF'
-import json, datetime
-from pathlib import Path
-rl = Path.home() / ".claude/ratelimit-current.json"
-if rl.exists():
-    data = json.loads(rl.read_text())
-    pct = data.get("current_pct", "?")
-    reset_ts = data.get("reset_ts")
-    reset_dt = datetime.datetime.fromtimestamp(reset_ts).strftime("%Y-%m-%d %H:%M") if reset_ts else "unknown"
-else:
-    pct, reset_dt = "?", "unknown"
-log = Path.home() / "logs/task-looper.log"
-ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-log.open("a").write(f"{ts} INFO    [{PREFIX}] usage-start: {pct}% — resets {reset_dt}\n")
-PYEOF
 ```
-
 ### 4b. Understand the task
 
 Read the task's `**Notes:**` field fully. If it references files, read them. If it references a URL, fetch it. Explore the codebase as needed.
@@ -378,27 +346,27 @@ Log sync call:
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] sync.py --project {PREFIX} → exit $?" >> ~/logs/task-looper.log
 ```
 
-Push the branch:
+Push develop:
 ```bash
-git push -u origin feature/{prefix-id}-{slug}
+git push origin develop
 ```
 
 Log push and completion:
 ```bash
-echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] pushed feature/{prefix-id}-{slug}" >> ~/logs/task-looper.log
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] pushed develop" >> ~/logs/task-looper.log
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} complete" >> ~/logs/task-looper.log
 ```
 
 Notify:
 ```bash
 python3 /media/data/dev/bain-studio/studio/notifier.py \
-  "{ID} complete: {task name}. Branch feature/{prefix-id}-{slug} pushed — merge to develop when ready." \
+  "{ID} complete: {task name}." \
   --priority normal --sender task-looper --project {PREFIX}
 ```
 
 Log the notify call:
 ```bash
-echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] notify: {ID} complete — branch feature/{prefix-id}-{slug} pushed." >> ~/logs/task-looper.log
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] notify: {ID} complete." >> ~/logs/task-looper.log
 ```
 
 Then output the completion promise:
@@ -408,10 +376,6 @@ Then output the completion promise:
 
 ### 4f — If blocked
 
-Check out back to the git flow develop branch (leave the feature branch — partial work is not lost):
-```bash
-git checkout "$(git config gitflow.branch.develop 2>/dev/null || echo develop)"
-```
 
 Read the current rate limit usage before updating the mirror:
 ```bash
@@ -435,8 +399,9 @@ PYEOF
 
 Capture the printed `usage:{pct}:{reset_dt}` line from stdout.
 
-Update the mirror — both fields:
+Update the mirror — both fields, and reassign to Mark:
 ```
+**Assignee:** Mark Bain (507443625075)
 **Blockers:** {YYYY-MM-DD} — {What is blocking. What information or decision is needed. Who can resolve it. What was attempted.}
 **Progress:** Blocked {YYYY-MM-DD}. {Same reason in one or two sentences — this is what gets posted as an Asana comment.} Session: {pct}% used (resets {reset_dt}).
 ```
@@ -445,6 +410,8 @@ Run sync:
 ```bash
 cd /media/data/dev/bain-studio && python3 studio/sync.py --project {PREFIX}
 ```
+
+Sync will push the assignee change and progress comment to Asana, putting the task in Mark's inbox.
 
 Log sync call:
 ```bash
@@ -490,11 +457,9 @@ You do not need to manage the queue. Just work one task, output the promise, and
 ## Guard rails
 
 - **Never guess at requirements.** Ambiguous = blocked, not complete.
-- **Never commit to main/master.** All work in feature branches.
+- **Never commit to main/master.** Commit to develop only.
 - **Never push secrets.** Check before every commit.
-- **A working change is the solution.** A PR is not.
 - **Never touch tasks outside your queue.** Do not modify tasks assigned to Mark.
-- **The Law of the Gate.** PRs are for Mark's review. Never merge.
 - **One task per branch.** No mixing.
 - **Partial work is not lost.** Leave the branch. Document the blocker clearly.
 - **Output the promise only when true.** Not to escape. The loop continues until genuine completion or a genuine blocker.
