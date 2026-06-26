@@ -19,6 +19,13 @@ context/
 .claude/scheduled_tasks.lock
 .claude/*.local.md
 
+# Internal PM data — not for public repo
+.claude/asana-mirror.md
+.claude/asana-ids.json
+.claude/pm-log.md
+.claude/open-questions.md
+.claude/inbox/
+
 # Collector logs and runtime state
 studio/collectors/*.log
 studio/collectors/obsidian_collector_state.json
