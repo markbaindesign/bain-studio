@@ -98,6 +98,8 @@ Log these events (examples):
 - PR raised: `[BD] PR: https://github.com/...`
 - Task complete: `[BD] BD-039 complete`
 - Task blocked: `[BD] BD-039 blocked: {one-sentence reason}`
+- Queue remaining: `[BD] queue: 5 tasks remaining: BD-040 BD-041 BD-042 BD-043 BD-044`
+- Queue empty: `[BD] queue: empty`
 - Usage at start: `[BD] usage-start: 35% — resets 2026-07-01 04:00`
 - Usage at end: `[BD] usage-end: 38% — resets 2026-07-01 04:00`
 - Sync call: `[BD] sync.py --project BD → exit 0`
@@ -326,6 +328,26 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] PR: {pr_url}" >> ~/logs/ta
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} complete" >> ~/logs/task-looper.log
 ```
 
+Log queue state:
+```bash
+python3 - <<'PYEOF'
+import datetime
+from pathlib import Path
+PREFIX = "{PREFIX}"
+state_file = Path.cwd() / f".claude/{PREFIX.lower()}-task-looper.local.md"
+if state_file.exists():
+    parts = state_file.read_text().split("---", 2)
+    body = parts[2].strip() if len(parts) >= 3 else ""
+    remaining = [l.strip() for l in body.splitlines() if l.strip()]
+    msg = f"queue: {len(remaining)} tasks remaining: {' '.join(remaining)}" if remaining else "queue: empty"
+else:
+    msg = "queue: state file not found"
+log = Path.home() / "logs/task-looper.log"
+ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+log.open("a").write(f"{ts} INFO    [{PREFIX}] {msg}\n")
+PYEOF
+```
+
 Notify:
 ```bash
 python3 /media/data/dev/bain-studio/studio/notifier.py \
@@ -388,9 +410,25 @@ Log sync call:
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] sync.py --project {PREFIX} → exit $?" >> ~/logs/task-looper.log
 ```
 
-Log the blocker:
+Log the blocker and queue state:
 ```bash
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} blocked: {one-sentence reason}" >> ~/logs/task-looper.log
+python3 - <<'PYEOF'
+import datetime
+from pathlib import Path
+PREFIX = "{PREFIX}"
+state_file = Path.cwd() / f".claude/{PREFIX.lower()}-task-looper.local.md"
+if state_file.exists():
+    parts = state_file.read_text().split("---", 2)
+    body = parts[2].strip() if len(parts) >= 3 else ""
+    remaining = [l.strip() for l in body.splitlines() if l.strip()]
+    msg = f"queue: {len(remaining)} tasks remaining: {' '.join(remaining)}" if remaining else "queue: empty"
+else:
+    msg = "queue: state file not found"
+log = Path.home() / "logs/task-looper.log"
+ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+log.open("a").write(f"{ts} INFO    [{PREFIX}] {msg}\n")
+PYEOF
 ```
 
 Notify:
