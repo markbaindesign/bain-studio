@@ -220,17 +220,20 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
     }
 
 
+def _quarter_start(d):
+    return date(d.year, ((d.month - 1) // 3) * 3 + 1, 1)
+
+
 def _compute_upcoming(rows, today, owner_draw):
     upcoming = []
 
-    # Owner's draw — end of each month
+    # Owner's draw — approx 7 days after month end (i.e. 7th of following month)
+    import calendar
     for delta_months in range(3):
-        m = today.month + delta_months
+        m = today.month + delta_months + 1   # following month
         y = today.year + (m - 1) // 12
         m = ((m - 1) % 12) + 1
-        import calendar
-        last_day = calendar.monthrange(y, m)[1]
-        d = date(y, m, last_day)
+        d = date(y, m, 7)
         if d >= today:
             upcoming.append({
                 'label':    "Owner's Draw",
@@ -274,12 +277,18 @@ def _compute_upcoming(rows, today, owner_draw):
                 break
 
     # Quarterly taxes — Mod 130, Mod 111, IVA, Gestor
+    # Deadlines per aletheia-codex: Q1=20 Apr, Q2=20 Jul, Q3=20 Oct, Q4=30 Jan
+    # Gestor follows the same quarterly pattern but uses the actual payment day.
     quarterly = [
         ('Mod. 130', 'Mod 130 (Income Tax)',  'tax'),
         ('Mod. 111', 'Mod 111 (Withholding)', 'tax'),
         ('IVA',      'IVA',                   'tax'),
         ('Gestor',   'Gestor (Accountant)',    'fixed'),
     ]
+
+    # Quarter-end month → (filing month, filing day)
+    TAX_DEADLINE = {3: (4, 20), 6: (7, 20), 9: (10, 20), 12: (1, 30)}
+
     for keyword, label, bill_type in quarterly:
         matches = [r for r in exp_rows if keyword.lower() in r['desc'].lower() or keyword.lower() in r['path'].lower()]
         if not matches:
@@ -292,16 +301,38 @@ def _compute_upcoming(rows, today, owner_draw):
         next_y = last_date.year + (next_m - 1) // 12
         next_m = ((next_m - 1) % 12) + 1
         import calendar
-        max_day = calendar.monthrange(next_y, next_m)[1]
-        d = date(next_y, next_m, min(last_date.day, max_day))
+
+        if bill_type == 'tax' and next_m in TAX_DEADLINE:
+            # Use official filing deadline (20th of month after quarter-end, or 30 Jan for Q4)
+            file_m, file_d = TAX_DEADLINE[next_m]
+            file_y = next_y + (1 if file_m < next_m else 0)
+            d = date(file_y, file_m, file_d)
+        else:
+            max_day = calendar.monthrange(next_y, next_m)[1]
+            d = date(next_y, next_m, min(last_date.day, max_day))
         if d >= today:
+            entry_amt = avg_amt
+            extra = {}
+            if keyword == 'Mod. 130':
+                # Deduct IRPF withheld by Spanish clients this quarter
+                q_start = str(_quarter_start(today))
+                irpf_withheld = sum(
+                    r['eur'] for r in rows
+                    if 'IRPF Retenido' in r.get('path', '')
+                    and r['date'] >= q_start
+                    and r['val'] > 0  # debit = asset increase (withheld from client)
+                )
+                if irpf_withheld > 0:
+                    entry_amt = max(0.0, avg_amt - irpf_withheld)
+                    extra['irpf_deducted'] = round(irpf_withheld, 2)
             upcoming.append({
                 'label':    label,
                 'date':     str(d),
-                'amount':   round(avg_amt, 2),
+                'amount':   round(entry_amt, 2),
                 'currency': 'EUR',
                 'type':     bill_type,
                 'days':     (d - today).days,
+                **extra,
             })
 
     upcoming.sort(key=lambda x: x['date'])

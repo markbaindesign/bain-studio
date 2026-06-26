@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""
+shutter-profile — manage Shutter profiles from the command line.
+
+Usage:
+  shutter-profile create <name> <folder> [--filename <pattern>]
+                                          Create (or overwrite) a profile
+  shutter-profile list                    List existing profiles
+  shutter-profile delete <name>           Delete a profile
+  shutter-profile launch <name>           Launch Shutter with a profile loaded
+  shutter-profile set-default <name>      Set the profile Shutter loads on startup
+                                          (Shutter must not be running)
+
+Filename pattern tokens: %Y %m %d %H %M %S %T (time) %NNN (sequence counter)
+Default pattern inherited from template profile if not specified.
+"""
+
+import sys, os, shutil, subprocess
+import xml.etree.ElementTree as ET
+
+PROFILES_DIR = os.path.expanduser("~/.shutter/profiles")
+SETTINGS_FILE = os.path.expanduser("~/.shutter/settings.xml")
+ACCOUNTS_FILE = os.path.expanduser("~/.shutter/accounts.xml")
+TEMPLATE_PREFERENCE = ["QA_Beato", "QA", "default"]
+
+def profile_path(name): return os.path.join(PROFILES_DIR, f"{name}.xml")
+def accounts_path(name): return os.path.join(PROFILES_DIR, f"{name}_accounts.xml")
+
+def find_template():
+    for name in TEMPLATE_PREFERENCE:
+        p = profile_path(name)
+        if os.path.exists(p): return p
+    return SETTINGS_FILE
+
+def shutter_running():
+    try:
+        result = subprocess.run(["pgrep", "-f", "/usr/bin/shutter"], capture_output=True)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+def cmd_list():
+    files = sorted(f for f in os.listdir(PROFILES_DIR) if f.endswith(".xml") and not f.endswith("_accounts.xml"))
+    if not files:
+        print("No profiles found."); return
+    current = ET.parse(SETTINGS_FILE).getroot().find("general").get("last_profile_name", "")
+    for f in files:
+        name = f[:-4]
+        try:
+            g = ET.parse(os.path.join(PROFILES_DIR, f)).getroot().find("general")
+            folder = g.get("folder", "")
+            filename = g.get("filename", "")
+        except Exception:
+            folder = filename = "(unreadable)"
+        marker = " *" if name == current else ""
+        print(f"  {name:<30} → {folder}  [{filename}]{marker}")
+
+def cmd_create(name, folder, filename=None):
+    invalid = set('/\\?%*:|"<>,;#&')
+    bad = [c for c in name if c in invalid]
+    if bad:
+        print(f"Error: invalid chars in name: {''.join(bad)}", file=sys.stderr); sys.exit(1)
+
+    folder = os.path.expanduser(folder)
+    os.makedirs(folder, exist_ok=True)
+    os.makedirs(PROFILES_DIR, exist_ok=True)
+
+    tree = ET.parse(find_template())
+    general = tree.getroot().find("general")
+    general.set("folder", folder)
+    general.set("last_profile_name", name)
+    general.set("last_profile", "0")
+    if filename:
+        general.set("filename", filename)
+
+    dest = profile_path(name)
+    tree.write(dest, encoding="unicode", xml_declaration=False)
+
+    template_accounts = find_template().replace(".xml", "_accounts.xml")
+    if not os.path.exists(template_accounts): template_accounts = ACCOUNTS_FILE
+    if os.path.exists(template_accounts): shutil.copy2(template_accounts, accounts_path(name))
+
+    print(f"Created profile '{name}' → {folder}  [{general.get('filename')}]")
+    print(f"  Launch with: shutter --profile='{name}'")
+
+def cmd_delete(name):
+    removed = [p for p in [profile_path(name), accounts_path(name)] if os.path.exists(p)]
+    if not removed:
+        print(f"Profile '{name}' not found.", file=sys.stderr); sys.exit(1)
+    for p in removed: os.remove(p)
+    print(f"Deleted profile '{name}'")
+
+def cmd_launch(name):
+    if not os.path.exists(profile_path(name)):
+        print(f"Profile '{name}' not found.", file=sys.stderr); cmd_list(); sys.exit(1)
+    subprocess.Popen(["shutter", f"--profile={name}"])
+    print(f"Launched Shutter with profile '{name}'")
+
+def cmd_set_default(name):
+    if not os.path.exists(profile_path(name)):
+        print(f"Profile '{name}' not found.", file=sys.stderr); cmd_list(); sys.exit(1)
+    if shutter_running():
+        print("Error: Shutter is running — quit it first, then set-default.", file=sys.stderr); sys.exit(1)
+    tree = ET.parse(SETTINGS_FILE)
+    g = tree.getroot().find("general")
+    g.set("last_profile_name", name)
+    g.set("last_profile", "1")
+    tree.write(SETTINGS_FILE, encoding="unicode", xml_declaration=False)
+    print(f"Default profile set to '{name}' — will load on next Shutter startup.")
+
+def main():
+    if len(sys.argv) < 2: print(__doc__); sys.exit(0)
+    cmd = sys.argv[1]
+    if cmd == "list":
+        cmd_list()
+    elif cmd == "create" and len(sys.argv) >= 4:
+        args = sys.argv[2:]
+        name, folder = args[0], args[1]
+        filename = None
+        if "--filename" in args:
+            idx = args.index("--filename")
+            if idx + 1 < len(args):
+                filename = args[idx + 1]
+            else:
+                print("Error: --filename requires a value", file=sys.stderr); sys.exit(1)
+        cmd_create(name, folder, filename)
+    elif cmd == "delete" and len(sys.argv) == 3:
+        cmd_delete(sys.argv[2])
+    elif cmd == "launch" and len(sys.argv) == 3:
+        cmd_launch(sys.argv[2])
+    elif cmd == "set-default" and len(sys.argv) == 3:
+        cmd_set_default(sys.argv[2])
+    else:
+        print(__doc__); sys.exit(1)
+
+if __name__ == "__main__": main()
