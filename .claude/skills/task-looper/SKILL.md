@@ -94,8 +94,8 @@ Log these events (examples):
 - Task started: `[BD] BD-039 started: Add custom icons for all CPTs`
 - Commit: `[BD] commit: "Set distinct dashicons for each custom post type" (register.php)`
 - Push: `[BD] pushed develop`
-- Task complete: `[BD] BD-039 complete`
-- Task blocked: `[BD] BD-039 blocked: {one-sentence reason}`
+- Task complete: `[BD] BD-039 complete — 4 remaining in queue`
+- Task blocked: `[BD] BD-039 blocked: {one-sentence reason} — 4 remaining in queue`
 - Usage at start: `[BD] usage-start: 35% — resets 2026-07-01 04:00`
 - Usage at end: `[BD] usage-end: 38% — resets 2026-07-01 04:00`
 - Sync call: `[BD] sync.py --project BD → exit 0`
@@ -351,10 +351,11 @@ Push develop:
 git push origin develop
 ```
 
-Log push and completion:
+Log push and completion (count remaining tasks from the state file body):
 ```bash
+REMAINING=$(awk '/^---$/{n++} n==2 && !/^---$/ && /\S/{count++} END{print count+0}' .claude/bd-task-looper.local.md 2>/dev/null || echo 0)
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] pushed develop" >> ~/logs/task-looper.log
-echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} complete" >> ~/logs/task-looper.log
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} complete — ${REMAINING} remaining in queue" >> ~/logs/task-looper.log
 ```
 
 Notify:
@@ -418,9 +419,10 @@ Log sync call:
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] sync.py --project {PREFIX} → exit $?" >> ~/logs/task-looper.log
 ```
 
-Log the blocker:
+Log the blocker (count remaining tasks from the state file body):
 ```bash
-echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} blocked: {one-sentence reason}" >> ~/logs/task-looper.log
+REMAINING=$(awk '/^---$/{n++} n==2 && !/^---$/ && /\S/{count++} END{print count+0}' .claude/bd-task-looper.local.md 2>/dev/null || echo 0)
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} blocked: {one-sentence reason} — ${REMAINING} remaining in queue" >> ~/logs/task-looper.log
 ```
 
 Notify:
