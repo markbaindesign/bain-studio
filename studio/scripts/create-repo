@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# create-repo — create a GitHub (public) or Bitbucket (private) repository
+#
+# Credentials: GitHub uses `gh` (already authenticated). Bitbucket reads
+# from ~/.config/bb-create-repo or BITBUCKET_USER / BITBUCKET_APP_PASSWORD.
+#
+# Usage:
+#   create-repo <name> [options]
+#
+# Options:
+#   --public          Create on GitHub (default: public)
+#   --private         Create on Bitbucket (default: private)
+#   --desc TEXT       Repository description
+#   --no-remote       Skip adding origin remote to current git repo
+#   --clone PATH      Clone the new repo to PATH after creation
+#   --setup           Configure Bitbucket credentials
+#   -h, --help        Show this help
+
+set -euo pipefail
+
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/bb-create-repo"
+
+usage() {
+  grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//'
+  exit 0
+}
+
+# ── Bitbucket credential management ──────────────────────────────────────────
+setup_bitbucket() {
+  echo "Bitbucket credentials setup"
+  echo "Create an app password at: https://bitbucket.org/account/settings/app-passwords"
+  echo "Required permissions: Repositories (Read + Write)"
+  echo ""
+  read -rp "Bitbucket username: " input_user
+  read -rp "Bitbucket workspace slug (leave blank to use username): " input_ws
+  read -rsp "App password: " input_pass
+  echo ""
+  [[ -z "$input_ws" ]] && input_ws="$input_user"
+  mkdir -p "$(dirname "$CONFIG_FILE")"
+  cat > "$CONFIG_FILE" <<EOF
+BITBUCKET_USER=$input_user
+BITBUCKET_WORKSPACE=$input_ws
+BITBUCKET_APP_PASSWORD=$input_pass
+EOF
+  chmod 600 "$CONFIG_FILE"
+  echo "Credentials saved to $CONFIG_FILE"
+}
+
+load_bitbucket_creds() {
+  if [[ -z "${BITBUCKET_USER:-}" || -z "${BITBUCKET_APP_PASSWORD:-}" ]]; then
+    if [[ -f "$CONFIG_FILE" ]]; then
+      # shellcheck source=/dev/null
+      source "$CONFIG_FILE"
+    fi
+  fi
+  if [[ -z "${BITBUCKET_USER:-}" || -z "${BITBUCKET_APP_PASSWORD:-}" ]]; then
+    echo "No Bitbucket credentials found. Running setup..."
+    echo ""
+    setup_bitbucket
+    source "$CONFIG_FILE"
+  fi
+  BITBUCKET_WORKSPACE="${BITBUCKET_WORKSPACE:-$BITBUCKET_USER}"
+}
+
+# ── GitHub repo creation ──────────────────────────────────────────────────────
+create_github() {
+  local name="$1" desc="$2" add_remote="$3" clone_path="$4"
+
+  local gh_user
+  gh_user=$(gh api user --jq .login)
+
+  echo "Creating GitHub repository: $gh_user/$name"
+
+  local gh_args=("$name" --public)
+  [[ -n "$desc" ]] && gh_args+=(--description "$desc")
+
+  gh repo create "${gh_args[@]}"
+
+  REMOTE_URL="https://github.com/$gh_user/$name.git"
+  echo "  Created: $REMOTE_URL"
+
+  if [[ "$add_remote" == "yes" ]] && git rev-parse --git-dir &>/dev/null 2>&1; then
+    if git remote get-url origin &>/dev/null 2>&1; then
+      echo "  Remote 'origin' already exists — skipping"
+    else
+      git remote add origin "$REMOTE_URL"
+      echo "  Remote 'origin' added"
+    fi
+  fi
+
+  if [[ -n "$clone_path" ]]; then
+    gh repo clone "$gh_user/$name" "$clone_path"
+    echo "  Cloned to: $clone_path"
+  fi
+}
+
+# ── Bitbucket repo creation ────────────────────────────────────────────────────
+create_bitbucket() {
+  local name="$1" desc="$2" add_remote="$3" clone_path="$4"
+
+  load_bitbucket_creds
+
+  local slug
+  slug=$(echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
+
+  echo "Creating Bitbucket repository: $BITBUCKET_WORKSPACE/$slug"
+
+  PAYLOAD=$(python3 -c "
+import json, sys
+print(json.dumps({
+    'scm': 'git',
+    'is_private': True,
+    'name': sys.argv[1],
+    'description': sys.argv[2]
+}))
+" "$name" "${desc:-}")
+
+  RESPONSE=$(curl -s \
+    -u "$BITBUCKET_USER:$BITBUCKET_APP_PASSWORD" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d "$PAYLOAD" \
+    "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_WORKSPACE/$slug")
+
+  REMOTE_URL=$(python3 -c "
+import sys, json
+ws, sl = sys.argv[1], sys.argv[2]
+d = json.load(sys.stdin)
+if 'type' in d and d['type'] == 'error':
+    print('ERROR:' + d.get('error', {}).get('message', str(d)), file=sys.stderr)
+    sys.exit(1)
+clone = d.get('links', {}).get('clone', [])
+for c in clone:
+    if c.get('name') == 'https':
+        print(c['href'])
+        sys.exit(0)
+print('https://bitbucket.org/' + ws + '/' + sl + '.git')
+" "$BITBUCKET_WORKSPACE" "$slug" <<< "$RESPONSE" 2>&1) || { echo "Error: $REMOTE_URL" >&2; exit 1; }
+
+  echo "  Created: $REMOTE_URL"
+
+  if [[ "$add_remote" == "yes" ]] && git rev-parse --git-dir &>/dev/null 2>&1; then
+    if git remote get-url origin &>/dev/null 2>&1; then
+      echo "  Remote 'origin' already exists — skipping"
+    else
+      git remote add origin "$REMOTE_URL"
+      echo "  Remote 'origin' added"
+    fi
+  fi
+
+  if [[ -n "$clone_path" ]]; then
+    git clone "$REMOTE_URL" "$clone_path"
+    echo "  Cloned to: $clone_path"
+  fi
+}
+
+# ── parse args ────────────────────────────────────────────────────────────────
+REPO_NAME=""
+PLATFORM=""
+DESC=""
+ADD_REMOTE="yes"
+CLONE_PATH=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)   usage ;;
+    --setup)     setup_bitbucket; exit 0 ;;
+    --public)    PLATFORM="github"; shift ;;
+    --private)   PLATFORM="bitbucket"; shift ;;
+    --desc)      DESC="$2"; shift 2 ;;
+    --no-remote) ADD_REMOTE="no"; shift ;;
+    --clone)     CLONE_PATH="$2"; shift 2 ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      exit 1 ;;
+    *)
+      if [[ -z "$REPO_NAME" ]]; then
+        REPO_NAME="$1"
+      fi
+      shift ;;
+  esac
+done
+
+if [[ -z "$REPO_NAME" ]]; then
+  echo "Usage: create-repo <name> [--public|--private] [--desc TEXT]" >&2
+  exit 1
+fi
+
+[[ -z "$PLATFORM" ]] && PLATFORM="github"
+
+case "$PLATFORM" in
+  github)    create_github    "$REPO_NAME" "$DESC" "$ADD_REMOTE" "$CLONE_PATH" ;;
+  bitbucket) create_bitbucket "$REPO_NAME" "$DESC" "$ADD_REMOTE" "$CLONE_PATH" ;;
+  *)         echo "Unknown platform: $PLATFORM" >&2; exit 1 ;;
+esac
