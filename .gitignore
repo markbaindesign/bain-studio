@@ -10,9 +10,19 @@ __pycache__/
 *.mp4
 studio/inbox/
 studio/.gmail_state.json
-studio/collectors/gmail_watch.log
+studio/postman.log
+studio/sync.log
+studio/sync.log.*
 context/foundation-wordpress-prospecting-plan.md
 context/outreach/
 context/
 .claude/scheduled_tasks.lock
+.claude/*.local.md
+
+# Collector logs and runtime state
+studio/collectors/*.log
+studio/collectors/obsidian_collector_state.json
+studio/collectors/obsidian_standup.json
+
+# Obsidian workspace state
 docs/.obsidian/workspace.json
