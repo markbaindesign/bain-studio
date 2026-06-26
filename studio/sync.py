@@ -361,9 +361,7 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
         "limit": 100,
     }
     data = _get(f"/projects/{proj.gid}/tasks", params)["data"]
-    tasks = [t for t in data
-             if (t.get("assignee") or {}).get("gid") == BAINBOT_GID
-             and not _is_junk(t)]
+    tasks = [t for t in data if not _is_junk(t)]
     for t in tasks:
         t["_local_id"] = None
         t["_section"]  = None
@@ -773,7 +771,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         last_synced_gid = ensure_last_synced_field(proj, state)
 
         tasks = fetch_tasks(proj, field_gid)
-        log.info(f"  {len(tasks)} task(s) assigned to {ASSIGNEE_NAME}.")
+        log.info(f"  {len(tasks)} task(s) in project.")
         for t in tasks:
             t["_comments"] = fetch_comments(t["gid"])
 
