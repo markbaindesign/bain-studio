@@ -95,7 +95,6 @@ Log these events (examples):
 - Branch created: `[BD] git checkout -b feature/bd-039-add-custom-icons-cpts`
 - Commit: `[BD] commit: "Set distinct dashicons for each custom post type" (register.php)`
 - Push: `[BD] pushed feature/bd-039-add-custom-icons-cpts`
-- PR raised: `[BD] PR: https://github.com/...`
 - Task complete: `[BD] BD-039 complete`
 - Task blocked: `[BD] BD-039 blocked: {one-sentence reason}`
 - Usage at start: `[BD] usage-start: 35% — resets 2026-07-01 04:00`
