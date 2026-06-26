@@ -51,3 +51,4 @@ studio/collectors/careers_watch_state/
 
 # Obsidian workspace state
 docs/.obsidian/workspace.json
+.env
