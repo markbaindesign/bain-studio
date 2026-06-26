@@ -227,14 +227,13 @@ def _quarter_start(d):
 def _compute_upcoming(rows, today, owner_draw):
     upcoming = []
 
-    # Owner's draw — end of each month
+    # Owner's draw — approx 7 days after month end (i.e. 7th of following month)
+    import calendar
     for delta_months in range(3):
-        m = today.month + delta_months
+        m = today.month + delta_months + 1   # following month
         y = today.year + (m - 1) // 12
         m = ((m - 1) % 12) + 1
-        import calendar
-        last_day = calendar.monthrange(y, m)[1]
-        d = date(y, m, last_day)
+        d = date(y, m, 7)
         if d >= today:
             upcoming.append({
                 'label':    "Owner's Draw",
