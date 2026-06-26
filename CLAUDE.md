@@ -91,6 +91,7 @@ ln -s /media/data/dev/bain-studio/.claude/skills/{name} ~/.claude/skills/{name}
 | `focus` | mid-day context switch — `/focus MCF` from studio dir |
 | `end-session` | project-level wrap-up: commit, sync mirror, write handoff note |
 | `ga-report` | pull GA4 data and generate a branded benchmark report for client handoff |
+| `interview-me` | real-time voice interview via OpenAI Realtime API, takes a topic arg |
 
 **Global-only skills** (not in this repo — live directly in `~/.claude/skills/`):
 - `grill-me` — general planning, useful everywhere
