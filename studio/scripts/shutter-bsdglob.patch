@@ -1,0 +1,11 @@
+--- shutter-orig/usr/bin/shutter	2021-11-15 11:00:25.000000000 +0100
++++ /usr/bin/shutter	2026-06-11 10:41:46.288775344 +0200
+@@ -885,7 +885,7 @@
+ 	my $combobox_settings_profiles = Gtk3::ComboBoxText->new;
+ 	my @current_profiles;
+ 	my $current_index = 0;
+-	foreach my $pfile (sort bsd_glob("$ENV{'HOME'}/.shutter/profiles/*.xml")) {
++	foreach my $pfile (sort glob("$ENV{HOME}/.shutter/profiles/*.xml")) {
+ 		utf8::decode $pfile;
+ 		next
+ 			if $pfile =~ /\_accounts.xml/;    #accounts file - we are looking for "real" profiles

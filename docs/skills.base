@@ -1,0 +1,11 @@
+filters:
+  and:
+    - file.hasTag("skill")
+views:
+  - type: table
+    name: Skills
+    order:
+      - file.name
+      - description
+      - invoke
+      - god

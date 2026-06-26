@@ -23,6 +23,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from dotenv import load_dotenv
 
+LOG_FILE = Path(__file__).resolve().parent / 'postman.log'
+
+
+def _log(event: str, **fields):
+    ts = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    parts = [f"[{ts}] {event}"] + [f"{k}={v}" for k, v in fields.items() if v]
+    with LOG_FILE.open('a') as f:
+        f.write(' '.join(parts) + '\n')
+
 load_dotenv(Path(__file__).resolve().parent / '.env')
 
 STUDIO_ROOT   = Path(__file__).resolve().parents[1]
@@ -58,6 +67,12 @@ def _resolve_inbox(to: str, project: str) -> Path:
         proj_inbox = _project_inbox(project)
         if proj_inbox:
             return proj_inbox
+    # Also try `to` as a project slug so `to: studio` routes to
+    # bain-studio/.claude/inbox rather than the postman's own inbox dir
+    if to:
+        to_inbox = _project_inbox(to)
+        if to_inbox:
+            return to_inbox
     return _studio_inbox()
 
 
@@ -119,6 +134,7 @@ sent_at: {sent_at}
     inbox.mkdir(parents=True, exist_ok=True)
     dest  = inbox / f"{msg_id}.md"
     dest.write_text(content)
+    _log('SEND', id=msg_id, from_=sender, to=to, project=project, priority=priority, subject=subject)
 
     # Immediate Slack alert for high/urgent
     if priority in ('high', 'urgent'):
@@ -173,6 +189,8 @@ def sweep(dry_run: bool = False) -> int:
             if priority in ('high', 'urgent'):
                 if not dry_run:
                     msg_path.rename(processed_dir / msg_path.name)
+                    _log('SWEEP', id=msg_path.stem, from_=meta.get('from', ''), to=meta.get('to', ''),
+                         project=meta.get('project', ''), priority=priority, subject=meta.get('subject', ''))
                 dispatched += 1
                 continue
 
@@ -189,6 +207,8 @@ def sweep(dry_run: bool = False) -> int:
                 print(f'[dry-run] would dispatch: {msg_path.name} — {meta.get("subject", "")}')
             else:
                 msg_path.rename(processed_dir / msg_path.name)
+                _log('SWEEP', id=msg_path.stem, from_=meta.get('from', ''), to=meta.get('to', ''),
+                     project=meta.get('project', ''), priority=priority, subject=meta.get('subject', ''))
 
             dispatched += 1
 
@@ -236,6 +256,15 @@ def _cmd_sweep(args):
     print(f'[postman] sweep complete — {n} message(s) dispatched')
 
 
+def _cmd_log(args):
+    if not LOG_FILE.exists():
+        print('[postman] no log yet')
+        return
+    lines = LOG_FILE.read_text().splitlines()
+    for line in lines[-args.n:]:
+        print(line)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Studio Postman')
     sub = parser.add_subparsers(dest='cmd', required=True)
@@ -253,6 +282,10 @@ if __name__ == '__main__':
     p_sweep = sub.add_parser('sweep', help='Dispatch all pending messages')
     p_sweep.add_argument('--dry-run', action='store_true',      help='Print without dispatching')
     p_sweep.set_defaults(func=_cmd_sweep)
+
+    p_log = sub.add_parser('log', help='Show recent postman activity')
+    p_log.add_argument('-n', type=int, default=20,              help='Number of lines to show')
+    p_log.set_defaults(func=_cmd_log)
 
     args = parser.parse_args()
     args.func(args)

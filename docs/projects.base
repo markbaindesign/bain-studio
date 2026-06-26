@@ -1,0 +1,17 @@
+filters:
+  and:
+    - file.hasTag("studio-project")
+views:
+  - type: table
+    name: Active Projects
+    order:
+      - prefix
+      - name
+      - type
+      - status
+      - qa
+      - inbox
+      - repo
+    sort:
+      - property: type
+        direction: ASC

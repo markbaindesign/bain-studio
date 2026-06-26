@@ -1,0 +1,14 @@
+filters:
+  and:
+    - file.hasTag("tool")
+views:
+  - type: table
+    name: Tools
+    order:
+      - file.name
+      - description
+      - command
+      - god
+    columnSize:
+      note.description: 525
+      note.command: 281

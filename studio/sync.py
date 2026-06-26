@@ -43,11 +43,14 @@ STUDIO_DIR = Path(__file__).parent
 load_dotenv(STUDIO_DIR / ".env")
 
 ASANA_PAT            = os.getenv("ASANA_PAT") or os.getenv("ASANA_TOKEN")
+ASANA_USER_PAT       = os.getenv("ASANA_USER_PAT")   # Mark's token — used only for --create
+_scaffold_mode       = False   # set True during --create so all API calls use user token
 WORKSPACE_GID        = os.getenv("ASANA_WORKSPACE_GID")
 BAINBOT_GID          = os.getenv("ASANA_BAINBOT_GID")
 ASSIGNEE_NAME        = os.getenv("STUDIO_ASSIGNEE_NAME", "Bot")
 TEMPLATE_PROJECT_GID = os.getenv("ASANA_TEMPLATE_PROJECT_GID")
 USER_GID             = os.getenv("ASANA_USER_GID")
+PRIORITY_FIELD_GID   = os.getenv("ASANA_PRIORITY_FIELD_GID", "1155368350785978")
 TODAY          = date.today().isoformat()
 BASE_URL       = "https://app.asana.com/api/1.0"
 
@@ -193,6 +196,8 @@ def discover_projects(filter_prefix=None) -> list:
 # ---------------------------------------------------------------------------
 
 def _h():
+    if _scaffold_mode and ASANA_USER_PAT:
+        return {"Authorization": f"Bearer {ASANA_USER_PAT}", "Accept": "application/json"}
     return {"Authorization": f"Bearer {ASANA_PAT}", "Accept": "application/json"}
 
 def _get(path, params=None):
@@ -346,7 +351,7 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
         "opt_fields": (
             "gid,name,notes,due_on,due_at,start_on,completed,modified_at,permalink_url,"
             "assignee.gid,assignee.name,assignee_status,"
-            "custom_fields.gid,custom_fields.text_value,"
+            "custom_fields.gid,custom_fields.text_value,custom_fields.enum_value.name,"
             "memberships.section.name,memberships.section.gid,memberships.project.gid,"
             "tags.gid,tags.name,"
             "followers.gid,followers.name,"
@@ -363,10 +368,12 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
         t["_local_id"] = None
         t["_section"]  = None
         t["_section_gid"] = None
+        t["_priority"] = None
         for cf in t.get("custom_fields", []):
             if cf.get("gid") == field_gid:
                 t["_local_id"] = cf.get("text_value") or None
-                break
+            if cf.get("gid") == PRIORITY_FIELD_GID:
+                t["_priority"] = (cf.get("enum_value") or {}).get("name") or None
         for m in t.get("memberships", []):
             if (m.get("project") or {}).get("gid") == proj.gid:
                 sec = m.get("section") or {}
@@ -553,6 +560,7 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
     assignee_str = f"{assignee['name']} ({assignee['gid']})" if assignee.get("gid") else "none"
     astat        = t.get("assignee_status") or "none"
 
+    priority   = t.get("_priority") or "none"
     tags       = _fmt_refs(t.get("tags", []))
     followers  = _fmt_refs(t.get("followers", []))
     deps       = _fmt_task_refs(t.get("dependencies", []), gid_to_lid)
@@ -572,6 +580,7 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
         f"- **Local ID:** {local_id}",
         f"- **Asana ID:** {gid}",
         f"- **Section:** {section}",
+        f"- **Priority:** {priority}",
         f"- **Due:** {due}{overdue}",
         f"- **Start:** {start}",
         f"- **Assignee:** {assignee_str}",
@@ -837,6 +846,19 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         # --- Progress comments ---
         posted_progress = state.get("posted_progress", {})
         commented = 0
+
+        # Guard: if the same non-trivial progress text appears on more than 2 tasks,
+        # it was almost certainly written by a replace_all bug in the mirror editor.
+        # Skip the batch rather than spam every task with the same comment.
+        progress_texts = [
+            (prev or {}).get("progress", "")
+            for t in tasks
+            for prev in [carried.get(t["gid"])]
+            if (prev or {}).get("progress", "") and not PLAIN_CHECK.match((prev or {}).get("progress", ""))
+        ]
+        from collections import Counter
+        progress_counts = Counter(progress_texts)
+
         for t in tasks:
             gid      = t["gid"]
             prev     = carried.get(gid)
@@ -846,6 +868,9 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
             if (curr_p
                     and not PLAIN_CHECK.match(curr_p)
                     and curr_p != posted_progress.get(gid)):
+                if progress_counts[curr_p] > 2:
+                    log.warning(f"  [{proj.prefix}] Skipping comment for {local_id} — same progress text on {progress_counts[curr_p]} tasks (mirror edit bug?)")
+                    continue
                 try:
                     log.info(f"  [{proj.prefix}] Posting progress comment for {local_id}...")
                     leave_comment(gid, curr_p, dry_run)
@@ -905,12 +930,162 @@ def write_registry(projects: list, results: dict):
 
 
 # ---------------------------------------------------------------------------
+# Task creation (--create-task)
+# ---------------------------------------------------------------------------
+
+def create_task(project_gid: str, name: str, notes: str = '', assignee_gid: str = None,
+                depends_on_gid: str = None, dry_run: bool = False) -> str:
+    """
+    Create a task in the given Asana project via bainbot, return the new task GID.
+    Optionally set it as a dependency of depends_on_gid.
+    """
+    payload = {
+        "data": {
+            "name": name,
+            "projects": [project_gid],
+            "workspace": WORKSPACE_GID,
+        }
+    }
+    if notes:
+        payload["data"]["notes"] = notes
+    if assignee_gid:
+        payload["data"]["assignee"] = assignee_gid
+
+    if dry_run:
+        log.info(f"  [DRY-RUN] Would create task: {name!r}")
+        return "dry-run-gid"
+
+    resp = _post("/tasks", payload)
+    new_gid = resp["data"]["gid"]
+    log.info(f"  Task created: {name!r} ({new_gid})")
+
+    if depends_on_gid:
+        _post(f"/tasks/{depends_on_gid}/addDependencies", {"data": {"dependencies": [new_gid]}})
+        log.info(f"  Linked as dependency of {depends_on_gid}")
+
+    return new_gid
+
+
+def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT UP",
+                     notes: str = "", due: str = "", dry_run: bool = False) -> str:
+    """
+    Create a task in Asana, assign a local ID, place it in the correct section,
+    and append it to the local mirror. Returns the local ID (e.g. NORE-042).
+    """
+    from datetime import datetime
+
+    # 1. Resolve section GID
+    sections = fetch_sections(proj)
+    section_name_upper = section_name.upper()
+    section_gid = sections.get(section_name_upper)
+    if not section_gid:
+        available = ", ".join(sections.keys())
+        raise ValueError(f"Section '{section_name_upper}' not found in {proj.prefix}. Available: {available}")
+
+    # 2. Create in Asana
+    payload = {
+        "data": {
+            "name": name,
+            "projects": [proj.gid],
+            "workspace": WORKSPACE_GID,
+            "assignee": BAINBOT_GID,
+        }
+    }
+    if notes:
+        payload["data"]["notes"] = notes
+    if due:
+        payload["data"]["due_on"] = due
+
+    if dry_run:
+        log.info(f"  [DRY-RUN] Would create task: {name!r} in {proj.prefix}/{section_name_upper}")
+        return f"{proj.prefix}-DRY"
+
+    resp = _post("/tasks", payload)
+    new_gid = resp["data"]["gid"]
+    log.info(f"  Task created in Asana: {name!r} ({new_gid})")
+
+    # 3. Move to section
+    _post(f"/sections/{section_gid}/addTask", {"data": {"task": new_gid}})
+    log.info(f"  Placed in section: {section_name_upper}")
+
+    # 4. Assign local ID
+    state = load_ids(proj)
+    field_gid = state.get("custom_field_gid") or SHARED_FIELD_GID
+    lid = _next_lid(state, proj.prefix)
+    state["tasks"][new_gid] = lid
+    save_ids(proj, state, dry_run=False)
+    if field_gid:
+        try:
+            _put(f"/tasks/{new_gid}", {"data": {"custom_fields": {field_gid: lid}}})
+            log.info(f"  Local ID set: {lid}")
+        except Exception as e:
+            log.warning(f"  Could not write Local ID to Asana: {e}")
+
+    # 5. Append to mirror
+    today = date.today().isoformat()
+    now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    permalink = f"https://app.asana.com/1/{WORKSPACE_GID}/project/{proj.gid}/task/{new_gid}"
+    entry = "\n".join([
+        f"### {lid} — {name}",
+        f"- **Local ID:** {lid}",
+        f"- **Asana ID:** {new_gid}",
+        f"- **Section:** {section_name_upper}",
+        f"- **Due:** {due if due else 'none'}",
+        f"- **Start:** none",
+        f"- **Assignee:** {ASSIGNEE_NAME} ({BAINBOT_GID})",
+        f"- **Assignee Status:** inbox",
+        f"- **Tags:** none",
+        f"- **Followers:** none",
+        f"- **Dependencies:** none",
+        f"- **Dependents:** none",
+        f"- **Notes:** {notes if notes else 'none'}",
+        f"- **Blockers:** None identified.",
+        f"- **Progress:** none",
+        f"- **Comments:** none",
+        f"- **Modified:** {now}",
+        f"- **URL:** {permalink}",
+        "",
+    ])
+
+    mirror = proj.mirror_file
+    if mirror.exists():
+        content = mirror.read_text()
+        # Insert before the summary table (last --- block) or append
+        if "\n---\n" in content:
+            insert_at = content.rfind("\n---\n")
+            content = content[:insert_at] + "\n" + entry + content[insert_at:]
+        else:
+            content = content.rstrip() + "\n\n" + entry
+        mirror.write_text(content)
+        log.info(f"  Appended to mirror: {mirror}")
+    else:
+        log.warning(f"  Mirror not found at {mirror} — run sync to generate it")
+
+    log.info(f"\n  Created: {lid} — {name}")
+    log.info(f"  Section: {section_name_upper} | Project: {proj.prefix}")
+    return lid
+
+
+# ---------------------------------------------------------------------------
 # Project scaffold (--create)
 # ---------------------------------------------------------------------------
 
 def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_run=False, yes=False):
+    global _scaffold_mode
     path = Path(path).expanduser().resolve()
     log.info(f"\n=== Creating project: {name} ({prefix}) ===")
+    if ASANA_USER_PAT:
+        log.info(f"  Using Mark's API token for project creation")
+    else:
+        log.warning("  ASANA_USER_PAT not set — project will be owned by bainbot. Add it to .env.")
+    _scaffold_mode = True
+    try:
+        _scaffold_project_inner(name, prefix, path, template_gid, extra_members, dry_run, yes)
+    finally:
+        _scaffold_mode = False
+
+
+def _scaffold_project_inner(name, prefix, path, template_gid, extra_members=None, dry_run=False, yes=False):
 
     if not template_gid:
         log.error("No template project GID. Set ASANA_TEMPLATE_PROJECT_GID in .env or use --template.")
@@ -957,7 +1132,7 @@ def scaffold_project(name, prefix, path, template_gid, extra_members=None, dry_r
     else:
         log.info("  [DRY-RUN] Would delete placeholder tasks")
 
-    # 3. Add members
+    # 3. Add members (bainbot must be a member so sync can read tasks)
     members = [m for m in ([BAINBOT_GID, USER_GID] + (extra_members or [])) if m]
     if not dry_run:
         _post(f"/projects/{new_gid}/addMembers", {"data": {"members": members}})
@@ -1042,6 +1217,26 @@ def main():
                         help="Extra workspace member GIDs to add, comma-separated")
     parser.add_argument("--yes", action="store_true",
                         help="Skip the task-deletion confirmation gate (for scripted use)")
+    parser.add_argument("--create-task", action="store_true",
+                        help="Create a new task in a project (use with --project, --task-name)")
+    parser.add_argument("--task-name", metavar="NAME",
+                        help="Task name (required with --create-task)")
+    parser.add_argument("--task-notes", metavar="NOTES", default="",
+                        help="Task notes/description (optional with --create-task)")
+    parser.add_argument("--task-section", metavar="SECTION", default="NEXT UP",
+                        help="Section to place the task in (default: NEXT UP)")
+    parser.add_argument("--task-due", metavar="YYYY-MM-DD", default="",
+                        help="Due date for the new task (optional)")
+    parser.add_argument("--task-assignee", metavar="GID", default="",
+                        help="Assignee GID (optional; defaults to Mark's GID if not set)")
+    parser.add_argument("--task-depends-on", metavar="GID", default="",
+                        help="GID of the task this new task unblocks (optional)")
+    parser.add_argument("--comment", action="store_true",
+                        help="Post a comment to an Asana task via bainbot (use with --task-gid and --comment-text)")
+    parser.add_argument("--task-gid", metavar="GID", default="",
+                        help="Asana task GID to comment on (required with --comment)")
+    parser.add_argument("--comment-text", metavar="TEXT", default="",
+                        help="Comment text to post (required with --comment)")
     args = parser.parse_args()
 
     if not ASANA_PAT:
@@ -1050,6 +1245,13 @@ def main():
     if not WORKSPACE_GID or not BAINBOT_GID:
         log.error("ERROR: ASANA_WORKSPACE_GID and ASANA_BAINBOT_GID must be set in .env")
         sys.exit(2)
+
+    if args.comment:
+        if not args.task_gid or not args.comment_text:
+            parser.error("--comment requires --task-gid and --comment-text")
+        leave_comment(args.task_gid, args.comment_text, dry_run=args.dry_run)
+        log.info(f"Commented on task {args.task_gid}.")
+        sys.exit(0)
 
     if args.create:
         missing = [f for f, v in [("--name", args.name), ("--prefix", args.prefix), ("--path", args.path)] if not v]
@@ -1065,6 +1267,27 @@ def main():
             dry_run=args.dry_run,
             yes=args.yes,
         )
+        sys.exit(0)
+
+    if args.create_task:
+        if not args.task_name:
+            parser.error("--create-task requires --task-name")
+        if not args.project:
+            parser.error("--create-task requires --project (the task prefix, e.g. BD)")
+        projects = discover_projects(filter_prefix=args.project)
+        if not projects:
+            log.error(f"No project found with prefix '{args.project}'.")
+            sys.exit(1)
+        proj = projects[0]
+        lid = create_task_full(
+            proj=proj,
+            name=args.task_name,
+            section_name=args.task_section,
+            notes=args.task_notes,
+            due=args.task_due,
+            dry_run=args.dry_run,
+        )
+        print(lid)
         sys.exit(0)
 
     if args.setup:

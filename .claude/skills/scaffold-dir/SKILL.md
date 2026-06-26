@@ -51,7 +51,19 @@ __pycache__/
 cd {path} && git add .gitignore && git commit -m "init: scaffold {name or basename}"
 ```
 
-### 6. Report
+### 6. Shutter profile
+
+If `shutter-profile` is available on PATH, create a Shutter profile for this project's QA inbox:
+
+```bash
+shutter-profile create "{name or basename}" "{path}/qa/qa-inbox"
+```
+
+This creates `~/.shutter/profiles/{name}.xml` pointing to `{path}/qa/qa-inbox`, so Shutter can be launched for this project with `shutter --profile='{name}'`.
+
+Skip silently if `shutter-profile` is not found.
+
+### 7. Report
 
 ```
 scaffold-dir: {path}
@@ -59,4 +71,5 @@ scaffold-dir: {path}
   ✓ git init
   ✓ .gitignore written
   ✓ initial commit
+  ✓ shutter profile '{name}' created  (or "skipped — shutter-profile not found")
 ```

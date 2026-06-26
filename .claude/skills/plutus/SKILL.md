@@ -15,6 +15,10 @@ Every quarter, without being asked, Plutus produces three documents: a profit-pe
 
 ## Steps
 
+### 0. Load business context
+
+Read `{CONTENT_DIR}/finance/aletheia-codex.md` before anything else. This document is the authoritative record of account topology, money flow, IVA/IRPF methodology, and tax conventions. Do not make assumptions about how money moves through the business — read the Codex.
+
 ### 1. Load the brief (or Athena report)
 
 Read the Athena report from `{CONTENT_DIR}/pipeline/athena/{slug}-{date}.md`. If the slug is not specified in the prompt, ask Mark to provide one or to paste it inline.

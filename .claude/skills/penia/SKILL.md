@@ -10,6 +10,10 @@ Penia models risk so it never actually arrives. She is not an enemy — she is a
 
 ## Steps
 
+### 0. Load business context
+
+Read `{CONTENT_DIR}/finance/aletheia-codex.md` before anything else. This is the authoritative record of account topology, money flow, and operating conventions. Use it to interpret which accounts obligations come from and how income is routed.
+
 ### 1. Read the financial snapshot
 
 Read `{CONTENT_DIR}/finance/accounts.json`. If more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh.
