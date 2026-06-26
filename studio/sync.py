@@ -705,6 +705,14 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
     if _diff(astat, t.get("assignee_status") or "none") and astat != "none":
         updates["assignee_status"] = astat
 
+    # Assignee — extract GID from mirror value e.g. "Mark Bain (507443625075)"
+    mirror_assignee = prev.get("assignee", "none")
+    asana_assignee_gid = (t.get("assignee") or {}).get("gid") or "none"
+    mirror_assignee_gid = _extract_gids(mirror_assignee)
+    mirror_assignee_gid = mirror_assignee_gid[0] if mirror_assignee_gid else "none"
+    if _diff(mirror_assignee_gid, asana_assignee_gid):
+        updates["assignee"] = mirror_assignee_gid if mirror_assignee_gid != "none" else None
+
     if not updates:
         return False
     if dry_run:
