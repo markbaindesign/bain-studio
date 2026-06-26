@@ -50,6 +50,7 @@ BAINBOT_GID          = os.getenv("ASANA_BAINBOT_GID")
 ASSIGNEE_NAME        = os.getenv("STUDIO_ASSIGNEE_NAME", "Bot")
 TEMPLATE_PROJECT_GID = os.getenv("ASANA_TEMPLATE_PROJECT_GID")
 USER_GID             = os.getenv("ASANA_USER_GID")
+PRIORITY_FIELD_GID   = os.getenv("ASANA_PRIORITY_FIELD_GID", "1155368350785978")
 TODAY          = date.today().isoformat()
 BASE_URL       = "https://app.asana.com/api/1.0"
 
@@ -350,7 +351,7 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
         "opt_fields": (
             "gid,name,notes,due_on,due_at,start_on,completed,modified_at,permalink_url,"
             "assignee.gid,assignee.name,assignee_status,"
-            "custom_fields.gid,custom_fields.text_value,"
+            "custom_fields.gid,custom_fields.text_value,custom_fields.enum_value.name,"
             "memberships.section.name,memberships.section.gid,memberships.project.gid,"
             "tags.gid,tags.name,"
             "followers.gid,followers.name,"
@@ -367,10 +368,12 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
         t["_local_id"] = None
         t["_section"]  = None
         t["_section_gid"] = None
+        t["_priority"] = None
         for cf in t.get("custom_fields", []):
             if cf.get("gid") == field_gid:
                 t["_local_id"] = cf.get("text_value") or None
-                break
+            if cf.get("gid") == PRIORITY_FIELD_GID:
+                t["_priority"] = (cf.get("enum_value") or {}).get("name") or None
         for m in t.get("memberships", []):
             if (m.get("project") or {}).get("gid") == proj.gid:
                 sec = m.get("section") or {}
@@ -557,6 +560,7 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
     assignee_str = f"{assignee['name']} ({assignee['gid']})" if assignee.get("gid") else "none"
     astat        = t.get("assignee_status") or "none"
 
+    priority   = t.get("_priority") or "none"
     tags       = _fmt_refs(t.get("tags", []))
     followers  = _fmt_refs(t.get("followers", []))
     deps       = _fmt_task_refs(t.get("dependencies", []), gid_to_lid)
@@ -576,6 +580,7 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
         f"- **Local ID:** {local_id}",
         f"- **Asana ID:** {gid}",
         f"- **Section:** {section}",
+        f"- **Priority:** {priority}",
         f"- **Due:** {due}{overdue}",
         f"- **Start:** {start}",
         f"- **Assignee:** {assignee_str}",
