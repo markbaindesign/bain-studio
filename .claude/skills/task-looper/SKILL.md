@@ -236,12 +236,12 @@ Ask yourself: *Do I have everything I need to complete this without guessing?*
 
 Do the work. Use your full judgment and knowledge of the tech stack.
 
-- Commit as logical units: `git add <specific files> && git commit -m "..."`
-- Commit messages describe what changed and why — not the task number
+- Make one commit when the task is done: `git add <specific files> && git commit -m "..."`
+- Commit message describes what changed and why — not the task number
 - Never commit `.env` files, secrets, or large binaries
 - Never commit directly to main/master
 
-After each commit, log it:
+Log the commit:
 ```bash
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] commit: \"{commit message}\" ({files changed})" >> ~/logs/task-looper.log
 ```
@@ -299,43 +299,27 @@ Log sync call:
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] sync.py --project {PREFIX} → exit $?" >> ~/logs/task-looper.log
 ```
 
-Push branch and raise PR:
+Push the branch:
 ```bash
 git push -u origin feature/{prefix-id}-{slug}
-gh pr create \
-  --title "{Task name}" \
-  --body "$(cat <<'EOF'
-## Task
-{Task local ID} — {Task name}
-
-## What was done
-{Solution: what changed, where, and why}
-
-## Test notes
-{How to verify — specific steps or observations}
-
-🤖 task-looper — [Claude Code](https://claude.com/claude-code)
-EOF
-)"
 ```
 
-Log push, PR, and completion:
+Log push and completion:
 ```bash
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] pushed feature/{prefix-id}-{slug}" >> ~/logs/task-looper.log
-echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] PR: {pr_url}" >> ~/logs/task-looper.log
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} complete" >> ~/logs/task-looper.log
 ```
 
 Notify:
 ```bash
 python3 /media/data/dev/bain-studio/studio/notifier.py \
-  "{ID} complete: {task name}. PR at {url or 'branch pushed'}." \
+  "{ID} complete: {task name}. Branch feature/{prefix-id}-{slug} pushed — merge to develop when ready." \
   --priority normal --sender task-looper --project {PREFIX}
 ```
 
 Log the notify call:
 ```bash
-echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] notify: {ID} complete: {task name}. PR at {url}." >> ~/logs/task-looper.log
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] notify: {ID} complete — branch feature/{prefix-id}-{slug} pushed." >> ~/logs/task-looper.log
 ```
 
 Then output the completion promise:
