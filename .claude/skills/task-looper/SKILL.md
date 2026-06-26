@@ -93,7 +93,8 @@ Log these events (examples):
 - Session end: `[BD] Session ended — queue empty`
 - Task started: `[BD] BD-039 started: Add custom icons for all CPTs`
 - Commit: `[BD] commit: "Set distinct dashicons for each custom post type" (register.php)`
-- Push: `[BD] pushed develop`
+- Branch: `[BD] branch: feature/bd-039-custom-cpt-icons`
+- Push: `[BD] pushed feature/bd-039-custom-cpt-icons`
 - Task complete: `[BD] BD-039 complete — 4 remaining in queue`
 - Task blocked: `[BD] BD-039 blocked: {one-sentence reason} — 4 remaining in queue`
 - Usage at start: `[BD] usage-start: 35% — resets 2026-07-01 04:00`
@@ -273,6 +274,29 @@ Log task start:
 ```bash
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} started: {task name}" >> ~/logs/task-looper.log
 ```
+
+### 4a.5. Create a feature branch
+
+Derive a slug from the task ID and name (lowercase, hyphens, max 40 chars):
+e.g. `BSTD-048 Studio tasks not branching` → `bstd-048-studio-tasks-not-branching`
+
+Try git flow first; fall back to manual branch if not initialised:
+```bash
+SLUG="{task-id-slug}"
+DEVELOP=$(git config gitflow.branch.develop 2>/dev/null || echo develop)
+git checkout "$DEVELOP" && git pull origin "$DEVELOP" 2>/dev/null || true
+if git flow version &>/dev/null 2>&1 && git config gitflow.branch.develop &>/dev/null; then
+    git flow feature start "$SLUG"
+else
+    git checkout -b "feature/$SLUG"
+fi
+```
+
+Log the branch:
+```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] branch: feature/{slug}" >> ~/logs/task-looper.log
+```
+
 ### 4b. Understand the task
 
 Read the task's `**Notes:**` field fully. If it references files, read them. If it references a URL, fetch it. Explore the codebase as needed.
@@ -346,16 +370,22 @@ Log sync call:
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] sync.py --project {PREFIX} → exit $?" >> ~/logs/task-looper.log
 ```
 
-Push develop:
+Push the feature branch:
 ```bash
-git push origin develop
+git push origin "feature/{slug}"
 ```
 
 Log push and completion (count remaining tasks from the state file body):
 ```bash
 REMAINING=$(awk '/^---$/{n++} n==2 && !/^---$/ && /\S/{count++} END{print count+0}' .claude/bd-task-looper.local.md 2>/dev/null || echo 0)
-echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] pushed develop" >> ~/logs/task-looper.log
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] pushed feature/{slug}" >> ~/logs/task-looper.log
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] {TASK_ID} complete — ${REMAINING} remaining in queue" >> ~/logs/task-looper.log
+```
+
+Return to develop so the next task branches from a clean base:
+```bash
+DEVELOP=$(git config gitflow.branch.develop 2>/dev/null || echo develop)
+git checkout "$DEVELOP"
 ```
 
 Notify:
@@ -417,6 +447,17 @@ Sync will push the assignee change and progress comment to Asana, putting the ta
 Log sync call:
 ```bash
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] sync.py --project {PREFIX} → exit $?" >> ~/logs/task-looper.log
+```
+
+Push the feature branch if there is any partial work committed, then return to develop:
+```bash
+git diff --quiet HEAD 2>/dev/null || git stash  # stash any uncommitted work
+BRANCH=$(git branch --show-current)
+if [ "$BRANCH" != "develop" ] && [ "$BRANCH" != "main" ]; then
+    git push origin "$BRANCH" 2>/dev/null || true
+fi
+DEVELOP=$(git config gitflow.branch.develop 2>/dev/null || echo develop)
+git checkout "$DEVELOP"
 ```
 
 Log the blocker (count remaining tasks from the state file body):
