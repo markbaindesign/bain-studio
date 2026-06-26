@@ -154,6 +154,16 @@ def main():
     print(f'  Upcoming 30d: €{snapshot["upcoming_30d_total"]:,.2f}')
     print(f'  Liquid after 30d: €{snapshot["balance_after_30d"]:,.2f}')
 
+    # Month-end crunch summary (end of current month only)
+    from datetime import date as _date
+    import calendar as _cal
+    today = _date.today()
+    month_end = str(_date(today.year, today.month, _cal.monthrange(today.year, today.month)[1]))
+    eom_total = sum(u['amount'] for u in snapshot['upcoming_30d'] if u['date'] <= month_end)
+    eom_balance = snapshot['liquid_eur'] - eom_total
+    print(f'  End-of-month obligations ({month_end}): €{eom_total:,.2f}')
+    print(f'  Liquid after month-end: €{eom_balance:,.2f}')
+
     errors = data.get('errors', [])
     if errors:
         print(f'  Warnings: {[e["message"] for e in errors]}')
