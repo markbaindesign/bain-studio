@@ -33,3 +33,4 @@ studio/collectors/obsidian_standup.json
 
 # Obsidian workspace state
 docs/.obsidian/workspace.json
+.env
