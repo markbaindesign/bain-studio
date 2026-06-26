@@ -427,12 +427,31 @@ def _is_junk(task) -> bool:
 
 def assign_ids(proj: ProjectConfig, tasks: list, state: dict, field_gid: str, dry_run=False) -> dict:
     assigned = 0
+    rehomed = 0
     for t in tasks:
         gid = t["gid"]
-        if t["_local_id"]:
-            if gid not in state["tasks"]:
-                state["tasks"][gid] = t["_local_id"]
+        existing = t["_local_id"]
+
+        # Re-homed task: has an ID from a different project — reassign with this project's prefix
+        if existing and not existing.startswith(f"{proj.prefix}-"):
+            old_id = existing
+            lid = _next_lid(state, proj.prefix)
+            state["tasks"][gid] = lid
+            t["_local_id"] = lid
+            log.info(f"  [{proj.prefix}] Re-homed task {gid}: {old_id} → {lid} ({t.get('name', '')})")
+            if not dry_run:
+                try:
+                    _put(f"/tasks/{gid}", {"data": {"custom_fields": {field_gid: lid}}})
+                    rehomed += 1
+                except Exception as e:
+                    log.warning(f"  [{proj.prefix}] Could not reassign re-homed ID ({gid}): {e}")
             continue
+
+        if existing:
+            if gid not in state["tasks"]:
+                state["tasks"][gid] = existing
+            continue
+
         lid = state["tasks"].get(gid) or _next_lid(state, proj.prefix)
         state["tasks"][gid] = lid
         t["_local_id"] = lid
@@ -442,9 +461,12 @@ def assign_ids(proj: ProjectConfig, tasks: list, state: dict, field_gid: str, dr
                 assigned += 1
             except Exception as e:
                 log.warning(f"  [{proj.prefix}] Note: could not write Local ID to Asana ({gid}): {e}")
+
     save_ids(proj, state, dry_run)
     if assigned:
         log.info(f"  [{proj.prefix}] Assigned {assigned} new Local ID(s).")
+    if rehomed:
+        log.info(f"  [{proj.prefix}] Re-homed {rehomed} task(s) with new Local IDs.")
     return state
 
 
