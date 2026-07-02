@@ -184,6 +184,15 @@ def _inline(text, F):
         lambda m: f'<a href="{m.group(2)}" color="#{CLAY_HEX}">{m.group(1)}</a>',
         text,
     )
+    # Bare URLs → clickable link (skip URLs already inside an href attribute)
+    def _bare_url(m):
+        url = m.group(1)
+        trail = ''
+        while url and url[-1] in '.,;:!?)':
+            trail = url[-1] + trail
+            url = url[:-1]
+        return f'<a href="{url}" color="#{CLAY_HEX}">{url}</a>' + trail
+    text = re.sub(r'(?<!href=")(https?://[^\s<>"\']+)', _bare_url, text)
     text = re.sub(r'\*\*(.+?)\*\*', lambda m: f'<font name="{F["MonoBold"]}">{m.group(1)}</font>', text)
     text = re.sub(r'__(.+?)__',     lambda m: f'<font name="{F["MonoBold"]}">{m.group(1)}</font>', text)
     text = re.sub(r'\*(.+?)\*',     lambda m: f'<font name="{F["MonoMedium"]}">{m.group(1)}</font>', text)
@@ -419,7 +428,7 @@ def _cover(canvas, doc, title, subtitle, F):
     canvas.restoreState()
 
 
-def _header_footer(canvas, doc, title, F):
+def _header_footer(canvas, doc, title, F, version=''):
     if doc.page == 1:
         return
     canvas.saveState()
@@ -433,6 +442,8 @@ def _header_footer(canvas, doc, title, F):
     canvas.line(18 * mm, 12 * mm, W - 18 * mm, 12 * mm)
     canvas.setFont(F['Code'], 7)
     canvas.drawString(18 * mm, 9 * mm, 'Bain Design  ·  mark@bain.design')
+    if version:
+        canvas.drawRightString(W - 18 * mm, 9 * mm, version)
     canvas.restoreState()
 
 
@@ -501,7 +512,18 @@ def build(input_path, output_path=None, one_pager=False):
                 fm_subtitle = ln[9:].strip().strip('"\'')
         body_text = md_text[fm_match.end():]
 
-    title_match = re.match(r'^#\s+(.+)', body_text, re.MULTILINE)
+    # Extract version from HTML comment (<!-- version: X | updated: Y -->)
+    fm_version = ''
+    vm = re.search(r'<!--\s*version:\s*([^|>]+?)(?:\|\s*updated:\s*([^>]+?))?\s*-->', body_text)
+    if vm:
+        fm_version = vm.group(1).strip()
+        if vm.group(2):
+            fm_version += '  \u00b7  updated: ' + vm.group(2).strip()
+
+    # Strip HTML comments so they don't render as body text
+    body_text = re.sub(r'<!--.*?-->', '', body_text, flags=re.DOTALL)
+
+    title_match = re.search(r'^#\s+(.+)', body_text, re.MULTILINE)
     title = (title_match.group(1) if title_match
              else fm_title
              or input_path.stem.replace('-', ' ').replace('_', ' ').title())
@@ -526,7 +548,7 @@ def build(input_path, output_path=None, one_pager=False):
             topMargin=24 * mm,  bottomMargin=16 * mm,
             title=title, author='Bain Design',
         )
-        story = md_to_story(md_text, ST, F, skip_h1=True, base_dir=input_path.parent)
+        story = md_to_story(body_text, ST, F, skip_h1=True, base_dir=input_path.parent)
         hf = lambda c, d: _one_pager_header(c, d, title, F)
         doc.build(story, onFirstPage=hf, onLaterPages=hf)
     else:
@@ -538,11 +560,11 @@ def build(input_path, output_path=None, one_pager=False):
             title=title, author='Bain Design',
         )
         story = [Spacer(1, 720)]   # fill cover page
-        story.extend(md_to_story(md_text, ST, F, base_dir=input_path.parent))
+        story.extend(md_to_story(body_text, ST, F, base_dir=input_path.parent))
         doc.build(
             story,
             onFirstPage=lambda c, d: _cover(c, d, title, subtitle, F),
-            onLaterPages=lambda c, d: _header_footer(c, d, title, F),
+            onLaterPages=lambda c, d: _header_footer(c, d, title, F, version=fm_version),
         )
     print(f'\nDone → {output_path}')
     return output_path
