@@ -1119,6 +1119,32 @@ def _scaffold_project_inner(name, prefix, path, template_gid, extra_members=None
         log.error("No template project GID. Set ASANA_TEMPLATE_PROJECT_GID in .env or use --template.")
         sys.exit(1)
 
+    # 0. Pre-flight checks — detect conflicts before touching Asana
+    registry = load_projects_registry()
+    for entry in registry:
+        if entry.get("prefix", "").upper() == prefix.upper():
+            log.error(f"  Prefix '{prefix}' already in use by: {entry.get('path')} (GID: {entry.get('gid', 'unknown')})")
+            log.error("  Use a different prefix or remove the existing entry from projects.json.")
+            sys.exit(1)
+        if str(path) == entry.get("path"):
+            log.error(f"  Path '{path}' already registered (GID: {entry.get('gid', 'unknown')})")
+            sys.exit(1)
+        if entry.get("name", "").lower() == name.lower():
+            log.error(f"  Project name '{name}' already exists at: {entry.get('path')} (GID: {entry.get('gid', 'unknown')})")
+            sys.exit(1)
+
+    # Also check Asana for an existing project with this name in the workspace
+    log.info(f"  Checking Asana for existing projects named '{name}'...")
+    workspace_gid = _get("/users/me", params={"opt_fields": "workspaces"})["data"]["workspaces"][0]["gid"]
+    search = _get(f"/workspaces/{workspace_gid}/projects", params={"opt_fields": "name,gid", "limit": 100})
+    for proj in search.get("data", []):
+        if proj.get("name", "").lower() == name.lower():
+            log.error(f"  Asana already has a project named '{name}' (GID: {proj['gid']})")
+            log.error(f"  URL: https://app.asana.com/0/{proj['gid']}/list")
+            log.error("  To use it, register it manually in projects.json instead of creating a new one.")
+            sys.exit(1)
+    log.info("  Pre-flight checks passed.")
+
     # 1. Duplicate template
     log.info(f"  Duplicating template {template_gid}...")
     if not dry_run:
@@ -1198,7 +1224,7 @@ def _scaffold_project_inner(name, prefix, path, template_gid, extra_members=None
         registry = load_projects_registry()
         paths_in_registry = [e["path"] for e in registry]
         if str(path) not in paths_in_registry:
-            registry.append({"path": str(path), "status": "active"})
+            registry.append({"path": str(path), "status": "active", "gid": new_gid, "prefix": prefix, "name": name})
             PROJECTS_FILE.write_text(json.dumps(registry, indent=2) + "\n")
             log.info(f"  Registered in {PROJECTS_FILE}")
     else:
