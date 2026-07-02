@@ -46,6 +46,7 @@ UPCOMING_PATTERNS = [
     ('Claude',     'Claude (Anthropic)',            23, 'fixed'),
     ('Github',     'GitHub Copilot',               15, 'fixed'),
     ('Algolia',    'Algolia',                      19, 'fixed'),
+    ('WPML',       'WPML (OnTheGoSystems)',          8, 'fixed'),
 ]
 
 
@@ -126,9 +127,9 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
                 qty_balances[aid2] += qty
                 rows.append({
                     'date': txn_date,
-                    'desc': desc,
-                    'path': a2['path'],
-                    'type': a2['type'],
+                    'desc': desc or '',
+                    'path': a2['path'] or '',
+                    'type': a2['type'] or '',
                     'cur':  cur,
                     'val':  val,
                     'eur':  eur,
@@ -217,6 +218,7 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
         'owner_draw':      owner_draw,
         'breakeven_allin': breakeven_allin,
         'fixed_costs':     fixed_costs,
+        'transactions':    rows,
     }
 
 

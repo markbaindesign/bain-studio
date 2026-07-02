@@ -116,6 +116,39 @@ def api_pipeline_connects(thread_id):
         return jsonify({'error': str(e)}), 502
 
 
+@app.route('/api/transactions')
+def api_transactions():
+    fx_rates, _ = get_fx_rates()
+    try:
+        data = gnucash_parser.parse(
+            GNUCASH_PATH,
+            usd_rate=fx_rates['USD'],
+            gbp_rate=fx_rates['GBP'],
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    rows = data.get('transactions', [])
+
+    q = request.args.get('q', '').lower()
+    type_filter = request.args.get('type', '').upper()
+    since = request.args.get('since', '')
+    until = request.args.get('until', '')
+
+    if q:
+        rows = [r for r in rows if q in r['desc'].lower() or q in r['path'].lower()]
+    if type_filter:
+        rows = [r for r in rows if r['type'] == type_filter]
+    if since:
+        rows = [r for r in rows if r['date'] >= since]
+    if until:
+        rows = [r for r in rows if r['date'] <= until]
+
+    rows = sorted(rows, key=lambda x: x['date'], reverse=True)
+    limit = int(request.args.get('limit', 200))
+    return jsonify({'count': len(rows), 'transactions': rows[:limit]})
+
+
 @app.route('/api/data')
 def api_data():
     # Reload .env on each request so credential changes take effect without restart
