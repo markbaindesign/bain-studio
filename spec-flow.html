@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Spec Generation Flow</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  body {
+    background: #E8DFCC;
+    font-family: 'JetBrains Mono', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 48px 24px;
+    margin: 0;
+  }
+  h1 {
+    font-size: 14px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #1A1A1A;
+    margin-bottom: 40px;
+  }
+  .mermaid {
+    background: transparent;
+    max-width: 900px;
+    width: 100%;
+  }
+</style>
+</head>
+<body>
+<h1>Spec Generation Flow</h1>
+<div class="mermaid">
+flowchart TD
+    A([Raw idea]) --> B{Source?}
+
+    B -->|Voice| C[/interview-me topic/]
+    B -->|Text| D[Stub in specs/drafts/]
+
+    C --> E[Transcript → specs/interviews/]
+    E --> D
+
+    D --> F[/nurture — triage pass/]
+
+    F -->|discard| G([Deleted])
+    F -->|defer| H([Stays in drafts/])
+    F -->|pursue| I[/nurture name — elicitation interview/]
+
+    I --> J[Full spec in specs/candidates/]
+
+    J --> K[/review-spec/]
+
+    K -->|revise| I
+    K -->|approved| L([Becomes project or task])
+
+    style A fill:#1A1A1A,color:#E8DFCC,stroke:none
+    style G fill:#888,color:#fff,stroke:none
+    style H fill:#888,color:#fff,stroke:none
+    style L fill:#C96442,color:#fff,stroke:none
+    style C fill:#E8DFCC,color:#1A1A1A,stroke:#1A1A1A,stroke-width:1.5px
+    style F fill:#E8DFCC,color:#1A1A1A,stroke:#1A1A1A,stroke-width:1.5px
+    style I fill:#E8DFCC,color:#1A1A1A,stroke:#1A1A1A,stroke-width:1.5px
+    style K fill:#E8DFCC,color:#1A1A1A,stroke:#1A1A1A,stroke-width:1.5px
+</div>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', themeVariables: {
+    primaryColor: '#E8DFCC',
+    primaryTextColor: '#1A1A1A',
+    primaryBorderColor: '#1A1A1A',
+    lineColor: '#1A1A1A',
+    secondaryColor: '#E8DFCC',
+    tertiaryColor: '#E8DFCC',
+    fontFamily: 'monospace',
+    fontSize: '14px'
+  }});
+</script>
+</body>
+</html>
