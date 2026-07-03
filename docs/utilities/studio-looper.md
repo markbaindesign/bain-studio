@@ -60,9 +60,9 @@ runtime via `studio/projects.json`.
 ## Stop hook
 
 `~/.claude/hooks/studio-task-looper-stop-hook.sh` — fires on every session stop, reads the
-state file, resolves the next task's project directory, and spawns a **fresh** `claude -p`
-subprocess for the next task. Context is cleared between tasks — each task starts cold.
-Runs alongside the per-project looper hook; only one fires per session (whichever state file exists).
+state file, resolves the next task's project directory, and re-injects the next task prompt
+into the current session. Runs alongside the per-project looper hook; only one fires per
+session (whichever state file exists).
 
 ## Local ID handling
 
