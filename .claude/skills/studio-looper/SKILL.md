@@ -120,7 +120,11 @@ PYEOF
 Read `studio/looper/.claude/asana-mirror.md`. Extract all tasks where:
 - `**Looper Status:** Queue`
 
-Tasks appear in mirror order, which reflects their drag order in Asana = Mark's priority.
+Sort the queue by Priority, then mirror order as tiebreaker:
+1. High priority
+2. Medium priority
+3. Low priority
+4. No priority set
 
 Calculate deadline — earlier of quota reset or `--for` duration:
 ```bash

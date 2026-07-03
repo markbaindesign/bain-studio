@@ -23,11 +23,14 @@ the studio-looper skill route each task to the correct project directory by pref
 Workspace-level enum custom field: **Looper Status** (set ASANA_LOOPER_STATUS_FIELD_GID in studio/.env).
 
 Values:
-- Queue        — Mark adds tasks here; drag order = execution priority
+- Queue        — Mark adds tasks here; execution order = Priority field (High first), then drag order
 - In Progress  — BainBot is currently working this task
 - Blocked      — BainBot hit a blocker; assigned back to Mark with notes
 - Review       — BainBot finished; Mark reviews before marking done
 - Done         — Mark confirmed; task complete in Asana
+
+Tasks added to this project with no Looper Status are automatically defaulted to "Queue" by
+sync.py on the next sync run. No Asana automation rule required.
 
 BainBot reads the field to build the queue and writes it to advance tasks through statuses.
 

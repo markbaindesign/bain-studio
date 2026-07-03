@@ -755,6 +755,10 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
     if LOOPER_STATUS_FIELD_GID:
         mirror_looper = (prev.get("looper_status") or "none").strip()
         asana_looper  = (t.get("_looper_status") or "none").strip()
+        # Default to Queue when both sides are unset — acts as a project-level rule
+        if mirror_looper in ("none", "") and asana_looper in ("none", ""):
+            mirror_looper = "Queue"
+            t["_looper_status"] = "Queue"  # reflect in mirror immediately
         if _diff(mirror_looper, asana_looper) and mirror_looper not in ("none", ""):
             option_gid = _get_looper_status_option_gid(mirror_looper)
             if option_gid:

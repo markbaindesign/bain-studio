@@ -35,15 +35,17 @@ Must be invoked from `/media/data/dev/bain-studio`.
 5. On blocker: task moves to **Blocked** section, reassigned to Mark with a note.
 6. Mark reviews tasks in the Review section, marks them done himself.
 
-## Asana project sections
+## Looper Status field values
 
-| Section | Meaning |
+| Value | Meaning |
 |---|---|
-| Queue | Mark adds tasks here; drag = priority |
+| Queue | Waiting to be worked — tasks default here automatically |
 | In Progress | BainBot is currently working this |
 | Blocked | Blocker found; assigned back to Mark |
 | Review | Work done; Mark to review and close |
 | Done | Mark confirmed; task complete |
+
+Tasks added to the Studio Looper project with no Looper Status are automatically pushed to "Queue" by sync.py on the next sync run.
 
 ## State file
 
@@ -54,8 +56,9 @@ runtime via `studio/projects.json`.
 ## Stop hook
 
 `~/.claude/hooks/studio-task-looper-stop-hook.sh` — fires on every session stop, reads the
-state file, resolves the next task's project directory, and re-injects the prompt. Runs
-alongside the per-project looper hook; only one fires per session (whichever state file exists).
+state file, resolves the next task's project directory, and spawns a **fresh** `claude -p`
+subprocess for the next task. Context is cleared between tasks — each task starts cold.
+Runs alongside the per-project looper hook; only one fires per session (whichever state file exists).
 
 ## Local ID handling
 
