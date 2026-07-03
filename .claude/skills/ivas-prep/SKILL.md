@@ -1,7 +1,7 @@
 ---
 name: ivas-prep
 description: Prepare quarterly IVA packet for the gestor — scaffold folders, download Harvest invoices, sort loose PDFs, pull expense invoices from Gmail.
-allowed-tools: [Bash, Read, mcp__claude_ai_Gmail__search_threads, mcp__claude_ai_Gmail__get_thread]
+allowed-tools: [Bash, Read]
 ---
 
 # IVA Prep
@@ -32,60 +32,56 @@ Quarter folder: `/media/data/Dropbox/Work/Admin/Financial/XOR i MB/{YEAR}/T{Q}-{
 
 ```bash
 python3 /media/data/dev/bain-studio/studio/tools/ivas-prep/ivas-prep.py \
-  --quarter {Q} --year {YEAR}
+  --quarter {Q} --year {YEAR} --gmail
 ```
 
 This handles:
 - Creating `Vendes/` and `Compres/{subfolders}/`
 - Downloading Harvest invoice PDFs → `Vendes/`
 - Sorting any loose PDFs in the quarter root
+- Downloading Gmail invoice attachments to `Compres/{supplier}/` via Gmail API
 
 Report what was created/downloaded/moved.
 
+If `--gmail` fails with "credentials.json not found", see Step 3.
+
 ---
 
-## Step 3 — Gmail: pull expense invoices
+## Step 3 — Gmail setup (one-time, if credentials.json is missing)
 
-Search Gmail for expense invoices received during the quarter. The quarter date range:
-- Q1: 1 Jan – 31 Mar
-- Q2: 1 Apr – 30 Jun
-- Q3: 1 Jul – 30 Sep
-- Q4: 1 Oct – 31 Dec
+Gmail download uses OAuth2 and requires a one-time setup:
 
-### Known senders and their Compres subfolder
+1. Open Google Cloud Console: console.cloud.google.com (project: bain-studio)
+2. Enable Gmail API if not already enabled
+3. APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID → Desktop app
+4. Download the JSON and save it as:
+   `studio/tools/ivas-prep/credentials.json`
+5. Re-run with `--gmail` — a browser window opens to authorise each account
+6. Tokens are saved to `~/.config/bain-studio/gmail_token_*.json` for future runs
 
-| Sender pattern | Subfolder |
-|---|---|
-| cloudways.com | Cloudways |
-| anthropic.com | Anthropic |
-| asana.com | Asana |
-| github.com | Github |
-| google.com / googleworkspace | Google |
-| movistar.es | Movistar |
-| digital-river.com / digitalriver | Crashplan |
-| algolia.com | Algolia |
-| namecheap.com | Namecheap |
-| harvest.com / getharvest | Harvest |
-| upwork.com | Upwork |
-| amazon.com / amazon.es | Amazon |
-| vimeo.com | Vimeo |
-| gitkraken.com | Gitkraken |
+The script authenticates two accounts:
+- `mark@bain.design` — Asana, Anthropic, Google Workspace, Gestor (Xavi), Movistar (forwarded from personal Gmail)
+- `your-cloudways-email@example.com` — Cloudways, Crashplan
 
-Use `mcp__claude_ai_Gmail__search_threads` to search for each sender within the quarter date range. Gmail date format: `after:YYYY/MM/DD before:YYYY/MM/DD`.
+Note: Movistar bills go to `your-personal-email@example.com`. Forward them to `mark@bain.design` before running. Only the FM-prefixed invoice (~€80 business line) is claimable; MM-prefix is personal.
 
-Example search: `from:cloudways.com has:attachment after:2026/04/01 before:2026/07/01`
+---
 
-For each thread found with a PDF attachment:
-1. Read the thread with `mcp__claude_ai_Gmail__get_thread`
-2. Report: sender, date, subject, attachment filename
-3. Note: you cannot download attachments directly — list them so Mark can save manually, or note that auto-download requires Gmail API scope beyond MCP
+## Step 3b — Manual portal downloads
 
-### What to report
+After the script, download anything not covered by Gmail:
 
-For each Compres subfolder, report:
-- Invoices found in Gmail (date, sender, subject, attachment name)
-- Whether the subfolder already has a file (may already be downloaded)
-- Subfolders with no Gmail match found (may need manual check)
+**Movistar** (if email attachment not sufficient)
+- Portal: https://www.movistar.es/ → Mi cuenta → Facturas emitidas → Facturas Legales
+
+**Upwork fees**
+- Portal: https://www.upwork.com/ > Reports > Billing Invoices
+- Filter by month (max 31-day range to avoid warning)
+- Download `summary-invoice.pdf` per month
+- Claimable: subscription (~$19.99/month), Connects purchases; NOT service fee (10%)
+
+**Namecheap**
+- Portal: https://ap.www.namecheap.com/profile/billing/order/ (email receipts are HTML-only)
 
 ---
 
@@ -118,6 +114,7 @@ Next steps:
 
 ## Notes
 
-- Gmail MCP can search and read threads but cannot download attachments as files — list them for manual download
-- The script handles all file operations; this skill handles the Gmail search and final report
+- Gmail download is automated via `gmail_download.py` — covers 7-day grace period after quarter end
+- OAuth tokens refresh automatically — re-auth only needed if revoked
 - Deadline: Mod 303 is due 20th of the month after quarter end (Q2 → 20 July)
+- Full expense checklist and quarter-specific items: see `docs/Finances/iva-mod303.md`
