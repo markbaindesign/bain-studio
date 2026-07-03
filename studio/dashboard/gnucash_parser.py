@@ -138,6 +138,7 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
     # --- Current balances (all asset accounts, matching GnuCash total) ---
     balances = []
     total_eur = 0.0
+    liquid_eur = 0.0
     for aid, a in sorted(accounts.items(), key=lambda x: x[1]['path']):
         if a['type'] not in ('BANK', 'CASH', 'ASSET'):
             continue
@@ -149,12 +150,16 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
         cur = a['currency'] or 'EUR'
         eur = _to_eur(qty, cur, usd_rate, gbp_rate)
         total_eur += eur
+        is_liquid = 'Suspense' not in a['path'] and 'Future' not in a['path']
+        if is_liquid:
+            liquid_eur += eur
         name = a['path'].replace('Root Account:Assets:', '')
         balances.append({
             'name':     name,
             'balance':  round(qty, 2),
             'currency': cur,
             'eur':      round(eur, 2),
+            'liquid':   is_liquid,
         })
 
     # --- Monthly P&L (2025 onwards) ---
@@ -196,6 +201,10 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
     today = date.today()
     upcoming = _compute_upcoming(rows, today, owner_draw)
 
+    # --- Balance after 30 days of known bills ---
+    due_30d = sum(u['amount'] for u in upcoming if u.get('days', 999) <= 30)
+    balance_after_30d = round(liquid_eur - due_30d, 2)
+
     # --- Last income entries for context ---
     income_rows = sorted(
         [r for r in rows if r['type'] == 'INCOME' and r['val'] < 0],
@@ -209,13 +218,15 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
     ]
 
     return {
-        'balances':        balances,
-        'total_eur':       round(total_eur, 2),
-        'monthly_pl':      monthly_pl,
-        'cat_exp':         dict(cat_exp),
-        'upcoming':        upcoming,
-        'recent_income':   recent_income,
-        'owner_draw':      owner_draw,
+        'balances':          balances,
+        'total_eur':         round(total_eur, 2),
+        'liquid_eur':        round(liquid_eur, 2),
+        'balance_after_30d': balance_after_30d,
+        'monthly_pl':        monthly_pl,
+        'cat_exp':           dict(cat_exp),
+        'upcoming':          upcoming,
+        'recent_income':     recent_income,
+        'owner_draw':        owner_draw,
         'breakeven_allin': breakeven_allin,
         'fixed_costs':     fixed_costs,
         'transactions':    rows,

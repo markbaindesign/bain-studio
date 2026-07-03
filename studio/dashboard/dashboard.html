@@ -151,6 +151,9 @@ header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
   border-top: 2px solid #e8e8e2;
   font-weight: 600;
 }
+.balance-illiquid .balance-name,
+.balance-illiquid .balance-eur { color: #bbb; font-style: italic; }
+.balance-liquid-row { border-top: 1px solid #e8e8e2; margin-top: 2px; color: #2d8a4e; }
 
 /* Upcoming payments */
 .upcoming-row {
@@ -532,7 +535,8 @@ function isOverdue(due_date) {
 }
 
 function renderKPIs(g, h) {
-  const cashClass = g.total_eur < 2000 ? 'negative' : g.total_eur < 4000 ? 'warning' : 'positive';
+  const liquid = g.liquid_eur != null ? g.liquid_eur : g.total_eur;
+  const cashClass = liquid < 2000 ? 'negative' : liquid < 4000 ? 'warning' : 'positive';
 
   // Last 3 months avg income (exclude current month if incomplete)
   const pl = g.monthly_pl || [];
@@ -562,8 +566,8 @@ function renderKPIs(g, h) {
   return `
     <div class="card col-3">
       <div class="card-title">Cash on Hand</div>
-      <div class="stat-value ${cashClass}">${fmt(g.total_eur)}</div>
-      <div class="stat-label">EUR equivalent, all accounts</div>
+      <div class="stat-value ${cashClass}">${fmt(liquid)}</div>
+      <div class="stat-label">Liquid EUR (excl. Suspense / Future Assets)</div>
       <div class="stat-sub ${bufferClass}">Break-even ${fmt(g.breakeven_allin)}/mo · avg ${fmt(avgInc)} · ${fmtSigned(bufferVsBE)}</div>
     </div>
     <div class="card col-3">
@@ -577,9 +581,9 @@ function renderKPIs(g, h) {
     </div>
     <div class="card col-3">
       <div class="card-title">Due This Month</div>
-      <div class="stat-value ${thisMo > g.total_eur ? 'negative' : 'warning'}">${fmt(thisMo)}</div>
+      <div class="stat-value ${thisMo > liquid ? 'negative' : 'warning'}">${fmt(thisMo)}</div>
       <div class="stat-label">Upcoming payments before month end</div>
-      <div class="stat-sub ${g.total_eur - thisMo > 0 ? 'positive' : 'negative'}">After payments: ${fmt(g.total_eur - thisMo)}</div>
+      <div class="stat-sub ${liquid - thisMo > 0 ? 'positive' : 'negative'}">After payments: ${fmt(liquid - thisMo)}</div>
     </div>
     <div class="card col-3">
       <div class="card-title">Due Next Month</div>
@@ -589,9 +593,9 @@ function renderKPIs(g, h) {
   `;
 }
 
-function renderBalances(balances, total_eur) {
+function renderBalances(balances, total_eur, liquid_eur) {
   const rows = balances.map(b => `
-    <div class="balance-row">
+    <div class="balance-row${b.liquid === false ? ' balance-illiquid' : ''}">
       <span class="balance-name">${b.name}</span>
       <div>
         ${b.currency !== 'EUR' ? `<div class="balance-native">${fmtNative(b.balance, b.currency)}</div>` : ''}
@@ -599,11 +603,15 @@ function renderBalances(balances, total_eur) {
       </div>
     </div>
   `).join('');
+  const liquidRow = (liquid_eur != null && liquid_eur !== total_eur)
+    ? `<div class="balance-total balance-liquid-row"><span>Liquid</span><span>${fmt(liquid_eur)}</span></div>`
+    : '';
   return `
     <div class="card col-4">
       <div class="card-title">Account Balances</div>
       ${rows}
-      <div class="balance-total"><span>Total</span><span>${fmt(total_eur)}</span></div>
+      ${liquidRow}
+      <div class="balance-total"><span>Total (all)</span><span>${fmt(total_eur)}</span></div>
     </div>
   `;
 }
@@ -877,7 +885,7 @@ async function loadData() {
       ${renderKPIs(g, h)}
 
       <div class="section-label">Cash &amp; Liquidity</div>
-      ${renderBalances(g.balances || [], g.total_eur || 0)}
+      ${renderBalances(g.balances || [], g.total_eur || 0, g.liquid_eur)}
       ${renderUpcoming(g.upcoming || [])}
       ${renderInvoices(h)}
 
