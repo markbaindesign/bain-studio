@@ -23,6 +23,11 @@ load_dotenv(Path(__file__).resolve().parent / '.env')
 
 WEBHOOK_URL = os.getenv('SLACK_WEBHOOK_URL', '')
 
+# Sender-specific webhook overrides — e.g. SLACK_WEBHOOK_TASK_LOOPER
+def _webhook_for(sender: str) -> str:
+    key = f"SLACK_WEBHOOK_{sender.upper().replace('-', '_')}"
+    return os.getenv(key, WEBHOOK_URL)
+
 PRIORITY_EMOJI = {
     'urgent': ':rotating_light:',
     'high':   ':warning:',
@@ -55,7 +60,8 @@ def notify(
     Send a Slack notification.
     Returns True on success, False on failure (never raises).
     """
-    if not WEBHOOK_URL:
+    webhook = _webhook_for(sender)
+    if not webhook:
         print('[notifier] SLACK_WEBHOOK_URL not set — skipping', file=sys.stderr)
         return False
 
@@ -84,7 +90,7 @@ def notify(
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "<!channel>"}})
 
     try:
-        r = requests.post(WEBHOOK_URL, json={"blocks": blocks}, timeout=5)
+        r = requests.post(webhook, json={"blocks": blocks}, timeout=5)
         return r.status_code == 200
     except Exception as e:
         print(f'[notifier] Slack error: {e}', file=sys.stderr)
