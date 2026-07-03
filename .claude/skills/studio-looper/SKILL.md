@@ -15,18 +15,57 @@ Must be invoked from `/media/data/dev/bain-studio`.
 ## Usage
 
 ```
-/studio-looper              — start the queue
-/studio-looper --for 2h     — run for up to 2 hours
-/studio-looper --use 10%    — consume at most 10% of quota
-/studio-looper --yes        — skip queue confirmation
+/studio-looper                    — start the queue
+/studio-looper --for 2h           — run for up to 2 hours
+/studio-looper --use 10%          — consume at most 10% of quota
+/studio-looper --yes              — skip queue confirmation
+/studio-looper --at 20:00         — schedule queue run at 20:00 today
+/studio-looper --dry-run          — show queue without working any tasks
 ```
+
+Flags can be combined: `/studio-looper --at 20:00 --for 2h`
 
 ---
 
 ## Step 0 — Parse flags
 
-Same as task-looper: `--for DURATION`, `--use N%`. Calculate deadline/stop threshold.
-Store as `FOR_DEADLINE` and `STOP_AT_PCT`.
+Parse all flags before doing anything:
+
+**`--for DURATION`** (e.g. `--for 1h`, `--for 30m`, `--for 1h30m`):
+Calculate deadline: `(now + duration).isoformat()` → store as `FOR_DEADLINE`.
+
+**`--use N%`**:
+Read current usage from `~/.claude/ratelimit-current.json`. Calculate stop threshold:
+`stop_at = min(100, current_pct + N)` → store as `STOP_AT_PCT`.
+
+**`--at TIME`** (e.g. `--at 20:00`):
+Schedule the looper to run at the given time today. Try `at` first, fall back to Python sleep:
+```bash
+if command -v at &>/dev/null; then
+    echo "cd /media/data/dev/bain-studio && claude --dangerously-skip-permissions -p '/studio-looper --yes'" | at {TIME}
+else
+    python3 - <<'PYEOF'
+import time, subprocess, sys, datetime
+hh, mm = map(int, sys.argv[1].split(":"))
+target = datetime.datetime.now().replace(hour=hh, minute=mm, second=0, microsecond=0)
+delay = (target - datetime.datetime.now()).total_seconds()
+if delay <= 0:
+    print(f"ERROR: {sys.argv[1]} is in the past."); sys.exit(1)
+open("/tmp/studio-looper-scheduled.py","w").write(
+    f"import time,subprocess\ntime.sleep({delay})\nsubprocess.run(['claude','--dangerously-skip-permissions','-p','/studio-looper --yes'],cwd='/media/data/dev/bain-studio')")
+PYEOF
+    python3 - {TIME}
+    nohup python3 /tmp/studio-looper-scheduled.py >> ~/logs/studio-looper.log 2>&1 &
+    disown $!
+fi
+```
+Confirm: "Scheduled /studio-looper for {TIME}." Then **stop** — do not proceed to Step 1.
+
+**`--dry-run`**:
+Set `DRY_RUN=true`. Steps 1 and 2 run normally (sync + build queue). Print the queue and stop — do not work any tasks, do not write the state file.
+
+**`--yes`**:
+Skip the queue confirmation prompt in Step 2.
 
 ---
 

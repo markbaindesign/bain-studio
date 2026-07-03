@@ -14,11 +14,15 @@ marking done.
 ## Invoke
 
 ```bash
-/studio-looper              # start the queue
-/studio-looper --for 2h     # run for up to 2 hours
-/studio-looper --use 10%    # consume at most 10% of quota
-/studio-looper --yes        # skip queue confirmation
+/studio-looper                    # start the queue
+/studio-looper --for 2h           # run for up to 2 hours
+/studio-looper --use 10%          # consume at most 10% of quota
+/studio-looper --yes              # skip queue confirmation
+/studio-looper --at 20:00         # schedule for 20:00 today
+/studio-looper --dry-run          # show queue without working tasks
 ```
+
+Flags combine: `/studio-looper --at 20:00 --for 2h`
 
 Must be invoked from `/media/data/dev/bain-studio`.
 
