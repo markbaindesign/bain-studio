@@ -123,17 +123,17 @@ def scaffold(q, y, dry_run=False):
     return vendes, compres
 
 
-def check_harvest_invoices(q, y, vendes):
-    """List Harvest invoices for the quarter, report which are missing from Vendes/."""
+def download_harvest_invoices(q, y, vendes, dry_run=False):
+    """Download invoice PDFs from Harvest using the client_key public PDF URL."""
     if not HARVEST_TOKEN or not HARVEST_ACCOUNT_ID:
-        print("\nHarvest not configured — skipping invoice check")
+        print("\nHarvest not configured — skipping")
         return [], []
 
     start, end = QUARTER_DATES[q]
     from_date = f"{y}-{start}"
     to_date = f"{y}-{end}"
 
-    print(f"\nChecking Harvest invoices {from_date} to {to_date}")
+    print(f"\nHarvest invoices {from_date} to {to_date}")
 
     headers = {
         "Authorization": f"Bearer {HARVEST_TOKEN}",
@@ -149,7 +149,7 @@ def check_harvest_invoices(q, y, vendes):
     )
     r.raise_for_status()
     invoices = r.json().get("invoices", [])
-    print(f"  {len(invoices)} invoice(s) in Harvest")
+    print(f"  {len(invoices)} invoice(s) found")
 
     present, missing = [], []
     for inv in invoices:
@@ -157,27 +157,30 @@ def check_harvest_invoices(q, y, vendes):
         client = inv.get("client", {}).get("name", "unknown")
         amount = inv.get("amount", 0)
         currency = inv.get("currency", "EUR")
+        client_key = inv.get("client_key", "")
         fname = f"INVOICE_{number}_Mark_Crawford_Bain.pdf"
         dest = vendes / fname
 
         if dest.exists():
             print(f"  = {fname} ({client})")
             present.append(fname)
-        else:
-            print(f"  ! {fname}  {client}  {currency} {amount:.2f}  [MISSING — download from Harvest]")
-            missing.append({
-                "filename": fname,
-                "client": client,
-                "currency": currency,
-                "amount": amount,
-                "invoice_id": inv["id"],
-            })
+            continue
 
-    # Harvest API v2 does not support PDF export — Vendes/ PDFs must be downloaded manually
-    # from https://baindesign.harvestapp.com/invoices
-    if missing:
-        print(f"\n  {len(missing)} invoice(s) need manual download from:")
-        print("  https://baindesign.harvestapp.com/invoices")
+        print(f"  + {fname}  {client}  {currency} {amount:.2f}")
+        if not dry_run and client_key:
+            pdf_r = requests.get(
+                f"https://baindesign.harvestapp.com/client/invoices/{client_key}.pdf",
+                timeout=30,
+            )
+            if pdf_r.status_code == 200 and "pdf" in pdf_r.headers.get("Content-Type", ""):
+                dest.write_bytes(pdf_r.content)
+                print(f"    saved {len(pdf_r.content) // 1024}KB")
+                present.append(fname)
+            else:
+                print(f"    failed: {pdf_r.status_code}")
+                missing.append(fname)
+        else:
+            missing.append(fname)
 
     return present, missing
 
@@ -234,8 +237,7 @@ def main():
     print(f"IVA Prep — Q{q} {y}" + (" [DRY RUN]" if dry else ""))
 
     vendes, compres = scaffold(q, y, dry)
-    if not dry:
-        check_harvest_invoices(q, y, vendes)
+    download_harvest_invoices(q, y, vendes, dry)
     sort_loose(q, y, vendes, compres, dry)
 
     print("\nDone. Run /ivas-prep to complete Gmail step.")
