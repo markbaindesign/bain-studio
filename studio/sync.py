@@ -50,11 +50,31 @@ BAINBOT_GID          = os.getenv("ASANA_BAINBOT_GID")
 ASSIGNEE_NAME        = os.getenv("STUDIO_ASSIGNEE_NAME", "Bot")
 TEMPLATE_PROJECT_GID = os.getenv("ASANA_TEMPLATE_PROJECT_GID")
 USER_GID             = os.getenv("ASANA_USER_GID")
-PRIORITY_FIELD_GID   = os.getenv("ASANA_PRIORITY_FIELD_GID", "1155368350785978")
+PRIORITY_FIELD_GID       = os.getenv("ASANA_PRIORITY_FIELD_GID", "1155368350785978")
+LOOPER_STATUS_FIELD_GID  = os.getenv("ASANA_LOOPER_STATUS_FIELD_GID", "")
 TODAY          = date.today().isoformat()
 BASE_URL       = "https://app.asana.com/api/1.0"
 
 SKIP_PREFIXES  = set()
+
+# Cache of Looper Status enum option names → GIDs, populated once per sync run.
+_LOOPER_STATUS_OPTIONS: dict = {}
+
+
+def _get_looper_status_option_gid(name: str):
+    """Return the Asana enum option GID for a Looper Status value, fetching once if needed."""
+    global _LOOPER_STATUS_OPTIONS
+    if not LOOPER_STATUS_FIELD_GID:
+        return None
+    if not _LOOPER_STATUS_OPTIONS:
+        try:
+            data = _get(f"/custom_fields/{LOOPER_STATUS_FIELD_GID}")["data"]
+            _LOOPER_STATUS_OPTIONS = {
+                o["name"]: o["gid"] for o in data.get("enum_options", [])
+            }
+        except Exception as e:
+            log.warning(f"Could not fetch Looper Status enum options: {e}")
+    return _LOOPER_STATUS_OPTIONS.get(name)
 
 JUNK_PATTERNS  = re.compile(r"^- |😍|📰|\[Product Update\]", re.IGNORECASE)
 PLAIN_CHECK    = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
@@ -356,7 +376,7 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
         "opt_fields": (
             "gid,name,notes,due_on,due_at,start_on,completed,modified_at,permalink_url,"
             "assignee.gid,assignee.name,assignee_status,"
-            "custom_fields.gid,custom_fields.text_value,custom_fields.enum_value.name,"
+            "custom_fields.gid,custom_fields.text_value,custom_fields.enum_value.name,custom_fields.enum_value.gid,"
             "memberships.section.name,memberships.section.gid,memberships.project.gid,"
             "tags.gid,tags.name,"
             "followers.gid,followers.name,"
@@ -372,11 +392,14 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
         t["_section"]  = None
         t["_section_gid"] = None
         t["_priority"] = None
+        t["_looper_status"] = None
         for cf in t.get("custom_fields", []):
             if cf.get("gid") == field_gid:
                 t["_local_id"] = cf.get("text_value") or None
             if cf.get("gid") == PRIORITY_FIELD_GID:
                 t["_priority"] = (cf.get("enum_value") or {}).get("name") or None
+            if LOOPER_STATUS_FIELD_GID and cf.get("gid") == LOOPER_STATUS_FIELD_GID:
+                t["_looper_status"] = (cf.get("enum_value") or {}).get("name") or None
         for m in t.get("memberships", []):
             if (m.get("project") or {}).get("gid") == proj.gid:
                 sec = m.get("section") or {}
@@ -546,6 +569,7 @@ def parse_existing_mirror(proj: ProjectConfig) -> dict:
         carried[gid] = {
             "local_id":        fields.get("local_id", "—"),
             "section":         fields.get("section") or None,
+            "looper_status":   fields.get("looper_status") or None,
             "due":             due,
             "start":           fields.get("start", "none"),
             "notes":           fields.get("notes", ""),
@@ -592,7 +616,8 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
     assignee_str = f"{assignee['name']} ({assignee['gid']})" if assignee.get("gid") else "none"
     astat        = t.get("assignee_status") or "none"
 
-    priority   = t.get("_priority") or "none"
+    priority       = t.get("_priority") or "none"
+    looper_status  = t.get("_looper_status") or prev.get("looper_status") or "none"
     tags       = _fmt_refs(t.get("tags", []))
     followers  = _fmt_refs(t.get("followers", []))
     deps       = _fmt_task_refs(t.get("dependencies", []), gid_to_lid)
@@ -613,6 +638,7 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
         f"- **Asana ID:** {gid}",
         f"- **Section:** {section}",
         f"- **Priority:** {priority}",
+        f"- **Looper Status:** {looper_status}",
         f"- **Due:** {due}{overdue}",
         f"- **Start:** {start}",
         f"- **Assignee:** {assignee_str}",
@@ -724,6 +750,17 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
     mirror_assignee_gid = mirror_assignee_gid[0] if mirror_assignee_gid else "none"
     if _diff(mirror_assignee_gid, asana_assignee_gid):
         updates["assignee"] = mirror_assignee_gid if mirror_assignee_gid != "none" else None
+
+    # Looper Status (enum custom field) — push if changed and field is configured
+    if LOOPER_STATUS_FIELD_GID:
+        mirror_looper = (prev.get("looper_status") or "none").strip()
+        asana_looper  = (t.get("_looper_status") or "none").strip()
+        if _diff(mirror_looper, asana_looper) and mirror_looper not in ("none", ""):
+            option_gid = _get_looper_status_option_gid(mirror_looper)
+            if option_gid:
+                updates.setdefault("custom_fields", {})[LOOPER_STATUS_FIELD_GID] = option_gid
+            else:
+                log.warning(f"  [{prefix}] Unknown Looper Status value '{mirror_looper}' for {lid} — skipping")
 
     if not updates:
         return False

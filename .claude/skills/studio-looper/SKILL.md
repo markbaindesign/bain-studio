@@ -1,13 +1,14 @@
 ---
 name: studio-looper
-description: Cross-project task queue — works BainBot tasks from any studio project in the order Mark set in Asana. Hands completed work to Mark for review rather than marking done.
+description: Cross-project task queue — works BainBot tasks from any studio project in Asana priority order. Advances tasks through Looper Status field. Hands completed work to Mark for review rather than marking done.
 allowed-tools: [Bash, Read, Edit]
 ---
 
 # Studio Looper
 
-Works BainBot-assigned tasks from the Studio Looper Asana project in the order Mark has set.
-Tasks span multiple studio projects. On completion, moves to Review — never marks done.
+Works tasks multi-homed into the Studio Looper Asana project. BainBot reads the **Looper Status**
+custom field to build the queue (all tasks with status "Queue"), works each in project-dir context,
+and advances the status through the field. Never marks tasks done — moves to "Review" for Mark.
 
 Must be invoked from `/media/data/dev/bain-studio`.
 
@@ -116,8 +117,10 @@ PYEOF
 
 ## Step 2 — Build queue from SL mirror
 
-Read `studio/looper/.claude/asana-mirror.md`. Extract all tasks where `**Section:** Queue`
-in mirror order (mirror order = Asana drag order = Mark's priority).
+Read `studio/looper/.claude/asana-mirror.md`. Extract all tasks where:
+- `**Looper Status:** Queue`
+
+Tasks appear in mirror order, which reflects their drag order in Asana = Mark's priority.
 
 Calculate deadline — earlier of quota reset or `--for` duration:
 ```bash
@@ -178,8 +181,9 @@ stop_at_pct: {STOP_AT_PCT}
 ...
 ```
 
-In the SL mirror, move `current_task` from Queue → In Progress section, then sync:
+In the SL mirror, set `current_task`'s **Looper Status** to `In Progress`, then sync:
 ```bash
+# Edit studio/looper/.claude/asana-mirror.md: change Looper Status from Queue → In Progress
 python3 studio/sync.py --project SL
 ```
 
@@ -197,7 +201,6 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [SL] Session started — {N} tasks: {
 
 ### 4a. Navigate to the task's project
 
-Look up the project directory from the task prefix:
 ```bash
 python3 - <<'PYEOF'
 import json, os, sys
@@ -212,7 +215,7 @@ PYEOF
 python3 - {CURRENT_TASK}
 ```
 
-If `NOT_FOUND`: mark the task blocked ("prefix not found in projects.json") and advance.
+If `NOT_FOUND`: mark blocked ("prefix not found in projects.json") and output blocked promise.
 
 ```bash
 cd {PROJECT_DIR}
@@ -220,10 +223,8 @@ cd {PROJECT_DIR}
 
 ### 4b. Read the task
 
-Read `{PROJECT_DIR}/.claude/asana-mirror.md` for the task's Notes, Blockers, Dependencies.
-Also read `{PROJECT_DIR}/CLAUDE.md` for the project's tech stack and build instructions.
-
-Ask: do I have everything needed to complete this without guessing?
+Read `{PROJECT_DIR}/.claude/asana-mirror.md` for task Notes, Blockers, Dependencies.
+Read `{PROJECT_DIR}/CLAUDE.md` for the project's tech stack and build instructions.
 
 ### 4c. Work
 
@@ -231,17 +232,13 @@ Do the work. One commit when done:
 ```bash
 git add <specific files>
 git commit -m "..."
-```
-
-Log the commit:
-```bash
-echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [SL/{PREFIX}] commit: \"{message}\" ({files})" >> ~/logs/task-looper.log
+git push origin develop
 ```
 
 ### 4d. Assess completion
 
-**Complete**: problem is solved, change works, nothing newly broken.
-**Blocked**: needs information only Mark can provide, ambiguous, external dependency missing.
+**Complete**: problem solved, change works, nothing newly broken.
+**Blocked**: needs Mark input, ambiguous, external dependency missing.
 
 ### 4e — If complete (REVIEW workflow)
 
@@ -266,13 +263,13 @@ PYEOF
 
 **1. Update SL mirror** (`/media/data/dev/bain-studio/studio/looper/.claude/asana-mirror.md`):
 ```
-**Section:** Review
+**Looper Status:** Review
 **Assignee:** Mark Bain (507443625075)
 **Progress:** Ready for review {YYYY-MM-DD}. {What was done, where, what to check.} Session: {pct}% used (resets {reset_dt}).
 ```
 
 **2. Update home project mirror** (`{PROJECT_DIR}/.claude/asana-mirror.md`):
-Update progress note only — do NOT change Section or Assignee:
+Progress note only — do NOT change Section, Assignee, or Looper Status:
 ```
 **Progress:** Work complete {YYYY-MM-DD} via studio-looper. Awaiting Mark's review in Studio Looper project. Session: {pct}% used (resets {reset_dt}).
 ```
@@ -283,12 +280,7 @@ python3 /media/data/dev/bain-studio/studio/sync.py --project SL
 python3 /media/data/dev/bain-studio/studio/sync.py --project {PREFIX}
 ```
 
-**4. Push:**
-```bash
-git push origin develop
-```
-
-**5. Log and notify:**
+**4. Log and notify:**
 ```bash
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [SL/{PREFIX}] {TASK_ID} complete — moved to Review" >> ~/logs/task-looper.log
 python3 /media/data/dev/bain-studio/studio/notifier.py \
@@ -296,7 +288,7 @@ python3 /media/data/dev/bain-studio/studio/notifier.py \
   --priority normal --sender studio-task-looper --project SL
 ```
 
-**6. Output promise:**
+**5. Output promise:**
 ```
 <promise>{TASK_ID}_COMPLETE</promise>
 ```
@@ -305,7 +297,7 @@ python3 /media/data/dev/bain-studio/studio/notifier.py \
 
 **1. Update SL mirror:**
 ```
-**Section:** Blocked
+**Looper Status:** Blocked
 **Assignee:** Mark Bain (507443625075)
 **Blockers:** {YYYY-MM-DD} — {What is blocking. What was attempted. What Mark needs to do.}
 **Progress:** Blocked {YYYY-MM-DD}. {One sentence reason.} Session: {pct}% used (resets {reset_dt}).
@@ -315,10 +307,10 @@ python3 /media/data/dev/bain-studio/studio/notifier.py \
 ```
 **Assignee:** Mark Bain (507443625075)
 **Blockers:** {YYYY-MM-DD} — {same blocker text}
-**Progress:** Blocked {YYYY-MM-DD} via studio-looper. {same reason.} Session: {pct}% used (resets {reset_dt}).
+**Progress:** Blocked {YYYY-MM-DD} via studio-looper. {reason.} Session: {pct}% used (resets {reset_dt}).
 ```
 
-**3. Sync both, log, notify (high priority):**
+**3. Sync both, log, notify:**
 ```bash
 python3 /media/data/dev/bain-studio/studio/sync.py --project SL
 python3 /media/data/dev/bain-studio/studio/sync.py --project {PREFIX}
@@ -337,19 +329,17 @@ python3 /media/data/dev/bain-studio/studio/notifier.py \
 
 ## How the loop works
 
-After each promise, the stop hook:
-1. Reads `.claude/studio-looper.local.md` for the next task
-2. Resolves project dir from the task's prefix via projects.json
-3. Re-injects a prompt telling Claude the task ID and project dir
-4. When queue is empty, deletes state file and notifies Mark
+After each promise, the stop hook reads `.claude/studio-looper.local.md`, resolves the next
+task's project dir from its prefix, and re-injects a prompt. Queue is empty when the body is
+empty — hook deletes state file and notifies Mark.
 
 ---
 
 ## Guard rails
 
-- Never mark a task DONE in Asana — only move to Review and reassign to Mark
+- Never mark a task DONE in Asana — move to Review (Looper Status) and reassign to Mark
 - Never commit to main/master
 - Never push secrets
 - One commit per task
 - If prefix lookup fails, mark blocked immediately
-- Output the promise only when genuinely complete or genuinely blocked
+- Output the promise only when genuinely complete or blocked
