@@ -101,6 +101,7 @@ class ProjectConfig:
     root:   Path
     gid:    str
     prefix: str
+    preserve_foreign_ids: bool = False  # True for aggregator projects (e.g. Studio Looper)
 
     @property
     def mirror_file(self): return self.root / ".claude" / "asana-mirror.md"
@@ -185,7 +186,11 @@ def discover_projects(filter_prefix=None) -> list:
             root.name.replace("_", " ").replace("-", " ").title()
         )
 
-        projects.append(ProjectConfig(name=name, root=root, gid=gid, prefix=prefix))
+        preserve_m = re.search(r"PRESERVE_FOREIGN_IDS:\s*(\S+)", text)
+        preserve_foreign = bool(preserve_m and preserve_m.group(1).lower() == "true")
+
+        projects.append(ProjectConfig(name=name, root=root, gid=gid, prefix=prefix,
+                                      preserve_foreign_ids=preserve_foreign))
         seen_gids.add(gid)
 
     return projects
@@ -432,8 +437,15 @@ def assign_ids(proj: ProjectConfig, tasks: list, state: dict, field_gid: str, dr
         gid = t["gid"]
         existing = t["_local_id"]
 
-        # Re-homed task: has an ID from a different project — reassign with this project's prefix
+        # Re-homed task: has an ID from a different project
         if existing and not existing.startswith(f"{proj.prefix}-"):
+            if proj.preserve_foreign_ids:
+                # Aggregator project (e.g. Studio Looper) — keep the original ID so the
+                # looper can route tasks to the correct project directory by prefix.
+                if gid not in state["tasks"]:
+                    state["tasks"][gid] = existing
+                continue
+            # Normal project — reassign with this project's prefix
             old_id = existing
             lid = _next_lid(state, proj.prefix)
             state["tasks"][gid] = lid
