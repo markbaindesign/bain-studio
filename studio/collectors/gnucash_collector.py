@@ -1,6 +1,10 @@
 """
-GnuCash collector — writes a Plutus-readable financial snapshot to
-context/finance/accounts.json.
+GnuCash collector — writes a financial snapshot to
+FINANCE_DATA_DIR/accounts.json.
+
+Requires FINANCE_DATA_DIR, GNUCASH_DIR, and GNUCASH_FILE to be set in
+studio/.env -- no hardcoded fallback paths; fails loudly if unset rather than
+silently writing to the wrong place.
 
 Tries the live dashboard API first (localhost:5555/api/data).
 Falls back to parsing the GnuCash file directly if the server is not running.
@@ -22,13 +26,20 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 sys.path.insert(0, str(Path(__file__).parent.parent / "dashboard"))
 import gnucash_parser
 
-CONTENT_DIR  = Path(os.getenv("STUDIO_CONTENT_DIR", Path(__file__).parents[2] / "context"))
-GNUCASH_DIR  = Path(os.getenv("GNUCASH_DIR", '/media/data/Dropbox/Work/Admin/Financial/Accounting/GNUCash'))
-GNUCASH_FILE = Path(os.getenv("GNUCASH_FILE", GNUCASH_DIR / 'accounts.gnucash'))
-DASHBOARD_URL = 'http://localhost:5555/api/data'
-OUTPUT_FILE  = CONTENT_DIR / 'finance' / 'accounts.json'
 
-FX_FALLBACK = {'USD': 0.92, 'GBP': 1.17}
+def _require_env(name):
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"{name} must be set in studio/.env -- no hardcoded fallback")
+    return value
+
+
+FINANCE_DATA_DIR = Path(_require_env("FINANCE_DATA_DIR"))
+GNUCASH_DIR  = Path(_require_env("GNUCASH_DIR"))
+GNUCASH_FILE = Path(_require_env("GNUCASH_FILE"))
+DASHBOARD_URL = 'http://localhost:5555/api/data'
+OUTPUT_FILE  = FINANCE_DATA_DIR / 'accounts.json'
+
 
 
 def fetch_from_server():
@@ -59,25 +70,24 @@ def fetch_direct() -> dict:
 
 
 def _get_fx_rates() -> dict:
-    try:
-        r = requests.get(
-            'https://api.frankfurter.app/latest',
-            params={'from': 'EUR', 'to': 'USD,GBP'},
-            timeout=5,
-        )
-        r.raise_for_status()
-        data = r.json()
-        return {
-            'USD': round(1 / data['rates']['USD'], 6),
-            'GBP': round(1 / data['rates']['GBP'], 6),
-            'source': f"frankfurter.app ({data['date']})",
-        }
-    except Exception:
-        return {**FX_FALLBACK, 'source': 'fallback'}
+    """No fallback rate: a wrong FX rate silently corrupts every USD/GBP balance
+    and forecast, so an unreachable rate API must fail the run, not guess."""
+    r = requests.get(
+        'https://api.frankfurter.app/latest',
+        params={'from': 'EUR', 'to': 'USD,GBP'},
+        timeout=5,
+    )
+    r.raise_for_status()
+    data = r.json()
+    return {
+        'USD': round(1 / data['rates']['USD'], 6),
+        'GBP': round(1 / data['rates']['GBP'], 6),
+        'source': f"frankfurter.app ({data['date']})",
+    }
 
 
-def build_plutus_snapshot(data: dict) -> dict:
-    """Flatten the raw API data into a Plutus-friendly snapshot."""
+def build_financial_snapshot(data: dict) -> dict:
+    """Flatten the raw API data into a financial-review-friendly snapshot."""
     g = data.get('gnucash', {})
     now = datetime.now(timezone.utc)
 
@@ -150,7 +160,7 @@ def main():
         print('  Server not running — parsing GnuCash file directly')
         data = fetch_direct()
 
-    snapshot = build_plutus_snapshot(data)
+    snapshot = build_financial_snapshot(data)
 
     OUTPUT_FILE.write_text(json.dumps(snapshot, indent=2))
     print(f'  Written: {OUTPUT_FILE}')

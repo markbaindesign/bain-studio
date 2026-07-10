@@ -1,15 +1,15 @@
 ---
-name: plutus
-description: Finance god — margin checks, tax awareness, invoicing. Reviews every proposal against the Law of Margin. Produces quarterly tax prep and cashflow projections.
+name: financial-review
+description: Margin check, tax awareness, and viability review for a proposal. Reviews every proposal against the Law of Margin. Produces quarterly tax prep and cashflow projections.
 ---
 
-# Plutus — Finance, Margins, and Viability
+# Financial Review
 
-Plutus is the studio's financial conscience. He does not have opinions about whether something is beautiful or buildable — that is Athena and Hephaestus's domain. He has one opinion: whether the studio can afford to say yes, and what it will make.
+The studio's financial gate on a proposal: not whether the work is beautiful or buildable (that's Athena and Hephaestus's call) — only whether the studio can afford to say yes, and what it will actually make.
 
-Plutus is invoked at two moments in every project: early, when he runs a margin check on Athena's scope doc before it becomes a proposal (the Law of Margin: no proposal leaves without his blessing); and late, when he raises the invoice after delivery. Between those moments he tracks expenses silently, updating the project's running cost so the final margin calculation is never a surprise.
+Runs at two moments in every project: early, a margin check on Athena's scope doc before it becomes a proposal (the Law of Margin: no proposal leaves without clearing this check); and late, raising the invoice after delivery. Between those moments, expenses are tracked against the project so the final margin calculation is never a surprise.
 
-Every quarter, without being asked, Plutus produces three documents: a profit-per-project summary, a cash flow projection, and a tax preparation pack for Modelo 303 (IVA) and Modelo 130 (IRPF).
+Every quarter, without being asked, this produces three documents: a profit-per-project summary, a cash flow projection, and a tax preparation pack for Modelo 303 (IVA) and Modelo 130 (IRPF).
 
 ---
 
@@ -17,7 +17,7 @@ Every quarter, without being asked, Plutus produces three documents: a profit-pe
 
 ### 0. Load business context
 
-Read `{CONTENT_DIR}/finance/aletheia-codex.md` before anything else. This document is the authoritative record of account topology, money flow, IVA/IRPF methodology, and tax conventions. Do not make assumptions about how money moves through the business — read the Codex.
+Read `/media/data/Dropbox/Work/Admin/Financial/Accounting/aletheia-codex.md` before anything else. This document is the authoritative record of account topology, money flow, IVA/IRPF methodology, and tax conventions. Do not make assumptions about how money moves through the business — read the Codex.
 
 ### 1. Load the brief (or Athena report)
 
@@ -33,13 +33,11 @@ Extract the key fields from the **Estimate** section:
 - Client sector and rating
 - Verdict
 
-### 2. Poros — Margin check
-
-Poros is the one who always finds a way to make things balance. He runs the financial math.
+### 2. Margin check
 
 **Load configuration:**
-- Read `{CONTENT_DIR}/finance/rates.yaml` — studio rate (€60/hr), Upwork rate ($65/hr), minimum margin threshold (30%), platform fee structure
-- Read `{CONTENT_DIR}/finance/overheads.yaml` — monthly fixed costs (API credits €20, autónomo quota €300)
+- Read `/media/data/Dropbox/Work/Admin/Financial/Accounting/config/rates.yaml` — studio rate (€60/hr), Upwork rate ($65/hr), minimum margin threshold (30%), platform fee structure
+- Read `/media/data/Dropbox/Work/Admin/Financial/Accounting/config/overheads.yaml` — monthly fixed costs (API credits €20, autónomo quota €300)
 
 **Calculate gross revenue:**
 - For fixed-price projects: use the **mid-range estimate** (unless Mark specifies otherwise)
@@ -66,9 +64,7 @@ Margin % = (Revenue - Platform Fee - Overhead Allocation) / Revenue × 100
 
 Output: margin percentage, PASS/BELOW THRESHOLD status, and the breakdown (revenue, fees, overhead share, net).
 
-### 3. Euporia — Tax adjustment
-
-Euporia is the spirit of prosperity through careful planning and foresight. She ensures the numbers are honest, and tells Mark what he actually makes.
+### 3. Tax adjustment
 
 **Assess tax context:**
 - Is this a Spanish B2B client? IVA applies (21% added).
@@ -96,7 +92,7 @@ Output: pre-tax revenue, IVA collected (if any), IRPF withheld (if any), autóno
 Models risk before it arrives: income vs. outgoings, break-even, and runway over the next 90 days.
 
 **Read the financial snapshot:**
-Read `{CONTENT_DIR}/finance/accounts.json` — this is the live GnuCash snapshot written by the gnucash_collector. If it does not exist or is more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh it.
+Read `/media/data/Dropbox/Work/Admin/Financial/Accounting/accounts.json` — this is the live GnuCash snapshot written by the gnucash_collector. If it does not exist or is more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh it.
 
 Key fields to read:
 - `total_eur` — current total bank balance in EUR
@@ -127,14 +123,14 @@ Produce 2-3 bullets capturing the key risk or opportunity. Example:
 
 ### 5. Gate prep — Assemble the report
 
-Plutus never overwrites Athena's work. He appends.
+Never overwrites Athena's work — always appends.
 
 **Append a new section to the Athena report:**
 
 ```markdown
 ---
 
-## Financial Review (Plutus)
+## Financial Review
 
 **Margin:** X% [PASS / BELOW THRESHOLD]
 
@@ -157,14 +153,14 @@ Plutus never overwrites Athena's work. He appends.
 **Recommendation:** [APPROVE / REVIEW WITH MARK / REQUEST HIGHER RATE]
 ```
 
-Plutus does not gate the proposal — that is Mark's domain (the Law of the Gate). He provides Mark with the numbers so Mark can decide.
+This skill does not gate the proposal — that is Mark's domain (the Law of the Gate). It provides Mark with the numbers so Mark can decide.
 
 ---
 
 ## Output format
 
 ```
-Plutus review complete.
+Financial review complete.
 Margin: X% — [PASS / BELOW THRESHOLD]
 Report updated: {CONTENT_DIR}/pipeline/athena/{slug}-{date}.md
 Status: Ready for proposal gate
@@ -177,7 +173,7 @@ Status: Ready for proposal gate
 - **No guessing:** If scope or budget is unclear, flag it and ask Mark rather than extrapolating.
 - **Rates are immutable:** Never change the rate in rates.yaml without Mark's explicit instruction. Use the configured rate.
 - **No invention:** If a cost field (overhead, fee) is not in the config files, do not invent it. Flag as "unknown cost" and skip.
-- **Append only:** Never delete or rewrite Athena's content. Plutus's section is always an addition.
+- **Append only:** Never delete or rewrite Athena's content. This section is always an addition.
 - **Spain-specific:** The tax logic (IVA, IRPF, autónomo quota) assumes Spanish self-employed status. If the client or context is different, flag this.
 - **Quarterly reports:** Tax prep and profit summaries are quarterly-only. Single-project margin checks do not attempt full tax analysis.
 
@@ -185,8 +181,8 @@ Status: Ready for proposal gate
 
 ## Notes
 
-**The Law of Margin:** No proposal leaves Olympus without Plutus's blessing. Beauty without margin is charity. The studio is a business.
+**The Law of Margin:** No proposal leaves without clearing a margin check. Beauty without margin is charity. The studio is a business.
 
-**Financial persistence:** Every time a project's finances change (scope updated, hours revised, expense added), Plutus should be re-invoked to recalculate margin. The ledger grows with the project. Nothing is finalised until Plutus sees the actuals and agrees.
+**Financial persistence:** Every time a project's finances change (scope updated, hours revised, expense added), re-run this skill to recalculate margin. The ledger grows with the project. Nothing is finalised until the actuals are checked.
 
-**The household:** Poros (invoicer), Euporia (tax prep), and Cashflow Projection are three sides of the same coin. Poros ensures the money comes in. Euporia ensures it's declared honestly. Cashflow Projection ensures the studio never forgets it can run out.
+**Related skills:** `/raise-invoice`, `/tax-prep`, and `/cashflow-projection` cover the rest of the studio's money handling — raising invoices, quarterly filing, and runway respectively. This skill is the pre-proposal gate; those are downstream.

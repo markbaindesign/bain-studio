@@ -23,7 +23,7 @@ Full founding document: [[Pantheon]]
 | IV | Law of Memory | Nothing learned dies with the project. Write to Mnemosyne. |
 | V | Law of Harvest | Every closed project yields: blog post · case study · testimonial. Non-optional. |
 | VI | Law of the Signal | Notable moments go to Iris. She decides whether to broadcast. |
-| VII | Law of Margin | No proposal leaves without Plutus's blessing. Beauty without margin is charity. |
+| VII | Law of Margin | No proposal leaves without clearing a financial review. Beauty without margin is charity. |
 
 ---
 
@@ -69,9 +69,9 @@ graph TD
     I --> I2["Aura — Post Writer · /aura"]
     I --> I3["Kairos — Scheduler · /kairos"]
 
-    P["💰 PLUTUS\nFinance · Invoicing · Tax · Cashflow\n/plutus · /harvest"]
-    P --> P1["Poros — Invoicer · /poros"]
-    P --> P2["Euporia — Tax Prep · /euporia"]
+    P["💰 FINANCIAL REVIEW\nFinance · Invoicing · Tax · Cashflow\n/financial-review · /harvest"]
+    P --> P1["Raise Invoice · /raise-invoice"]
+    P --> P2["Tax Prep · /tax-prep"]
     P --> P3["Cashflow Projection · /cashflow-projection"]
     P --> P4["Account Forecast · /account-forecast"]
 
@@ -94,7 +94,7 @@ graph TD
 | Hephaestus | Build | `/hephaestus` | [[hephaestus/hephaestus]] | WP/React planning skill built |
 | Themis | QA | `/themis` · `/qa` | [[themis/themis]] | QA workflow + delivery gate built |
 | Iris | Social | `/iris` | [[iris/iris]] | Broadcast skills built |
-| Plutus | Finance | `/plutus` | [[plutus/plutus]] | Finance + harvest skills built |
+| Financial Review | Finance | `/financial-review` | [[financial-review]] | Finance + harvest skills built |
 
 ### Household members
 
@@ -115,10 +115,10 @@ graph TD
 | Arke | Iris | `/arke` | ✓ Built |
 | Aura | Iris | `/aura` | ✓ Built |
 | Kairos | Iris | `/kairos` | ✓ Built |
-| Poros | Plutus | `/poros` | ✓ Built |
-| Euporia | Plutus | `/euporia` | ✓ Built |
-| Cashflow Projection | Plutus | `/cashflow-projection` | ✓ Built |
-| Account Forecast | Plutus | `/account-forecast` | ✓ Built |
+| Raise Invoice | Financial Review | `/raise-invoice` | ✓ Built |
+| Tax Prep | Financial Review | `/tax-prep` | ✓ Built |
+| Cashflow Projection | Financial Review | `/cashflow-projection` | ✓ Built |
+| Account Forecast | Financial Review | `/account-forecast` | ✓ Built |
 
 ### Shared utilities
 
@@ -141,7 +141,7 @@ See [[projects.base]] for the live project index. Individual project files in `d
 - [[projects/pipe]] — Upwork Pipeline (internal BizDev)
 - [[projects/nore]] — The Nature of Real Estate (WordPress/MemberPress)
 
-Plutus and Iris capabilities are **studio-wide** — not per-project enrollments.
+Financial Review and Iris capabilities are **studio-wide** — not per-project enrollments.
 
 ---
 
@@ -155,9 +155,9 @@ SIGNAL → QUALIFICATION → ESTIMATION → PRICING → [PROPOSAL GATE]
 
 | Gate | Held by | What triggers it |
 |------|---------|-----------------|
-| Proposal gate | Mark | Athena + Plutus complete scope + margin check |
+| Proposal gate | Mark | Athena + Financial Review complete scope + margin check |
 | Delivery gate | Mark | Themis signs off QA |
-| Financial gate | Mark | Poros raises invoice |
+| Financial gate | Mark | Raise Invoice produces the invoice |
 
 ---
 

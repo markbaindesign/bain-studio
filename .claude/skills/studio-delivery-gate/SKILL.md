@@ -70,7 +70,7 @@ Themis: GATE CLEAR (or CLEAR WITH FLAGS)
 
 ## What happens next (pending your approval)
 1. Iris announces the launch (LinkedIn post, details below)
-2. Poros raises the invoice
+2. Raise the invoice (`/raise-invoice`)
 3. Harvest is triggered (case study, blog post, testimonial request)
 
 ## Proposed Iris post (for your review)
@@ -104,13 +104,13 @@ Iris drafts the LinkedIn post. Mark reviews and publishes when ready. Iris does 
 
 ---
 
-## Step 5 — Post-approval: Poros raises the invoice
+## Step 5 — Post-approval: raise the invoice
 
 ```
-/poros {project-slug}
+/raise-invoice {project-slug}
 ```
 
-Poros produces the invoice. Mark reviews and sends.
+Produces the invoice. Mark reviews and sends.
 
 ---
 
@@ -143,5 +143,5 @@ cd /media/data/dev/bain-studio && python3 studio/sync.py --project {PREFIX}
 
 - **The Law of the Gate:** Mark's approval is required between Step 3 and Step 4. This is not a formality — it is the gate. Bainbot does not deliver without it.
 - **Themis first, always.** Do not prepare the gate package if Themis is BLOCKED. Fix the issues first.
-- **No auto-publishing.** Iris drafts; Mark publishes. Poros produces; Mark sends.
+- **No auto-publishing.** Iris drafts; Mark publishes. Raise-invoice produces; Mark sends.
 - **One project at a time.** Do not run the delivery gate for multiple projects simultaneously.

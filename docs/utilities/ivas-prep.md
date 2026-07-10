@@ -1,6 +1,5 @@
 ---
 tags: [tool, skill]
-god: plutus
 command: "python3 studio/tools/ivas-prep/ivas-prep.py [--quarter N] [--year YYYY] [--gmail] [--dry-run]"
 invoke: /ivas-prep
 description: Quarterly IVA packet prep — scaffolds Vendes/Compres folders, downloads Harvest invoices, pulls Gmail expense receipts via API
@@ -63,7 +62,7 @@ Requires an OAuth2 Desktop App credential from the bain-studio GCP project:
 
 ## Config
 
-Reads from `studio/.env` and `studio/dashboard/.env`:
+Reads from `studio/.env` (single consolidated env file):
 - `FINANCIAL_DIR` — root of the Dropbox financial tree
 - `HARVEST_TOKEN`, `HARVEST_ACCOUNT_ID` — Harvest API credentials
 
@@ -76,5 +75,5 @@ Reads from `studio/.env` and `studio/dashboard/.env`:
 
 ## See also
 
-- [Plutus](../gods/plutus/plutus.md) — quarterly finance reporting god
+- [Financial Review](financial-review.md) — quarterly finance reporting
 - [Harvest](harvest.md) — Harvest API integration notes

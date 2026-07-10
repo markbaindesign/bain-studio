@@ -34,7 +34,7 @@ SENDER_EMOJI = {
     'hephaestus': ':hammer_and_wrench:',
     'athena':     ':owl:',
     'hermes':     ':zap:',
-    'plutus':     ':euro:',
+    'financial-review': ':euro:',
     'iris':       ':rainbow:',
     'themis':     ':scales:',
     'aphrodite':  ':art:',

@@ -12,11 +12,11 @@ A ledger-level view, not a business one: for each bank account, what's about to 
 
 ### 0. Load business context
 
-Read `{CONTENT_DIR}/finance/aletheia-codex.md` before anything else. It's the authoritative record of account topology and which obligations draw from which account.
+Read `/media/data/Dropbox/Work/Admin/Financial/Accounting/aletheia-codex.md` before anything else. It's the authoritative record of account topology and which obligations draw from which account.
 
 ### 1. Read the financial snapshot
 
-Read `{CONTENT_DIR}/finance/accounts.json`. If more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh.
+Read `/media/data/Dropbox/Work/Admin/Financial/Accounting/accounts.json`. If more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh.
 
 Key fields:
 - `bank_balances` — current balance per account

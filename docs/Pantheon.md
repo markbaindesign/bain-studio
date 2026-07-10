@@ -40,7 +40,7 @@ Every completed project yields three offerings: a blog post, a case study, and a
 When something notable happens -- a win, a technique discovered, a milestone reached -- Iris is notified. She decides whether to broadcast. The studio's public presence is fed by the work, not manufactured separately.
 
 **VII. The Law of Margin**
-No proposal leaves Olympus without Plutus's blessing. Beauty without margin is charity. The studio is a business.
+No proposal leaves without clearing a financial review. Beauty without margin is charity. The studio is a business.
 
 ---
 
@@ -68,7 +68,7 @@ Hermes also manages the sync mirror: the scheduled process that keeps the studio
 
 *Domain: qualification, estimation, strategy, scope, proposals*
 
-Athena is the studio's mind. She receives every qualified brief and turns it into a plan. She thinks in parallel -- budget, timeline, scope, risk, fit -- and synthesises these into the scope document that Plutus will price and Mark will approve.
+Athena is the studio's mind. She receives every qualified brief and turns it into a plan. She thinks in parallel -- budget, timeline, scope, risk, fit -- and synthesises these into the scope document that financial review will price and Mark will approve.
 
 Athena knows the studio's criteria: which projects are worth pursuing, which stacks the studio builds well, which clients are likely to be good partners. She learns from every completed project in Mnemosyne. Her estimates improve over time because Mnemosyne grows over time.
 
@@ -160,23 +160,23 @@ She is fed by an event bus: any god can emit a signal during a project and Iris 
 
 ---
 
-### Plutus — Finance, God of Wealth
+### Financial Review — Finance
 
 *Domain: invoicing, expenses, profit per project, cash flow, tax, break-even*
 
-Plutus is sharp, fast, and never misses a margin. He does not have feelings about money -- he has data. He knows what every project costs to run, what it returns, what the quarterly tax liability is, and whether the studio is on track to cover its costs.
+The studio's financial gate. Not opinions about beauty or fit -- data. Knows what every project costs to run, what it returns, what the quarterly tax liability is, and whether the studio is on track to cover its costs.
 
-Plutus is invoked at two moments in every project: early, when he runs a margin check on Athena's scope doc before it becomes a proposal; and late, when he raises the invoice after delivery. Between those moments he tracks expenses silently, updating the project's running cost so the final margin calculation is never a surprise.
+Runs at two moments in every project: early, a margin check on Athena's scope doc before it becomes a proposal; and late, raising the invoice after delivery. Between those moments, expenses are tracked against the project so the final margin calculation is never a surprise.
 
-Every quarter, without being asked, Plutus produces three documents: a profit-per-project summary, a cash flow projection, and a tax preparation pack for Modelo 303 and Modelo 130. He does not file them -- Mark reviews and files. But the numbers are always ready.
+Every quarter, without being asked, produces three documents: a profit-per-project summary, a cash flow projection, and a tax preparation pack for Modelo 303 and Modelo 130. Never files them -- Mark reviews and files. But the numbers are always ready.
 
-**Plutus's household:**
+**Related finance skills:**
 
-- **Poros** *(Invoicer)* -- son of Poros (Resource), the spirit of means and plenty, the one who always finds a way to make things balance. Raises invoices on delivery, tracks payment status, sends reminders at the right intervals. Knows the studio's invoicing format, IVA and IRPF rates, and how to handle multi-currency work via Wise.
+- **Raise Invoice** -- raises invoices on delivery; payment status now tracked in Harvest. Knows the studio's invoicing format, IVA and IRPF rates, and how to handle multi-currency work via Wise.
 
-- **Euporia** *(Tax Prep)* -- attendant of Plutus, spirit of prosperity through careful management and foresight. Maintains the quarterly record required for Modelo 303 (IVA) and Modelo 130 (IRPF). Knows the autónomo tax framework, tracks deductible expenses, and produces a clean summary for Mark's gestora or direct filing.
+- **Tax Prep** -- maintains the quarterly record required for Modelo 303 (IVA) and Modelo 130 (IRPF). Knows the autónomo tax framework, tracks deductible expenses, and produces a clean summary for Mark's gestora or direct filing.
 
-- **Cashflow Projection** *(Cashflow)* -- companion of Plutus. Models risk before it arrives. Models income against outgoings, projects the next 90 days, flags break-even risk, and maintains a running view of studio profitability. Queries Mnemosyne for pipeline data to model future income. Where Poros ensures the money comes in, Cashflow Projection ensures the studio never forgets it can go out.
+- **Cashflow Projection** -- models risk before it arrives. Models income against outgoings, projects the next 90 days, flags break-even risk, and maintains a running view of studio profitability. Queries Mnemosyne for pipeline data to model future income. Where Raise Invoice ensures the money comes in, Cashflow Projection ensures the studio never forgets it can go out.
 
 ---
 
@@ -185,10 +185,10 @@ Every quarter, without being asked, Plutus produces three documents: a profit-pe
 Below the households of the gods, five utilities serve the whole pantheon. They are stateless, focused, and invocable by any god.
 
 **The Copywriter**
-The keeper of the studio voice. Carries the tone guide, the format library, the do-not-say list, and the examples of writing the studio is proud of. Every external word that leaves the studio passes through here or sounds like it did. Invoked by Athena for proposals, by Iris for posts, by Hermes for client comms, by Plutus for invoice notes.
+The keeper of the studio voice. Carries the tone guide, the format library, the do-not-say list, and the examples of writing the studio is proud of. Every external word that leaves the studio passes through here or sounds like it did. Invoked by Athena for proposals, by Iris for posts, by Hermes for client comms, by Raise Invoice for invoice notes.
 
 **Mnemosyne**
-The Titaness of memory. She predates the gods and will outlast them. The studio's long-term record: every project a ledger entry of client, sector, stack, brief, estimate vs actuals, outcome, and lesson learned. Every estimate Athena makes queries her. Every case study Hermes compiles writes to her. Every margin check Plutus runs reads from her. Mnemosyne grows wiser with every engagement. She does not forget.
+The Titaness of memory. She predates the gods and will outlast them. The studio's long-term record: every project a ledger entry of client, sector, stack, brief, estimate vs actuals, outcome, and lesson learned. Every estimate Athena makes queries her. Every case study Hermes compiles writes to her. Every margin check the financial review skill runs reads from her. Mnemosyne grows wiser with every engagement. She does not forget.
 
 **The Memory**
 Studio-level context that persists across projects but is not project-specific: Mark's preferences, recurring client relationships, tool configurations, stylistic decisions, standing instructions. Where Mnemosyne is the ledger of completed work, Memory is the living knowledge of how the studio operates.
@@ -211,7 +211,7 @@ A project in the Olympus model passes through the following stations:
 
 **3. Estimation** -- Erichthonius queries Mnemosyne. Nike structures the scope doc. A plan takes shape.
 
-**4. Pricing** -- Plutus and Poros run a margin check. The scope doc is updated with commercial terms.
+**4. Pricing** -- Financial Review runs a margin check. The scope doc is updated with commercial terms.
 
 **5. Proposal gate** -- Mark reviews the scope doc and proposal. Approves or adjusts. Sends.
 
@@ -227,7 +227,7 @@ A project in the Olympus model passes through the following stations:
 
 **11. Delivery gate** -- Mark reviews the final output. Approves or requests changes.
 
-**12. Delivery** -- the work goes to the client. Poros raises the invoice. Abderus triggers the harvest.
+**12. Delivery** -- the work goes to the client. Raise Invoice produces it. Abderus triggers the harvest.
 
 **13. Harvest** -- the Copywriter drafts a blog post. Hermes compiles a case study. Hermes sends a testimonial request. All three feed the studio website, Mnemosyne, Mark's CV, and the Upwork portfolio.
 
@@ -268,9 +268,9 @@ The studio does not market itself. It documents itself. The pantheon turns craft
 | Iris | Social | Arke | Event spotter |
 | Iris | Social | Aura | Post writer |
 | Iris | Social | Kairos | Post scheduler |
-| Plutus | Finance | Poros | Invoicer |
-| Plutus | Finance | Euporia | Tax prep |
-| Plutus | Finance | Cashflow Projection | Cashflow |
+| Financial Review | Finance | Raise Invoice | Invoicer |
+| Financial Review | Finance | Tax Prep | Tax prep |
+| Financial Review | Finance | Cashflow Projection | Cashflow |
 
 **Shared household members (invocable by all gods):**
 The Copywriter · Mnemosyne · The Memory · The Web Researcher · The Notifier

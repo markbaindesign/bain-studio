@@ -35,14 +35,14 @@ Invoke in Claude Code with `/skill-name [args]`.
 | `triage` | `/triage` | Classify an inbound signal; route to pursue/decline/hold |
 | `athena` | `/athena` | Qualify brief, research client, estimate, draft proposal |
 | `erichthonius` | `/erichthonius [brief]` | Estimate hours using Mnemosyne comps |
-| `plutus` | `/plutus` | Margin check and tax review on any proposal |
+| `financial-review` | `/financial-review` | Margin check and tax review on any proposal |
 | `nike` | `/nike` | Write or refine a proposal or scope doc |
 | `commission` | `/commission` | Commission an approved spec — scaffold + Asana create |
 | `register-project` | `/register-project` | Add a project to projects.json + CLAUDE.md |
 | `scaffold-dir` | `/scaffold-dir` | Create project directory + git init |
 | `seed-tasks` | `/seed-tasks` | Create initial tasks in Asana via bainbot API |
 | `studio-delivery-gate` | `/studio-delivery-gate` | Full delivery sequence |
-| `poros` | `/poros [project]` | Raise an invoice for a project milestone |
+| `raise-invoice` | `/raise-invoice [project]` | Raise an invoice for a project milestone |
 | `log-project` | `/log-project` | Interview + append row to project-database.csv |
 | `harvest` | `/harvest [project]` | Generate case study, blog post, testimonial request |
 
@@ -90,10 +90,10 @@ Invoke in Claude Code with `/skill-name [args]`.
 
 | Skill | Invoke | What it does |
 |-------|--------|--------------|
-| `plutus` | `/plutus` | Margin check + tax awareness + invoicing |
+| `financial-review` | `/financial-review` | Margin check + tax awareness + invoicing |
 | `cashflow-projection` | `/cashflow-projection` | 90-day cashflow projection |
 | `account-forecast` | `/account-forecast` | Per-account transaction forecast + insufficient-funds flags |
-| `euporia` | `/euporia` | Quarterly tax prep (Mod 303 IVA, Mod 130 IRPF) |
+| `tax-prep` | `/tax-prep` | Quarterly tax prep (Mod 303 IVA, Mod 130 IRPF) |
 | `harvest-notes` | `/harvest-notes` | Harvest tagged ideas from Obsidian daily notes |
 
 ### Setup & Config
@@ -149,7 +149,7 @@ Invoke in Claude Code with `/skill-name [args]`.
 | `notifier.py` | `python3 studio/notifier.py "msg" --priority high --sender hermes` | Send a Slack notification |
 | `postman.py` | `python3 studio/postman.py` | Process `.claude/inbox/` message queue |
 | `dashboard/server.py` | `python3 studio/dashboard/server.py` | Launch studio dashboard at localhost:5555 |
-| `collectors/gnucash_collector.py` | `python3 studio/collectors/gnucash_collector.py` | Parse GnuCash → context/finance/accounts.json |
+| `collectors/gnucash_collector.py` | `python3 studio/collectors/gnucash_collector.py` | Parse GnuCash → /media/data/Dropbox/Work/Admin/Financial/Accounting/accounts.json |
 | `collectors/harvest_kf_collector.py` | `python3 studio/collectors/harvest_kf_collector.py` | Fetch KF Harvest hours → time_snapshot.json |
 | `collectors/obsidian_collector.py` | `python3 studio/collectors/obsidian_collector.py` | Harvest ideas/stubs from Obsidian notes |
 
@@ -165,5 +165,5 @@ Invoke in Claude Code with `/skill-name [args]`.
 | `.claude/asana-mirror.md` | Local Asana task mirror for this project |
 | `.claude/inbox/` | Inter-agent message inbox |
 | `.claude/open-questions.md` | Unresolved open questions for this project |
-| `context/finance/accounts.json` | GnuCash financial snapshot (written by collector) |
+| `/media/data/Dropbox/Work/Admin/Financial/Accounting/accounts.json` | GnuCash financial snapshot (written by collector) |
 | `context/projects/kf/time_snapshot.json` | KF Harvest time budget snapshot |

@@ -67,8 +67,9 @@ description: Studio security audit — June 2026. Dangerous practices, project i
 **Fix:**
 ```bash
 chmod 600 /media/data/dev/bain-studio/studio/.env
-chmod 600 /media/data/dev/bain-studio/studio/dashboard/.env
 ```
+
+*Update 2026-07-10: `studio/dashboard/.env` was merged into `studio/.env` and deleted — only one file to fix now.*
 
 ---
 

@@ -6,24 +6,35 @@ from datetime import date
 from pathlib import Path
 import os
 
-try:
+def _finance_config_dir():
+    value = os.getenv("FINANCE_CONFIG_DIR")
+    if not value:
+        raise RuntimeError("FINANCE_CONFIG_DIR must be set (see studio/.env) -- no hardcoded fallback")
+    return Path(value)
+
+
+def _finance_data_dir():
+    """Generated data + docs (accounts.json, aletheia-codex.md) -- distinct from
+    FINANCE_CONFIG_DIR, which holds only user-editable settings."""
+    value = os.getenv("FINANCE_DATA_DIR")
+    if not value:
+        raise RuntimeError("FINANCE_DATA_DIR must be set (see studio/.env) -- no hardcoded fallback")
+    return Path(value)
+
+
+def _load_overheads():
     import yaml
-    def _load_overheads():
-        content_dir = Path(os.getenv("STUDIO_CONTENT_DIR", Path(__file__).parents[2] / "context"))
-        oh_path = content_dir / "finance" / "overheads.yaml"
-        if oh_path.exists():
-            docs = list(yaml.safe_load_all(oh_path.read_text()))
-            data = next((d for d in docs if isinstance(d, dict) and "reference_totals" in d), {})
-            ref = data.get("reference_totals", {})
-            return (
-                ref.get("owner_draw_monthly", 2566.67),
-                ref.get("breakeven_allin", 4115.0),
-                ref.get("fixed_costs_approx", 717.38),
-            )
-        return 2566.67, 4115.0, 717.38
-except ImportError:
-    def _load_overheads():
-        return 2566.67, 4115.0, 717.38
+    oh_path = _finance_config_dir() / "overheads.yaml"
+    if not oh_path.exists():
+        raise RuntimeError(f"overheads.yaml not found at {oh_path} -- no hardcoded fallback")
+    docs = list(yaml.safe_load_all(oh_path.read_text()))
+    data = next((d for d in docs if isinstance(d, dict) and "reference_totals" in d), {})
+    ref = data["reference_totals"]
+    return (
+        ref["owner_draw_monthly"],
+        ref["breakeven_allin"],
+        ref["fixed_costs_approx"],
+    )
 
 
 NS = {
@@ -35,20 +46,24 @@ NS = {
     'cmdty': 'http://www.gnucash.org/XML/cmdty',
 }
 
-UPCOMING_PATTERNS = [
-    # (keyword_in_desc, label, day_of_month, type, billing_account)
-    # billing_account per aletheia-codex.md section 3 — 'Unknown' where still marked TBC
-    ('Autonomos',  'Autónomos (Social Security)', 29, 'fixed', 'BBVA EUR'),
-    ('Movistar',   'Movistar (Phone/Internet)',    1,  'fixed', 'BBVA EUR'),
-    ('Crashplan',  'Crashplan Backup',             10, 'fixed', 'Unknown'),
-    ('Gsuite',     'Google Workspace',             3,  'fixed', 'Unknown'),
-    ('Cloudways',  'Cloudways Hosting',            7,  'fixed', 'Unknown'),
-    ('Asana',      'Asana',                        12, 'fixed', 'Unknown'),
-    ('Claude',     'Claude (Anthropic)',            23, 'fixed', 'Unknown'),
-    ('Github',     'GitHub Copilot',               15, 'fixed', 'Unknown'),
-    ('Algolia',    'Algolia',                      19, 'fixed', 'Unknown'),
-    ('WPML',       'WPML (OnTheGoSystems)',          8, 'fixed', 'Unknown'),
-]
+def _load_upcoming_patterns():
+    """Recurring bill -> billing account map, edited as data, not code -- see
+    FINANCE_CONFIG_DIR/recurring-transactions.yaml. No hardcoded fallback: billing-
+    account moves (BBVA -> Wise etc.) must be reflected there, not silently guessed."""
+    import yaml
+    cfg_path = _finance_config_dir() / "recurring-transactions.yaml"
+    if not cfg_path.exists():
+        raise RuntimeError(f"recurring-transactions.yaml not found at {cfg_path} -- no hardcoded fallback")
+    docs = list(yaml.safe_load_all(cfg_path.read_text()))
+    data = next((d for d in docs if isinstance(d, dict) and "recurring" in d), {})
+    entries = data["recurring"]
+    return [
+        (e["keyword"], e["label"], e["day_of_month"], e["type"], e["billing_account"])
+        for e in entries
+    ]
+
+
+UPCOMING_PATTERNS = _load_upcoming_patterns()
 
 
 def _to_eur(val, currency, usd_rate, gbp_rate):
@@ -423,8 +438,7 @@ _QUARTER_DEADLINE = {1: (4, 20), 2: (7, 20), 3: (10, 20), 4: (1, 30)}
 
 def _load_confirmed_tax_filings():
     """Parse the Quarterly Filing Log (aletheia-codex.md §8) for gestor-confirmed amounts."""
-    content_dir = Path(os.getenv("STUDIO_CONTENT_DIR", Path(__file__).parents[2] / "context"))
-    path = content_dir / "finance" / "aletheia-codex.md"
+    path = _finance_data_dir() / "aletheia-codex.md"
     if not path.exists():
         return []
     text = path.read_text(encoding="utf-8")
@@ -452,13 +466,12 @@ def _load_confirmed_tax_filings():
 
 
 def _load_expected_income(today):
-    """Manually-maintained forecast of incoming payments — context/finance/expected_income.yaml."""
+    """Manually-maintained forecast of incoming payments — FINANCE_CONFIG_DIR/expected_income.yaml."""
     try:
         import yaml
     except ImportError:
         return []
-    content_dir = Path(os.getenv("STUDIO_CONTENT_DIR", Path(__file__).parents[2] / "context"))
-    path = content_dir / "finance" / "expected_income.yaml"
+    path = _finance_config_dir() / "expected_income.yaml"
     if not path.exists():
         return []
     try:

@@ -21,7 +21,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 INBOX_DIR = PROJECT_ROOT / "studio" / "inbox"
 SKILL_PATH = Path.home() / ".claude/skills/triage/SKILL.md"
 ATHENA_SKILL_PATH = Path.home() / ".claude/skills/athena/SKILL.md"
-PLUTUS_SKILL_PATH = Path.home() / ".claude/skills/plutus/SKILL.md"
+FINANCIAL_REVIEW_SKILL_PATH = Path.home() / ".claude/skills/financial-review/SKILL.md"
 LOG_PREFIX = f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] hermes"
 
 
@@ -231,26 +231,26 @@ Process all six steps (Pallas research, Erichthonius estimate, Nike questions/pr
     return True, None
 
 
-def invoke_plutus(athena_report_path):
-    """Invoke Plutus headlessly to add margin check to Athena report. Returns (success: bool, error: str or None)."""
-    if not PLUTUS_SKILL_PATH.exists():
-        return False, "Plutus skill not found at " + str(PLUTUS_SKILL_PATH)
+def invoke_financial_review(athena_report_path):
+    """Invoke financial-review headlessly to add margin check to Athena report. Returns (success: bool, error: str or None)."""
+    if not FINANCIAL_REVIEW_SKILL_PATH.exists():
+        return False, "financial-review skill not found at " + str(FINANCIAL_REVIEW_SKILL_PATH)
 
-    # Load and extract Plutus skill content (strip YAML frontmatter)
-    plutus_content = PLUTUS_SKILL_PATH.read_text()
-    if plutus_content.startswith("---"):
-        match = re.match(r"^---\n.*?\n---\n(.*)", plutus_content, re.DOTALL)
+    # Load and extract skill content (strip YAML frontmatter)
+    skill_content = FINANCIAL_REVIEW_SKILL_PATH.read_text()
+    if skill_content.startswith("---"):
+        match = re.match(r"^---\n.*?\n---\n(.*)", skill_content, re.DOTALL)
         if match:
-            plutus_content = match.group(1).strip()
+            skill_content = match.group(1).strip()
 
-    prompt = f"""Run the Plutus skill to review the Athena report and append a margin check.
+    prompt = f"""Run the financial-review skill to review the Athena report and append a margin check.
 
 Report path: {athena_report_path}
 
-Process all five steps (load report, Poros margin check, Euporia tax adjustment, Penia viability, gate prep) and append the Financial Review section to the Athena report."""
+Process all five steps (load report, margin check, tax adjustment, cashflow viability, gate prep) and append the Financial Review section to the Athena report."""
 
     result = subprocess.run(
-        ["claude", "-p", prompt, "--system", plutus_content, "--output-format", "text"],
+        ["claude", "-p", prompt, "--system", skill_content, "--output-format", "text"],
         capture_output=True,
         text=True,
         cwd=str(PROJECT_ROOT),
@@ -260,7 +260,7 @@ Process all five steps (load report, Poros margin check, Euporia tax adjustment,
         return False, f"claude exited {result.returncode}: {result.stderr[:100]}"
 
     if not result.stdout.strip():
-        return False, "plutus produced no output"
+        return False, "financial-review produced no output"
 
     return True, None
 
@@ -326,7 +326,7 @@ def main():
         mark_processed(signal_path, verdict)
         print(f"{LOG_PREFIX}:   → {verdict} (${cost:.3f})")
 
-        # If verdict is Pursue, invoke Athena then Plutus
+        # If verdict is Pursue, invoke Athena then financial-review
         if verdict == "Pursue":
             slug = create_brief_slug(meta)
             brief_path = create_brief_file(meta, body, slug)
@@ -334,14 +334,14 @@ def main():
             if success:
                 print(f"{LOG_PREFIX}:     ✓ Athena invoked (brief: {slug})")
 
-                # Now invoke Plutus to add margin check
+                # Now invoke financial-review to add margin check
                 today = datetime.datetime.now().strftime('%Y-%m-%d')
                 athena_report_path = PROJECT_ROOT / "context" / "pipeline" / "athena" / f"{slug}-{today}.md"
-                p_success, p_error = invoke_plutus(str(athena_report_path))
+                p_success, p_error = invoke_financial_review(str(athena_report_path))
                 if p_success:
-                    print(f"{LOG_PREFIX}:     ✓ Plutus invoked (margin check added)")
+                    print(f"{LOG_PREFIX}:     ✓ financial-review invoked (margin check added)")
                 else:
-                    print(f"{LOG_PREFIX}:     ✗ Plutus failed: {p_error}", file=sys.stderr)
+                    print(f"{LOG_PREFIX}:     ✗ financial-review failed: {p_error}", file=sys.stderr)
             else:
                 print(f"{LOG_PREFIX}:     ✗ Athena failed: {athena_error}", file=sys.stderr)
 

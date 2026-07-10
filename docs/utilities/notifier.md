@@ -52,7 +52,7 @@ python3 studio/notifier.py "Deploy complete" \
 | hephaestus | 🔨 |
 | athena | 🦉 |
 | hermes | ⚡ |
-| plutus | 💶 |
+| financial-review | 💶 |
 | iris | 🌈 |
 | themis | ⚖️ |
 | aphrodite | 🎨 |

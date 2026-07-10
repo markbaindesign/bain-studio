@@ -23,10 +23,9 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
-# Load credentials from dashboard .env (has HARVEST_TOKEN)
+# Load credentials — single consolidated env file (has HARVEST_TOKEN)
 HERE = Path(__file__).resolve().parents[2]  # → bain-studio/studio/
 load_dotenv(HERE / ".env")
-load_dotenv(HERE / "dashboard" / ".env", override=False)
 
 HARVEST_TOKEN = os.getenv("HARVEST_TOKEN", "")
 HARVEST_ACCOUNT_ID = os.getenv("HARVEST_ACCOUNT_ID", "")

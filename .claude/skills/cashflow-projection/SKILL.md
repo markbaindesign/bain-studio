@@ -12,11 +12,11 @@ Models business-level risk before it arrives: income vs. outgoings, break-even, 
 
 ### 0. Load business context
 
-Read `{CONTENT_DIR}/finance/aletheia-codex.md` before anything else. This is the authoritative record of account topology, money flow, and operating conventions. Use it to interpret which accounts obligations come from and how income is routed.
+Read `/media/data/Dropbox/Work/Admin/Financial/Accounting/aletheia-codex.md` before anything else. This is the authoritative record of account topology, money flow, and operating conventions. Use it to interpret which accounts obligations come from and how income is routed.
 
 ### 1. Read the financial snapshot
 
-Read `{CONTENT_DIR}/finance/accounts.json`. If more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh.
+Read `/media/data/Dropbox/Work/Admin/Financial/Accounting/accounts.json`. If more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh.
 
 Key fields:
 - `total_eur` — current bank balance
@@ -31,7 +31,7 @@ Key fields:
 
 Read `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv`. Identify active projects (no End Date or End Date in the future). For each, note expected invoice amount and approximate timing.
 
-Read `{CONTENT_DIR}/finance/invoices.md` for outstanding (unpaid) invoices.
+Read `accounts.json`'s `harvest.invoices` field for outstanding (unpaid) invoices (sourced live from Harvest, not a local log). If `harvest.configured` is false or the field is missing, note that Harvest isn't wired up rather than silently treating it as zero outstanding invoices.
 
 ### 3. Build the 90-day projection
 
@@ -53,6 +53,6 @@ Model three months from today. For each month:
 
 ### 5. Output
 
-Return the projection table and a 2–3 bullet risk summary. Save to `{CONTENT_DIR}/finance/cashflow-{YYYY-MM}.md`.
+Return the projection table and a 2–3 bullet risk summary. Save to `/media/data/Dropbox/Work/Admin/Financial/Accounting/cashflow-{YYYY-MM}.md`.
 
 Be direct. If month 2 looks thin, say so.

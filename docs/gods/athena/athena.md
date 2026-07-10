@@ -70,7 +70,7 @@ An Athena report saved to `{CONTENT_DIR}/pipeline/athena/{slug}-{date}.md` conta
 
 ## Law of Margin
 
-Before a proposal leaves, Plutus must run a margin check. Athena flags this in her report and does not mark it complete until Plutus clears it.
+Before a proposal leaves, financial review must run a margin check. Athena flags this in her report and does not mark it complete until that check clears.
 
 ## Notes
 
@@ -80,6 +80,6 @@ Before a proposal leaves, Plutus must run a margin check. Athena flags this in h
 
 ## See also
 
-- [plutus.md](plutus.md) — margin check required before proposal goes out
+- [financial-review.md](financial-review.md) — margin check required before proposal goes out
 - [hephaestus.md](hephaestus.md) — translates the approved Athena scope into a technical build plan
 - [triage.md](triage.md) — precedes Athena in the pipeline

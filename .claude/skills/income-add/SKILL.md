@@ -2,13 +2,13 @@
 name: income-add
 description: >
   Quick-add an expected incoming payment to the cash flow forecast
-  (context/finance/expected_income.yaml). Trigger phrases: "expecting a payment",
+  (/media/data/Dropbox/Work/Admin/Financial/Accounting/config/expected_income.yaml). Trigger phrases: "expecting a payment",
   "income coming in", "add expected income", "/income-add".
 ---
 
 # Income Add
 
-Appends one entry to `{CONTENT_DIR}/finance/expected_income.yaml`, which Cashflow Projection/Plutus
+Appends one entry to `/media/data/Dropbox/Work/Admin/Financial/Accounting/config/expected_income.yaml`, which Cashflow Projection/Financial Review
 and the dashboard's cash flow forecast read on every run.
 
 ## Steps

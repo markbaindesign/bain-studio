@@ -11,8 +11,7 @@ from flask import Flask, jsonify, send_file, request
 from dotenv import load_dotenv
 
 HERE = Path(__file__).resolve().parent
-load_dotenv(HERE.parent / '.env')       # studio/.env (base config)
-load_dotenv(HERE / '.env', override=True)  # studio/dashboard/.env (local overrides)
+load_dotenv(HERE.parent / '.env')  # studio/.env — single source, no local override file
 
 sys.path.insert(0, str(HERE))
 import gnucash_parser
@@ -20,10 +19,7 @@ from harvest_client import HarvestClient
 
 app = Flask(__name__)
 
-GNUCASH_PATH = os.getenv('GNUCASH_FILE', os.getenv(
-    'GNUCASH_PATH',
-    '/media/data/Dropbox/Work/Admin/Financial/Accounting/GNUCash/accounts.gnucash',
-))
+GNUCASH_PATH = os.environ['GNUCASH_FILE']  # no hardcoded fallback — must be set in studio/.env
 HARVEST_TOKEN      = os.getenv('HARVEST_TOKEN', '')
 HARVEST_ACCOUNT_ID = os.getenv('HARVEST_ACCOUNT_ID', '')
 PIPELINE_API_URL   = os.getenv('PIPELINE_API_URL', 'http://localhost:5050')
@@ -154,7 +150,7 @@ def api_transactions():
 @app.route('/api/data')
 def api_data():
     # Reload .env on each request so credential changes take effect without restart
-    load_dotenv(Path(__file__).parent / '.env', override=True)
+    load_dotenv(Path(__file__).resolve().parent.parent / '.env', override=True)
     harvest_token      = os.getenv('HARVEST_TOKEN', '').strip()
     harvest_account_id = os.getenv('HARVEST_ACCOUNT_ID', '').strip()
 

@@ -33,8 +33,7 @@ from googleapiclient.discovery import build
 
 HERE = Path(__file__).resolve().parent
 STUDIO = HERE.parents[1]
-load_dotenv(STUDIO / ".env")
-load_dotenv(STUDIO / "dashboard" / ".env", override=False)
+load_dotenv(STUDIO / ".env")  # single consolidated env file
 
 FINANCIAL_DIR = Path(
     os.getenv("FINANCIAL_DIR", "/media/data/Dropbox/Work/Admin/Financial/XOR i MB")

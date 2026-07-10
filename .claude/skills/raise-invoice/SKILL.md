@@ -1,12 +1,12 @@
 ---
-name: poros
-description: Raise an invoice for a completed project or milestone. Invoke with a project slug or name. Produces a formatted invoice ready for review, updates the payment tracking log.
+name: raise-invoice
+description: Raise an invoice for a completed project or milestone. Invoke with a project slug or name. Produces a formatted invoice ready for review. Payment/status tracking lives in Harvest, not a local log.
 allowed-tools: [Read, Write, Bash]
 ---
 
-# Poros — Invoicer
+# Raise Invoice
 
-Poros ensures the money comes in. He raises invoices on delivery, tracks payment status, and sends reminders at the right intervals. The studio is a business.
+Produces a formatted invoice for a completed project or milestone, with the correct Spanish IVA/IRPF treatment applied.
 
 ## Steps
 
@@ -21,7 +21,7 @@ If the project is not in Mnemosyne, stop and ask Mark to log it first via `/log-
 
 ### 2. Load rate and tax configuration
 
-Read `{CONTENT_DIR}/finance/rates.yaml` for: studio rate, Upwork rate, IVA rate (21%), IRPF rate (15%).
+Read `/media/data/Dropbox/Work/Admin/Financial/Accounting/config/rates.yaml` for: studio rate, Upwork rate, IVA rate (21%), IRPF rate (15%).
 
 ### 3. Determine tax treatment
 
@@ -63,15 +63,7 @@ BIC: [Mark's BIC]
 Referencia: {invoice number}
 ```
 
-### 5. Log the invoice
-
-Append to `{CONTENT_DIR}/finance/invoices.md` (create if it doesn't exist):
-
-```
-| {Invoice #} | {YYYY-MM-DD} | {Client} | {Project} | €{total} | pending |
-```
-
-### 6. Output
+### 5. Output
 
 Return the full invoice text. Note: "Ready for Mark's review — send via Wise or email once approved."
 

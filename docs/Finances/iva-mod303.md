@@ -1,6 +1,5 @@
 ---
 tags: [finance, checklist, taxes]
-god: plutus
 description: Quarterly IVA (Mod 303) preparation process — vendes, compres, what's automated, what needs manual download, and how to send to gestor
 ---
 
@@ -132,4 +131,4 @@ Once Vendes and Compres are complete:
 ## See also
 
 - [ivas-prep tool](../utilities/ivas-prep.md) — the automation script and skill
-- [Plutus](../gods/plutus/plutus.md) — quarterly finance reporting god
+- [Financial Review](../utilities/financial-review.md) — quarterly finance reporting

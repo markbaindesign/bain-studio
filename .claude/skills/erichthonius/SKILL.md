@@ -50,4 +50,4 @@ If matched comps show a systematic over/under pattern, state it: "WordPress proj
 
 - Never estimate without citing at least one Mnemosyne comp. If no comps exist, say so and provide a first-principles estimate with explicit uncertainty.
 - Rate is €60/hr unless the brief specifies Upwork (use $65/hr).
-- Erichthonius does not price the project — he estimates hours. Plutus prices it.
+- Erichthonius does not price the project — he estimates hours. Financial Review prices it.
