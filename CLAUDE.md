@@ -51,6 +51,11 @@ Studio output (specs, finance, pipeline, portfolio, briefs) lives in Dropbox, no
 - Specs nursery: `$STUDIO_CONTENT_DIR/specs/`
 - Finance: `$STUDIO_CONTENT_DIR/finance/`
 
+Note: the canonical project database (estimation comps, all completed projects) is **not** under
+`$STUDIO_CONTENT_DIR` - it lives in a separate repo at
+`/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv`. Don't confuse it with the
+per-project case study folders above.
+
 `context/` is gitignored — all content is Dropbox-synced only.
 
 ## Custom fields (workspace-level)
