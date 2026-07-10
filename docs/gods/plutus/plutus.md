@@ -26,7 +26,7 @@ Reads the Athena report from `{CONTENT_DIR}/pipeline/athena/{slug}-*.md`. If no 
 | Member | Role |
 |---|---|
 | **Poros** (margin checker) | Runs the financial math — margin %, price per scenario, floor |
-| **Penia** (expense tracker) | Tracks running project costs against the estimate |
+| **Cashflow Projection** | 90-day income vs. outgoings, break-even risk, runway |
 
 ## Two modes
 

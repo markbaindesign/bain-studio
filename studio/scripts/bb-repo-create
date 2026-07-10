@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# bb-repo-create — create a Bitbucket repo and wire up the local git repo
+#
+# Credentials are read from ~/.config/bb-pr (shared with bb-pr, created on
+# first run), or from BITBUCKET_USER / BITBUCKET_APP_PASSWORD env vars.
+#
+# NOTE: Bitbucket Cloud app passwords are deprecated (disabled after
+# 2026-06-09). Use an Atlassian API token instead:
+#   https://id.atlassian.com/manage-profile/security/api-tokens
+#   -> "Create API token with scopes" -> app: Bitbucket
+#   -> scopes: read:repository:bitbucket, write:repository:bitbucket
+# BITBUCKET_USER must then be the Atlassian account EMAIL (not the
+# Bitbucket username) — basic auth is email:api_token.
+#
+# Usage:
+#   bb-repo-create [options]
+#
+# Options:
+#   -n, --name NAME        Repo name (default: current directory basename)
+#   -w, --workspace SLUG   Bitbucket workspace slug (default: markbaindesign)
+#   --public               Create as public repo (default: private)
+#   --branch NAME          Default branch name (default: main)
+#   --no-push              Only create the repo + set default branch; skip
+#                           git init/remote/push
+#   --setup                Re-run credential setup
+#   -h, --help             Show this help
+
+set -euo pipefail
+
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/bb-pr"
+
+# ── help ──────────────────────────────────────────────────────────────────────
+usage() {
+  grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//'
+  exit 0
+}
+
+# ── credential setup ──────────────────────────────────────────────────────────
+setup() {
+  echo "Bitbucket credentials setup"
+  echo "Create a scoped API token at: https://id.atlassian.com/manage-profile/security/api-tokens"
+  echo "  -> Create API token with scopes -> app: Bitbucket"
+  echo "  -> scopes: read:repository:bitbucket, write:repository:bitbucket"
+  echo ""
+  read -rp "Atlassian account email: " input_user
+  read -rsp "API token: " input_pass
+  echo ""
+  mkdir -p "$(dirname "$CONFIG_FILE")"
+  cat > "$CONFIG_FILE" <<EOF
+BITBUCKET_USER=$input_user
+BITBUCKET_APP_PASSWORD=$input_pass
+EOF
+  chmod 600 "$CONFIG_FILE"
+  echo "Credentials saved to $CONFIG_FILE"
+}
+
+# ── load credentials ──────────────────────────────────────────────────────────
+load_credentials() {
+  if [[ -z "${BITBUCKET_USER:-}" || -z "${BITBUCKET_APP_PASSWORD:-}" ]]; then
+    if [[ -f "$CONFIG_FILE" ]]; then
+      # shellcheck source=/dev/null
+      source "$CONFIG_FILE"
+    fi
+  fi
+
+  if [[ -z "${BITBUCKET_USER:-}" || -z "${BITBUCKET_APP_PASSWORD:-}" ]]; then
+    echo "No Bitbucket credentials found. Running setup..."
+    echo ""
+    setup
+    source "$CONFIG_FILE"
+  fi
+}
+
+# ── parse args ────────────────────────────────────────────────────────────────
+NAME=""
+WORKSPACE="markbaindesign"
+IS_PRIVATE=true
+BRANCH="main"
+DO_PUSH=1
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)      usage ;;
+    --setup)        setup; exit 0 ;;
+    -n|--name)      NAME="$2"; shift 2 ;;
+    -w|--workspace) WORKSPACE="$2"; shift 2 ;;
+    --public)       IS_PRIVATE=false; shift ;;
+    --branch)       BRANCH="$2"; shift 2 ;;
+    --no-push)      DO_PUSH=0; shift ;;
+    *)
+      if [[ -z "$NAME" ]]; then NAME="$1"; fi
+      shift ;;
+  esac
+done
+
+[[ -z "$NAME" ]] && NAME=$(basename "$PWD")
+
+load_credentials
+
+# ── create repo ───────────────────────────────────────────────────────────────
+echo ""
+echo "  workspace: $WORKSPACE"
+echo "  repo:      $NAME"
+echo "  private:   $IS_PRIVATE"
+echo "  branch:    $BRANCH"
+echo ""
+
+CREATE_PAYLOAD=$(python3 -c "
+import json, sys
+print(json.dumps({'scm': 'git', 'is_private': sys.argv[1] == 'true'}))
+" "$IS_PRIVATE")
+
+CREATE_RESPONSE=$(curl -s -w '\n%{http_code}' \
+  -u "$BITBUCKET_USER:$BITBUCKET_APP_PASSWORD" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -d "$CREATE_PAYLOAD" \
+  "https://api.bitbucket.org/2.0/repositories/$WORKSPACE/$NAME")
+
+HTTP_CODE=$(echo "$CREATE_RESPONSE" | tail -n1)
+BODY=$(echo "$CREATE_RESPONSE" | sed '$d')
+
+if [[ "$HTTP_CODE" == "200" ]]; then
+  echo "Repo created: https://bitbucket.org/$WORKSPACE/$NAME"
+elif [[ "$HTTP_CODE" == "400" ]] && echo "$BODY" | grep -qi "already exists"; then
+  echo "Repo already exists, continuing: https://bitbucket.org/$WORKSPACE/$NAME"
+else
+  echo "Error creating repo (HTTP $HTTP_CODE):" >&2
+  echo "$BODY" >&2
+  exit 1
+fi
+
+CLONE_URL="git@bitbucket.org:$WORKSPACE/$NAME.git"
+
+# ── local git wiring ─────────────────────────────────────────────────────────
+if [[ "$DO_PUSH" -eq 1 ]]; then
+  if ! git rev-parse --git-dir &>/dev/null; then
+    git init -q
+    echo "git initialized"
+  fi
+
+  CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
+    git checkout -B "$BRANCH" -q
+  fi
+
+  if git remote get-url origin &>/dev/null; then
+    git remote set-url origin "$CLONE_URL"
+  else
+    git remote add origin "$CLONE_URL"
+  fi
+  echo "remote 'origin' -> $CLONE_URL"
+
+  if git rev-parse HEAD &>/dev/null; then
+    git push -u origin "$BRANCH"
+  else
+    echo "No commits yet — skipping push. Commit, then run:"
+    echo "  git push -u origin $BRANCH"
+    exit 0
+  fi
+fi
+
+# ── set default branch ────────────────────────────────────────────────────────
+SET_BRANCH_PAYLOAD=$(python3 -c "
+import json, sys
+print(json.dumps({'mainbranch': {'name': sys.argv[1]}}))
+" "$BRANCH")
+
+curl -s -o /dev/null -w '' \
+  -u "$BITBUCKET_USER:$BITBUCKET_APP_PASSWORD" \
+  -X PUT \
+  -H "Content-Type: application/json" \
+  -d "$SET_BRANCH_PAYLOAD" \
+  "https://api.bitbucket.org/2.0/repositories/$WORKSPACE/$NAME"
+
+echo "default branch set to '$BRANCH'"
+echo ""
+echo "Done: https://bitbucket.org/$WORKSPACE/$NAME"

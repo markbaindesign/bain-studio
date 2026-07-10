@@ -36,17 +36,18 @@ NS = {
 }
 
 UPCOMING_PATTERNS = [
-    # (keyword_in_desc, label, day_of_month, type)
-    ('Autonomos',  'Autónomos (Social Security)', 29, 'fixed'),
-    ('Movistar',   'Movistar (Phone/Internet)',    1,  'fixed'),
-    ('Crashplan',  'Crashplan Backup',             10, 'fixed'),
-    ('Gsuite',     'Google Workspace',             3,  'fixed'),
-    ('Cloudways',  'Cloudways Hosting',            7,  'fixed'),
-    ('Asana',      'Asana',                        12, 'fixed'),
-    ('Claude',     'Claude (Anthropic)',            23, 'fixed'),
-    ('Github',     'GitHub Copilot',               15, 'fixed'),
-    ('Algolia',    'Algolia',                      19, 'fixed'),
-    ('WPML',       'WPML (OnTheGoSystems)',          8, 'fixed'),
+    # (keyword_in_desc, label, day_of_month, type, billing_account)
+    # billing_account per aletheia-codex.md section 3 — 'Unknown' where still marked TBC
+    ('Autonomos',  'Autónomos (Social Security)', 29, 'fixed', 'BBVA EUR'),
+    ('Movistar',   'Movistar (Phone/Internet)',    1,  'fixed', 'BBVA EUR'),
+    ('Crashplan',  'Crashplan Backup',             10, 'fixed', 'Unknown'),
+    ('Gsuite',     'Google Workspace',             3,  'fixed', 'Unknown'),
+    ('Cloudways',  'Cloudways Hosting',            7,  'fixed', 'Unknown'),
+    ('Asana',      'Asana',                        12, 'fixed', 'Unknown'),
+    ('Claude',     'Claude (Anthropic)',            23, 'fixed', 'Unknown'),
+    ('Github',     'GitHub Copilot',               15, 'fixed', 'Unknown'),
+    ('Algolia',    'Algolia',                      19, 'fixed', 'Unknown'),
+    ('WPML',       'WPML (OnTheGoSystems)',          8, 'fixed', 'Unknown'),
 ]
 
 
@@ -197,13 +198,35 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
         parts = r['path'].replace('Root Account:Expenses:', '').split(':')
         cat_exp[parts[0]] += r['eur']
 
-    # --- Upcoming expenses ---
+    # --- Upcoming expenses + manually-forecast incoming payments ---
     today = date.today()
     upcoming = _compute_upcoming(rows, today, owner_draw)
+    expected_income = _load_expected_income(today)
+    upcoming = sorted(upcoming + expected_income, key=lambda x: x['date'])
 
-    # --- Balance after 30 days of known bills ---
-    due_30d = sum(u['amount'] for u in upcoming if u.get('days', 999) <= 30)
-    balance_after_30d = round(liquid_eur - due_30d, 2)
+    # --- Balance after 30 days of known bills (income entries offset, not add to, obligations) ---
+    due_30d    = sum(u['amount'] for u in upcoming if u.get('days', 999) <= 30 and u.get('type') != 'income')
+    income_30d = sum(u['amount'] for u in upcoming if u.get('days', 999) <= 30 and u.get('type') == 'income')
+    balance_after_30d = round(liquid_eur - due_30d + income_30d, 2)
+
+    # --- BBVA-specific forecast — the account Spanish DDs actually draw from ---
+    bbva_balance = next((b['eur'] for b in balances if 'BBVA' in b['name']), 0.0)
+    bbva_due_30d = sum(
+        u['amount'] for u in upcoming
+        if u.get('account') == 'BBVA EUR' and u.get('type') != 'income' and u.get('days', 999) <= 30
+    )
+    bbva_income_30d = sum(
+        u['amount'] for u in upcoming
+        if u.get('account') == 'BBVA EUR' and u.get('type') == 'income' and u.get('days', 999) <= 30
+    )
+    bbva_balance_after_30d = round(bbva_balance - bbva_due_30d + bbva_income_30d, 2)
+    bbva_forecast = {
+        'balance':           round(bbva_balance, 2),
+        'due_30d':           round(bbva_due_30d, 2),
+        'income_30d':        round(bbva_income_30d, 2),
+        'balance_after_30d': bbva_balance_after_30d,
+        'shortfall':         bbva_balance_after_30d < 0,
+    }
 
     # --- Last income entries for context ---
     income_rows = sorted(
@@ -222,9 +245,12 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
         'total_eur':         round(total_eur, 2),
         'liquid_eur':        round(liquid_eur, 2),
         'balance_after_30d': balance_after_30d,
+        'income_30d':        round(income_30d, 2),
+        'bbva_forecast':     bbva_forecast,
         'monthly_pl':        monthly_pl,
         'cat_exp':           dict(cat_exp),
         'upcoming':          upcoming,
+        'expected_income':   expected_income,
         'recent_income':     recent_income,
         'owner_draw':        owner_draw,
         'breakeven_allin': breakeven_allin,
@@ -240,13 +266,14 @@ def _quarter_start(d):
 def _compute_upcoming(rows, today, owner_draw):
     upcoming = []
 
-    # Owner's draw — approx 7 days after month end (i.e. 7th of following month)
+    # Owner's draw — end of month, per aletheia-codex.md §"Owner's Draw" (source: BBVA EUR)
     import calendar
     for delta_months in range(3):
-        m = today.month + delta_months + 1   # following month
+        m = today.month + delta_months
         y = today.year + (m - 1) // 12
         m = ((m - 1) % 12) + 1
-        d = date(y, m, 7)
+        max_day = calendar.monthrange(y, m)[1]
+        d = date(y, m, max_day)
         if d >= today:
             upcoming.append({
                 'label':    "Owner's Draw",
@@ -254,13 +281,14 @@ def _compute_upcoming(rows, today, owner_draw):
                 'amount':   round(owner_draw),
                 'currency': 'EUR',
                 'type':     'draw',
+                'account':  'BBVA EUR',
                 'days':     (d - today).days,
             })
 
     # Pattern-based recurring bills — amounts derived from transaction history
     exp_rows = [r for r in rows if r['type'] == 'EXPENSE' and r['val'] > 0 and r['date'] >= '2025-01-01']
 
-    for keyword, label, typical_day, bill_type in UPCOMING_PATTERNS:
+    for keyword, label, typical_day, bill_type, billing_account in UPCOMING_PATTERNS:
         matches = [r for r in exp_rows if keyword.lower() in r['desc'].lower()]
         if not matches:
             continue
@@ -285,6 +313,7 @@ def _compute_upcoming(rows, today, owner_draw):
                     'amount':   round(avg_amt, 2),
                     'currency': 'EUR',
                     'type':     bill_type,
+                    'account':  billing_account,
                     'days':     (d - today).days,
                 })
                 break
@@ -298,14 +327,44 @@ def _compute_upcoming(rows, today, owner_draw):
         ('IVA',      'IVA',                   'tax'),
         ('Gestor',   'Gestor (Accountant)',    'fixed'),
     ]
+    # All quarterly filings and the gestor draw from BBVA per aletheia-codex.md §3
+    QUARTERLY_ACCOUNT = 'BBVA EUR'
 
     # Quarter-end month → (filing month, filing day)
     TAX_DEADLINE = {3: (4, 20), 6: (7, 20), 9: (10, 20), 12: (1, 30)}
+    confirmed_filings = _load_confirmed_tax_filings()
+
+    # Prefer the gestor's confirmed figures (aletheia-codex.md §8) for any filing still
+    # upcoming — historical averaging is only a fallback for quarters not yet confirmed.
+    confirmed_labels_added = set()
+    next_filing = min(
+        (f for f in confirmed_filings if f['due_date'] >= today),
+        key=lambda f: f['due_date'],
+        default=None,
+    )
+    if next_filing:
+        for match_key, label in (('iva', 'IVA'), ('mod130', 'Mod 130 (Income Tax)'), ('mod111', 'Mod 111 (Withholding)')):
+            d = next_filing['due_date']
+            upcoming.append({
+                'label':    label,
+                'date':     str(d),
+                'amount':   round(next_filing[match_key], 2),
+                'currency': 'EUR',
+                'type':     'tax',
+                'account':  QUARTERLY_ACCOUNT,
+                'days':     (d - today).days,
+                'source':   'confirmed (gestor)',
+            })
+            confirmed_labels_added.add(label)
 
     for keyword, label, bill_type in quarterly:
+        if label in confirmed_labels_added:
+            continue
         matches = [r for r in exp_rows if keyword.lower() in r['desc'].lower() or keyword.lower() in r['path'].lower()]
         if not matches:
             continue
+        import calendar
+
         last = max(matches, key=lambda x: x['date'])
         last_date = date.fromisoformat(last['date'])
         avg_amt = sum(r['eur'] for r in matches) / len(matches)
@@ -313,7 +372,6 @@ def _compute_upcoming(rows, today, owner_draw):
         next_m = last_date.month + 3
         next_y = last_date.year + (next_m - 1) // 12
         next_m = ((next_m - 1) % 12) + 1
-        import calendar
 
         if bill_type == 'tax' and next_m in TAX_DEADLINE:
             # Use official filing deadline (20th of month after quarter-end, or 30 Jan for Q4)
@@ -323,6 +381,7 @@ def _compute_upcoming(rows, today, owner_draw):
         else:
             max_day = calendar.monthrange(next_y, next_m)[1]
             d = date(next_y, next_m, min(last_date.day, max_day))
+
         if d >= today:
             entry_amt = avg_amt
             extra = {}
@@ -344,12 +403,88 @@ def _compute_upcoming(rows, today, owner_draw):
                 'amount':   round(entry_amt, 2),
                 'currency': 'EUR',
                 'type':     bill_type,
+                'account':  QUARTERLY_ACCOUNT,
                 'days':     (d - today).days,
                 **extra,
             })
 
     upcoming.sort(key=lambda x: x['date'])
     return upcoming[:15]
+
+
+_FILING_ROW_RE = __import__('re').compile(
+    r"^\|\s*Q(\d)\s+(\d{4})\s*\|\s*€?([\d,\.]+)\s*\|\s*€?([\d,\.]+)\s*\|\s*€?([\d,\.]+)\s*\|",
+    __import__('re').MULTILINE,
+)
+
+# Quarter number → (filing month, filing day); Q4 files in January of the following year
+_QUARTER_DEADLINE = {1: (4, 20), 2: (7, 20), 3: (10, 20), 4: (1, 30)}
+
+
+def _load_confirmed_tax_filings():
+    """Parse the Quarterly Filing Log (aletheia-codex.md §8) for gestor-confirmed amounts."""
+    content_dir = Path(os.getenv("STUDIO_CONTENT_DIR", Path(__file__).parents[2] / "context"))
+    path = content_dir / "finance" / "aletheia-codex.md"
+    if not path.exists():
+        return []
+    text = path.read_text(encoding="utf-8")
+
+    filings = []
+    for m in _FILING_ROW_RE.finditer(text):
+        q, year, iva, mod130, mod111 = m.groups()
+        q, year = int(q), int(year)
+        file_m, file_d = _QUARTER_DEADLINE.get(q, (None, None))
+        if file_m is None:
+            continue
+        file_y = year + (1 if q == 4 else 0)
+        try:
+            due_date = date(file_y, file_m, file_d)
+        except ValueError:
+            continue
+        filings.append({
+            'quarter':  f'Q{q} {year}',
+            'due_date': due_date,
+            'iva':      float(iva.replace(',', '')),
+            'mod130':   float(mod130.replace(',', '')),
+            'mod111':   float(mod111.replace(',', '')),
+        })
+    return filings
+
+
+def _load_expected_income(today):
+    """Manually-maintained forecast of incoming payments — context/finance/expected_income.yaml."""
+    try:
+        import yaml
+    except ImportError:
+        return []
+    content_dir = Path(os.getenv("STUDIO_CONTENT_DIR", Path(__file__).parents[2] / "context"))
+    path = content_dir / "finance" / "expected_income.yaml"
+    if not path.exists():
+        return []
+    try:
+        data = yaml.safe_load(path.read_text()) or {}
+    except Exception:
+        return []
+
+    entries = []
+    for item in (data.get('income') or []):
+        try:
+            d = date.fromisoformat(str(item['date']))
+        except Exception:
+            continue
+        if d < today:
+            continue
+        entries.append({
+            'label':      item.get('label', 'Expected income'),
+            'date':       str(d),
+            'amount':     float(item.get('amount', 0)),
+            'currency':   item.get('currency', 'EUR'),
+            'account':    item.get('account', 'Unknown'),
+            'type':       'income',
+            'confidence': item.get('confidence', 'estimated'),
+            'days':       (d - today).days,
+        })
+    return entries
 
 
 def _is_gzip(filepath):

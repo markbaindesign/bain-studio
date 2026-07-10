@@ -72,7 +72,8 @@ graph TD
     P["💰 PLUTUS\nFinance · Invoicing · Tax · Cashflow\n/plutus · /harvest"]
     P --> P1["Poros — Invoicer · /poros"]
     P --> P2["Euporia — Tax Prep · /euporia"]
-    P --> P3["Penia — Cashflow · /penia"]
+    P --> P3["Cashflow Projection · /cashflow-projection"]
+    P --> P4["Account Forecast · /account-forecast"]
 
     UTIL["🔧 SHARED UTILITIES\nCopywriter · Mnemosyne · Memory\nWeb Researcher · Notifier"]
 
@@ -116,7 +117,8 @@ graph TD
 | Kairos | Iris | `/kairos` | ✓ Built |
 | Poros | Plutus | `/poros` | ✓ Built |
 | Euporia | Plutus | `/euporia` | ✓ Built |
-| Penia | Plutus | `/penia` | ✓ Built |
+| Cashflow Projection | Plutus | `/cashflow-projection` | ✓ Built |
+| Account Forecast | Plutus | `/account-forecast` | ✓ Built |
 
 ### Shared utilities
 

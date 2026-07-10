@@ -228,6 +228,7 @@ def main():
     parser.add_argument("--quarter", "-q", type=int, choices=[1, 2, 3, 4])
     parser.add_argument("--year", "-y", type=int, default=date.today().year)
     parser.add_argument("--dry-run", action="store_true", help="Preview only, no changes")
+    parser.add_argument("--gmail", action="store_true", help="Also download Gmail invoice attachments")
     args = parser.parse_args()
 
     q = args.quarter or current_quarter()
@@ -240,7 +241,16 @@ def main():
     download_harvest_invoices(q, y, vendes, dry)
     sort_loose(q, y, vendes, compres, dry)
 
-    print("\nDone. Run /ivas-prep to complete Gmail step.")
+    if args.gmail:
+        try:
+            from gmail_download import run as gmail_run
+            gmail_run(q, y, dry)
+        except ImportError as e:
+            print(f"\nGmail download unavailable: {e}")
+            print("Run: python3 studio/tools/ivas-prep/gmail_download.py --quarter", q)
+    else:
+        print("\nDone. Run with --gmail to also pull expense invoices from Gmail.")
+        print("  (requires credentials.json — see gmail_download.py for setup)")
 
 
 if __name__ == "__main__":

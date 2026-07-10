@@ -176,7 +176,7 @@ Every quarter, without being asked, Plutus produces three documents: a profit-pe
 
 - **Euporia** *(Tax Prep)* -- attendant of Plutus, spirit of prosperity through careful management and foresight. Maintains the quarterly record required for Modelo 303 (IVA) and Modelo 130 (IRPF). Knows the autónomo tax framework, tracks deductible expenses, and produces a clean summary for Mark's gestora or direct filing.
 
-- **Penia** *(Cashflow)* -- companion of Plutus, spirit of scarcity and need -- not as an enemy but as a warning. She models the risk so it never actually arrives. Models income against outgoings, projects the next 90 days, flags break-even risk, and maintains a running view of studio profitability. Queries Mnemosyne for pipeline data to model future income. Where Poros ensures the money comes in, Penia ensures the studio never forgets it can go out.
+- **Cashflow Projection** *(Cashflow)* -- companion of Plutus. Models risk before it arrives. Models income against outgoings, projects the next 90 days, flags break-even risk, and maintains a running view of studio profitability. Queries Mnemosyne for pipeline data to model future income. Where Poros ensures the money comes in, Cashflow Projection ensures the studio never forgets it can go out.
 
 ---
 
@@ -270,7 +270,7 @@ The studio does not market itself. It documents itself. The pantheon turns craft
 | Iris | Social | Kairos | Post scheduler |
 | Plutus | Finance | Poros | Invoicer |
 | Plutus | Finance | Euporia | Tax prep |
-| Plutus | Finance | Penia | Cashflow |
+| Plutus | Finance | Cashflow Projection | Cashflow |
 
 **Shared household members (invocable by all gods):**
 The Copywriter · Mnemosyne · The Memory · The Web Researcher · The Notifier

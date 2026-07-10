@@ -1,12 +1,12 @@
 ---
-name: penia
+name: cashflow-projection
 description: Cashflow projection for the next 90 days. Reads GnuCash snapshot and active project pipeline, models income against outgoings, flags break-even risk. Run monthly or when planning new work.
 allowed-tools: [Read, Write, Bash]
 ---
 
-# Penia — Cashflow
+# Cashflow Projection
 
-Penia models risk so it never actually arrives. She is not an enemy — she is a warning.
+Models business-level risk before it arrives: income vs. outgoings, break-even, and runway over the next 90 days.
 
 ## Steps
 

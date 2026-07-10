@@ -16,7 +16,51 @@ Sets up a self-driving task queue backed by a stop hook. Works one task at a tim
 
 ---
 
-## Step 0 — Check for --at flag
+## Step 0 — Parse flags
+
+Three optional flags: `--at` (schedule a future run), `--for` (run for a fixed duration), `--use` (consume at most N% of quota).
+
+### --for flag
+
+If the arguments contain `--for DURATION` (e.g. `/task-looper --for 1h BSTD`, `--for 30m`):
+
+Parse the duration string — accepts `Nh` (hours), `Nm` (minutes), or `NhMm` (e.g. `1h30m`). Calculate:
+
+```python
+deadline_iso = (datetime.now() + timedelta(seconds=parsed_seconds)).isoformat()
+```
+
+Store this as `FOR_DEADLINE`. The looper starts immediately — the duration just caps when new tasks can begin. Continue to Step 1. The deadline is written to the state file in Step 3.
+
+---
+
+### --use flag
+
+If the arguments contain `--use N%` (e.g. `/task-looper --use 10% BSTD`):
+
+Read current usage from the rate limit file and calculate the stop threshold:
+
+```bash
+python3 - <<'PYEOF'
+import json
+from pathlib import Path
+rl = Path.home() / ".claude/ratelimit-current.json"
+if rl.exists():
+    data = json.loads(rl.read_text())
+    current = data.get("current_pct", 0)
+    budget = {N}  # the number from --use N%
+    stop_at = min(100, current + budget)
+    print(f"STOP_AT_PCT:{stop_at}")
+PYEOF
+```
+
+Store the `STOP_AT_PCT` value. Continue to Step 1. Written to the state file in Step 3.
+
+---
+
+---
+
+### --at flag
 
 If the arguments contain `--at TIME PREFIX` (e.g. `/task-looper --at 20:10 WTF`):
 
@@ -128,83 +172,91 @@ Then read `.claude/asana-mirror.md` and check for any tasks that were previously
 
 ---
 
-## Step 1c — Check usage headroom
+## Step 1c — Check deadline and usage headroom
 
-Before doing any work, check if there is enough token headroom to run a task. If usage is high, auto-schedule a re-run rather than starting work that will be cut off mid-task.
+Before doing any work, check the session deadline, then check token headroom.
+
+**Deadline check** — read the state file and stop if the quota has already reset:
 
 ```bash
 python3 - <<'PYEOF'
-import json, datetime, sys
+import datetime
 from pathlib import Path
 
-rl = Path.home() / ".claude/ratelimit-current.json"
-if not rl.exists():
-    sys.exit(0)  # no data — proceed
+state = Path(".claude/bd-task-looper.local.md")
+if not state.exists():
+    exit(0)
 
-data = json.loads(rl.read_text())
-pct = data.get("current_pct", 0)
-reset_ts = data.get("reset_ts")
+deadline = None
+for line in state.read_text().split("\n"):
+    if line.startswith("deadline:"):
+        val = line.split(":", 1)[1].strip()
+        if val:
+            deadline = datetime.datetime.fromisoformat(val)
+        break
 
-if pct < 85:
-    sys.exit(0)  # headroom OK — proceed
-
-if not reset_ts:
-    print(f"RATE_LIMITED: {pct}% used, no reset_ts available — stopping")
-    sys.exit(1)
-
-reset_dt = datetime.datetime.fromtimestamp(reset_ts)
-reset_h = reset_dt.hour + reset_dt.minute / 60
-
-# Work hours: 04:30–19:00. Only auto-schedule outside this window.
-if reset_h < 4.5 or reset_h >= 19:
-    reset_str = reset_dt.strftime("%H:%M")
-    print(f"SCHEDULE:{reset_str}")
-else:
-    print(f"WORK_HOURS:{reset_dt.strftime('%H:%M')}")
+if deadline and datetime.datetime.now() >= deadline:
+    print(f"PAST_DEADLINE:{deadline.strftime('%H:%M')}")
 PYEOF
 ```
 
-Capture the output and branch:
+If output starts with `PAST_DEADLINE:{TIME}`: the quota has reset and the session should not continue. Log, notify, and stop — do not output a promise:
 
-- **Output is empty / exit 0 with no output**: usage is fine, continue to Step 2.
-- **Output starts with `SCHEDULE:{TIME}`**: usage is high and reset falls outside work hours. Schedule a re-run:
+```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] deadline reached ({TIME}) — stopping before next task" >> ~/logs/task-looper.log
+python3 /media/data/dev/bain-studio/studio/notifier.py \
+  "task-looper: quota reset at {TIME} — stopped cleanly, queue paused." \
+  --priority normal --sender task-looper --project {PREFIX}
+```
+
+**Usage check** — read current usage, check against `stop_at_pct` if set, then log and proceed.
+
+```bash
+python3 - <<'PYEOF'
+import json, datetime
+from pathlib import Path
+
+rl = Path.home() / ".claude/ratelimit-current.json"
+pct, reset_str = "?", "unknown"
+if rl.exists():
+    data = json.loads(rl.read_text())
+    pct = data.get("current_pct", "?")
+    reset_ts = data.get("reset_ts")
+    reset_str = datetime.datetime.fromtimestamp(reset_ts).strftime("%Y-%m-%d %H:%M") if reset_ts else "unknown"
+
+# Check --use budget
+state = Path(".claude/bd-task-looper.local.md")
+stop_at = None
+if state.exists():
+    for line in state.read_text().split("\n"):
+        if line.startswith("stop_at_pct:"):
+            val = line.split(":", 1)[1].strip()
+            if val:
+                try:
+                    stop_at = float(val)
+                except ValueError:
+                    pass
+            break
+
+if stop_at is not None and isinstance(pct, (int, float)) and pct >= stop_at:
+    print(f"QUOTA_SPENT:{pct}:{stop_at}")
+else:
+    print(f"usage:{pct}:{reset_str}")
+PYEOF
+```
+
+Branch on output:
+- **`QUOTA_SPENT:{pct}:{threshold}`**: the `--use` budget is exhausted. Log, notify, and stop — do not output a promise:
   ```bash
-  # Fall back to Python sleep since `at` is not installed
-  RESET_TIME={TIME}   # e.g. 02:20
-  python3 - <<'EOF'
-  import time, subprocess, sys, datetime
-  from pathlib import Path
-  hh, mm = map(int, sys.argv[1].split(":"))
-  target = datetime.datetime.now().replace(hour=hh, minute=mm, second=0, microsecond=0)
-  delay = (target - datetime.datetime.now()).total_seconds()
-  if delay <= 0:
-      delay += 86400  # next day
-  project = sys.argv[2]
-  script = f"""import time, subprocess
-  time.sleep({int(delay)})
-  subprocess.run(["claude", "--dangerously-skip-permissions", "-p", "/task-looper"], cwd="{project}")
-  """
-  p = Path("/tmp/task-looper-scheduled.py")
-  p.write_text(script)
-  print(f"Scheduled in {int(delay)}s ({sys.argv[1]})")
-  EOF
-  python3 - "$RESET_TIME" "$(pwd)"
-  nohup python3 /tmp/task-looper-scheduled.py >> ~/logs/task-looper.log 2>&1 &
-  echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] rate-limited at {PCT}% — scheduled re-run at {TIME} (PID $!)" >> ~/logs/task-looper.log
+  echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] --use budget reached ({pct}% >= {threshold}%) — stopping before next task" >> ~/logs/task-looper.log
   python3 /media/data/dev/bain-studio/studio/notifier.py \
-    "task-looper: rate-limited at {PCT}%. Re-run scheduled at {TIME}." \
+    "task-looper: --use budget reached ({pct}% used) — stopped cleanly." \
     --priority normal --sender task-looper --project {PREFIX}
   ```
-  Then stop — do not output any promise. The stop hook will not re-inject because no promise was output.
-
-- **Output starts with `WORK_HOURS:{TIME}`**: usage is high but reset falls during work hours (04:30–19:00). Do not auto-schedule. Log and notify, then stop:
+- **`usage:{pct}:{reset_str}`**: within budget. Log and continue to Step 2:
   ```bash
-  echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] rate-limited at {PCT}% — reset at {TIME} is during work hours, not auto-scheduling" >> ~/logs/task-looper.log
-  python3 /media/data/dev/bain-studio/studio/notifier.py \
-    "task-looper: rate-limited at {PCT}%. Reset at {TIME} (work hours) — schedule manually." \
-    --priority high --sender task-looper --project {PREFIX}
+  echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] usage-start: {pct}% — resets {reset_str}" >> ~/logs/task-looper.log
   ```
-  Then stop.
 
 ---
 
@@ -231,6 +283,40 @@ Order the queue:
 
 ## Step 3 — Write the state file
 
+Calculate the deadline — the earlier of: the quota reset time, or `--for` duration if specified.
+
+```bash
+python3 - <<'PYEOF'
+import json, datetime, re
+from pathlib import Path
+
+# Quota reset time
+reset_deadline = None
+rl = Path.home() / ".claude/ratelimit-current.json"
+if rl.exists():
+    data = json.loads(rl.read_text())
+    ts = data.get("reset_ts")
+    if ts:
+        reset_deadline = datetime.datetime.fromtimestamp(ts)
+
+# --for duration (set in Step 0 as FOR_DEADLINE env var or inline variable)
+for_deadline = None
+for_str = "{FOR_DEADLINE}"  # populated by Step 0 if --for was given
+if for_str and for_str != "{FOR_DEADLINE}":
+    try:
+        for_deadline = datetime.datetime.fromisoformat(for_str)
+    except ValueError:
+        pass
+
+# Use whichever deadline is sooner
+candidates = [d for d in [reset_deadline, for_deadline] if d]
+if candidates:
+    print(min(candidates).isoformat())
+PYEOF
+```
+
+Capture the output as `{DEADLINE_ISO}`. If no output, leave blank.
+
 Write `.claude/bd-task-looper.local.md`. The first task in the queue goes in `current_task`; the rest go in the body, one ID per line.
 
 ```
@@ -241,11 +327,15 @@ iteration: 0
 max_iterations: 30
 project_prefix: {PREFIX}
 project_dir: {ABSOLUTE_PATH_TO_PROJECT}
+deadline: {DEADLINE_ISO}
+stop_at_pct: {STOP_AT_PCT}
 ---
 {SECOND_TASK_ID}
 {THIRD_TASK_ID}
 ...
 ```
+
+`stop_at_pct` is blank if `--use` was not given.
 
 If there is only one task, the body is empty.
 

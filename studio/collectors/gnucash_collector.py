@@ -88,19 +88,21 @@ def build_plutus_snapshot(data: dict) -> dict:
     current_month = now.strftime('%Y-%m')
     current_pl = next((m for m in g.get('monthly_pl', []) if m['month'] == current_month), None)
 
-    # Upcoming bills in the next 30 days
+    # Upcoming bills in the next 30 days (income entries are inflows, not obligations)
     upcoming_30 = [u for u in g.get('upcoming', []) if u.get('days', 999) <= 30]
+    obligations_30 = [u for u in upcoming_30 if u.get('type') != 'income']
 
-    # Liquid cash = Current Assets only (excludes Future Assets: IRPF, IVA, debts owed)
+    # Liquid cash — use the parser's own figure (excludes Suspense/Future Assets correctly)
     balances = g.get('balances', [])
-    liquid_eur = round(sum(
+    liquid_eur = g.get('liquid_eur', round(sum(
         b['eur'] for b in balances
         if b.get('name', '').startswith('Current Assets')
-    ), 2)
+    ), 2))
 
-    # Cashflow risk: upcoming 30d obligations vs liquid cash only
-    upcoming_total = sum(u['amount'] for u in upcoming_30)
-    balance_after  = liquid_eur - upcoming_total
+    # Cashflow risk: upcoming 30d obligations vs liquid cash, offset by expected incoming payments
+    upcoming_total = sum(u['amount'] for u in obligations_30)
+    income_total   = sum(u['amount'] for u in upcoming_30 if u.get('type') == 'income')
+    balance_after  = liquid_eur - upcoming_total + income_total
 
     return {
         'generated_at': data['generated_at'],
@@ -122,7 +124,10 @@ def build_plutus_snapshot(data: dict) -> dict:
         'upcoming_all': g.get('upcoming', []),
         'upcoming_30d': upcoming_30,
         'upcoming_30d_total': round(upcoming_total, 2),
+        'income_30d_total': round(income_total, 2),
         'balance_after_30d': round(balance_after, 2),
+        'expected_income': g.get('expected_income', []),
+        'bbva_forecast': g.get('bbva_forecast', {}),
 
         # Recent income (for pipeline context)
         'recent_income': g.get('recent_income', [])[:10],
@@ -159,10 +164,16 @@ def main():
     import calendar as _cal
     today = _date.today()
     month_end = str(_date(today.year, today.month, _cal.monthrange(today.year, today.month)[1]))
-    eom_total = sum(u['amount'] for u in snapshot['upcoming_30d'] if u['date'] <= month_end)
-    eom_balance = snapshot['liquid_eur'] - eom_total
-    print(f'  End-of-month obligations ({month_end}): €{eom_total:,.2f}')
+    eom_obligations = sum(u['amount'] for u in snapshot['upcoming_30d'] if u['date'] <= month_end and u.get('type') != 'income')
+    eom_income      = sum(u['amount'] for u in snapshot['upcoming_30d'] if u['date'] <= month_end and u.get('type') == 'income')
+    eom_balance = snapshot['liquid_eur'] - eom_obligations + eom_income
+    print(f'  End-of-month obligations ({month_end}): €{eom_obligations:,.2f}')
     print(f'  Liquid after month-end: €{eom_balance:,.2f}')
+
+    bbva = snapshot.get('bbva_forecast', {})
+    if bbva:
+        flag = '  ⚠ SHORTFALL' if bbva.get('shortfall') else ''
+        print(f'  BBVA EUR ...XXXX: €{bbva["balance"]:,.2f} now → €{bbva["balance_after_30d"]:,.2f} after 30d{flag}')
 
     errors = data.get('errors', [])
     if errors:

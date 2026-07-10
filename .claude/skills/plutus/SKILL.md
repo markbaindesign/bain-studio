@@ -91,9 +91,9 @@ Net take-home = (Revenue - Autónomo Quota) - IRPF withheld
 
 Output: pre-tax revenue, IVA collected (if any), IRPF withheld (if any), autónomo quota share, and net take-home.
 
-### 4. Penia — Viability check
+### 4. Cashflow projection — Viability check
 
-Penia is the spirit of scarcity and need — not as an enemy but as a warning. She models the risk so it never actually arrives.
+Models risk before it arrives: income vs. outgoings, break-even, and runway over the next 90 days.
 
 **Read the financial snapshot:**
 Read `{CONTENT_DIR}/finance/accounts.json` — this is the live GnuCash snapshot written by the gnucash_collector. If it does not exist or is more than 24 hours old, run `python3 studio/collectors/gnucash_collector.py` to refresh it.
@@ -189,4 +189,4 @@ Status: Ready for proposal gate
 
 **Financial persistence:** Every time a project's finances change (scope updated, hours revised, expense added), Plutus should be re-invoked to recalculate margin. The ledger grows with the project. Nothing is finalised until Plutus sees the actuals and agrees.
 
-**The household:** Poros (invoicer), Euporia (tax prep), and Penia (cashflow) are three sides of the same coin. Poros ensures the money comes in. Euporia ensures it's declared honestly. Penia ensures the studio never forgets it can run out.
+**The household:** Poros (invoicer), Euporia (tax prep), and Cashflow Projection are three sides of the same coin. Poros ensures the money comes in. Euporia ensures it's declared honestly. Cashflow Projection ensures the studio never forgets it can run out.

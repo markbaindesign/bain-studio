@@ -11,7 +11,8 @@ from flask import Flask, jsonify, send_file, request
 from dotenv import load_dotenv
 
 HERE = Path(__file__).resolve().parent
-load_dotenv(HERE / '.env')
+load_dotenv(HERE.parent / '.env')       # studio/.env (base config)
+load_dotenv(HERE / '.env', override=True)  # studio/dashboard/.env (local overrides)
 
 sys.path.insert(0, str(HERE))
 import gnucash_parser
@@ -58,7 +59,8 @@ def get_fx_rates():
         return _FX_FALLBACK, f"fallback hardcoded (live fetch failed: {e})"
 
 
-KF_SNAPSHOT = Path(__file__).resolve().parents[2] / 'context' / 'projects' / 'kf' / 'time_snapshot.json'
+_STUDIO_CONTENT_DIR = Path(os.getenv('STUDIO_CONTENT_DIR', Path(__file__).resolve().parents[2] / 'context'))
+KF_SNAPSHOT = _STUDIO_CONTENT_DIR / 'projects' / 'kf' / 'time_snapshot.json'
 
 
 @app.route('/')

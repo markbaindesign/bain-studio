@@ -91,7 +91,8 @@ Invoke in Claude Code with `/skill-name [args]`.
 | Skill | Invoke | What it does |
 |-------|--------|--------------|
 | `plutus` | `/plutus` | Margin check + tax awareness + invoicing |
-| `penia` | `/penia` | 90-day cashflow projection |
+| `cashflow-projection` | `/cashflow-projection` | 90-day cashflow projection |
+| `account-forecast` | `/account-forecast` | Per-account transaction forecast + insufficient-funds flags |
 | `euporia` | `/euporia` | Quarterly tax prep (Mod 303 IVA, Mod 130 IRPF) |
 | `harvest-notes` | `/harvest-notes` | Harvest tagged ideas from Obsidian daily notes |
 

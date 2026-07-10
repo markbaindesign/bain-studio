@@ -31,7 +31,8 @@ Creates a new project directory, initialises git, and wires up studio tooling. I
 3. **Git init**
 4. **Writes** a minimal `.gitignore` (`.env`, `node_modules/`, `__pycache__/`, etc.)
 5. **Initial commit** — `init: scaffold {name}`
-6. **Creates a Shutter profile** — `shutter-profile create "{name}" "{path}/qa/qa-inbox"`, also creating the `qa/qa-inbox` directory. Skipped silently if `shutter-profile` is not on PATH.
+6. **Creates a Bitbucket repo and pushes** — runs `bb-repo-create --name "{name}" --workspace markbaindesign --branch main`, unconditionally (not asked first). Creates a private repo, sets `origin`, pushes the initial commit, and sets `main` as the Bitbucket-side default branch. A failure here doesn't abort the scaffold — it's reported and the directory/git/commit work from steps 2-5 stands regardless. See [bb-repo-create.md](../../utilities/bb-repo-create.md).
+7. **Creates a Shutter profile** — `shutter-profile create "{name}" "{path}/qa/qa-inbox"`, also creating the `qa/qa-inbox` directory. Skipped silently if `shutter-profile` is not on PATH.
 
 ## Output
 
@@ -41,6 +42,7 @@ scaffold-dir: /home/bain/code/vvv/clients/www/acme-corp
   ✓ git init
   ✓ .gitignore written
   ✓ initial commit
+  ✓ Bitbucket repo created and pushed: https://bitbucket.org/markbaindesign/acme-corp
   ✓ shutter profile 'Acme Corp' created
 ```
 
