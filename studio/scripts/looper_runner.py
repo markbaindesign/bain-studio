@@ -111,7 +111,8 @@ def run_window(label: str) -> None:
 
     with run_log.open("w") as out:
         r = subprocess.run(
-            ["claude", "--dangerously-skip-permissions", "-p", "/studio-looper --yes"],
+            ["claude", "--dangerously-skip-permissions", "--model", "sonnet",
+             "-p", "/studio-looper --yes"],
             cwd=STUDIO, stdout=out, stderr=subprocess.STDOUT,
         )
 
