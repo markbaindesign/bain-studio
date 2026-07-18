@@ -88,6 +88,18 @@ def task_log_size() -> int:
     return TASK_LOG.stat().st_size if TASK_LOG.exists() else 0
 
 
+def notify(msg: str, priority: str = "normal") -> None:
+    try:
+        subprocess.run(
+            [sys.executable, "studio/notifier.py", msg,
+             "--priority", priority, "--sender", "studio-task-looper",
+             "--project", "SL", "--channel", "looper"],
+            cwd=STUDIO, timeout=60,
+        )
+    except Exception as e:
+        log(f"notify failed: {e}")
+
+
 def run_window(label: str) -> None:
     if not presync():
         log(f"window {label}: pre-sync FAILED — launching looper anyway (it re-syncs itself)")
@@ -107,6 +119,11 @@ def run_window(label: str) -> None:
     verdict = "task-looper.log grew (activity confirmed)" if worked else \
               "task-looper.log DID NOT GROW — run likely did nothing, check the run log"
     log(f"window {label}: looper exited {r.returncode} after run — {verdict}")
+    notify(
+        f"looper window '{label}' finished (exit {r.returncode}). "
+        f"{'Activity confirmed.' if worked else 'WARNING: no activity logged - check ' + run_log.name}",
+        priority="normal" if worked else "high",
+    )
 
 
 def main() -> None:
@@ -135,6 +152,7 @@ def main() -> None:
             sleep_until(hhmm)
             run_window(hhmm)
         log("all windows done — runner exiting, nothing further scheduled")
+        notify("looper runner done: all scheduled windows finished, nothing further scheduled.")
     finally:
         release_lock()
 
