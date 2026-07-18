@@ -12,7 +12,7 @@ and advances the status through the field. Never marks tasks done — moves to "
 
 Must be invoked from `/media/data/dev/bain-studio`.
 
-State files are **session-scoped**: `.claude/studio-looper.{session_id}.local.md`, named at
+State files are **session-scoped**: `/tmp/studio-looper/studio-looper.{session_id}.local.md`, named at
 creation time from `$CLAUDE_CODE_SESSION_ID`. This lets an interactive session and a headless
 session share the same working directory without one session's Stop hook hijacking the other's
 queue — each session's hook only ever touches the file matching its own session_id. A
@@ -116,9 +116,11 @@ from pathlib import Path
 
 target_prefix = "{TARGET_PREFIX}"
 now = datetime.datetime.now()
+INACTIVITY_MINUTES = 15  # no progress this long, deadline or not => treat as dead
 
-for path in glob.glob(".claude/studio-looper.*.local.md"):
-    text = Path(path).read_text()
+for path in glob.glob("/tmp/studio-looper/studio-looper.*.local.md"):
+    p = Path(path)
+    text = p.read_text()
     fm = text.split("---")[1] if text.count("---") >= 2 else ""
     def field(name):
         m = re.search(rf"^{name}:\s*(.*)$", fm, re.MULTILINE)
@@ -137,8 +139,13 @@ for path in glob.glob(".claude/studio-looper.*.local.md"):
         try: deadline = datetime.datetime.fromisoformat(deadline_s)
         except ValueError: pass
 
+    mtime = datetime.datetime.fromtimestamp(p.stat().st_mtime)
+    idle_minutes = (now - mtime).total_seconds() / 60
+
     if deadline and now >= deadline:
-        print(f"STALE:{path}:{deadline_s}:{session}:{current_task}")
+        print(f"STALE:{path}:{deadline_s}:{session}:{current_task}:deadline")
+    elif idle_minutes >= INACTIVITY_MINUTES:
+        print(f"STALE:{path}:{deadline_s}:{session}:{current_task}:inactive-{idle_minutes:.0f}m")
     else:
         print(f"LIVE:{path}:{deadline_s}:{session}:{current_task}")
 PYEOF
@@ -146,33 +153,52 @@ PYEOF
 
 For each line printed:
 
-- **`LIVE:...`** — another session is actively working this exact target queue and its deadline
-  hasn't passed. **Stop the run.** Tell Mark: "studio-looper [{TARGET_PREFIX}] is already running
-  in session {session}, currently on {current_task} (deadline {deadline}). Not starting a second
-  run against the same queue — use `--test` to test safely, or wait for it to finish." Do not
-  delete the other session's file.
-- **`STALE:...`** — the deadline has passed; this is a crashed/killed/orphaned session, not live
-  work. Confirm it's genuinely orphaned before clearing: check `current_task`'s Looper Status in
-  the target mirror. If it's already past `Queue` (e.g. `In Progress`), something may still be
-  mid-flight — stop and tell Mark rather than clearing. If it's still `Queue` (never advanced),
-  the old session did nothing useful:
-  ```bash
-  rm -f {path}
-  echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{TARGET_PREFIX}] Removed stale state file ({path}, deadline {deadline_s}, session_id {session}) — orphaned session, {current_task} still Queue" >> ~/logs/task-looper.log
-  ```
-  Then continue — do not stop the run over a stale file.
+- **`LIVE:...`** — another session is actively working this exact target queue: its deadline
+  hasn't passed AND its state file has been touched within the last 15 minutes. **Stop the run.**
+  Tell Mark: "studio-looper [{TARGET_PREFIX}] is already running in session {session}, currently
+  on {current_task} (deadline {deadline}). Not starting a second run against the same queue — use
+  `--test` to test safely, or wait for it to finish." Do not delete the other session's file.
+- **`STALE:...`** — either the deadline has passed, or the state file hasn't been touched in 15+
+  minutes (the reason is tagged on the line: `deadline` or `inactive-{N}m`). Both mean the same
+  thing operationally: no live session is actually advancing this queue anymore — crashed, killed,
+  or the interactive session behind it was ended by Mark without the loop reaching a promise. This
+  is now the **default, automatic path** — no need to ask Mark before clearing it. Before clearing,
+  do one safety check: read `current_task`'s Looper Status in the target mirror.
+  - If it's already past `Queue` (e.g. `In Progress`), something may still be mid-flight in a way
+    the mirror hasn't caught up with — stop and tell Mark rather than clearing.
+  - If it's still `Queue` (never advanced), the old session did nothing useful — clear it and
+    continue automatically, no confirmation needed:
+    ```bash
+    rm -f {path}
+    echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{TARGET_PREFIX}] Removed stale state file ({path}, deadline {deadline_s}, session_id {session}, reason {reason_tag}) — {current_task} still Queue, restarting queue fresh" >> ~/logs/task-looper.log
+    ```
+  Then continue straight to Step 1b — do not stop the run over a stale file, and do not wait for
+  further input.
 - **No output at all** — no conflict, proceed normally.
 
 ---
 
 ## Step 1b — Sync target project
 
+Full-project syncs regularly exceed the default 120s command timeout (the SL project fetches
+~100 tasks with comments). **Always pass an explicit long timeout** so the sync completes in the
+foreground:
+
 ```bash
+# Bash tool call MUST set timeout: 600000 — never let this get auto-backgrounded
 python3 studio/sync.py --project {TARGET_PREFIX}
 ```
 
-If this fails because the {TARGET_PREFIX} project GID is not configured, stop and tell Mark to
-complete the setup in `{TARGET_DIR}/CLAUDE.md`.
+**Never end your turn while a sync is in flight.** In a headless (`-p`) session, ending the turn
+kills the process — a backgrounded sync's completion notification has no session left to wake,
+and the whole run dies silently (this exact failure ate the 2026-07-18 20:00 scheduled window).
+If a sync does get backgrounded anyway, block on it in the foreground:
+```bash
+until [ -n "$(tail -c 100 {OUTPUT_FILE} 2>/dev/null | grep 'Done')" ]; do sleep 5; done
+```
+
+If the sync fails because the {TARGET_PREFIX} project GID is not configured, stop and tell Mark
+to complete the setup in `{TARGET_DIR}/CLAUDE.md`.
 
 ---
 
@@ -243,18 +269,15 @@ PYEOF
 
 If queue is empty: notify and stop.
 
-**If `--health-check`: skip the confirmation prompt below and run Step 2b instead. Do not proceed to Step 3.**
+**If `--health-check`: run Step 2b instead. Do not proceed to Step 3.**
 
-Present the queue for confirmation (unless `--yes` or `--health-check`):
+**Never ask for confirmation.** Print the queue as a one-off status line and proceed straight to
+Step 3 — the looper's entire purpose is unattended running, and stopping to ask defeats it:
 ```
-Studio Looper [{TARGET_PREFIX}] — {N} tasks queued:
-
-  1. MCF-007  [High] — Add blog category filter          (MCF)
-  2. NORE-029 [High] — Fix broken contact form           (NORE)
-  3. BSTD-021 [Low]  — Add API cost tracker              (BSTD)
-
-Proceed? Press Enter to confirm, or list IDs to skip (e.g. "NORE-029 BSTD-021"):
+Studio Looper [{TARGET_PREFIX}] — {N} tasks queued: MCF-007, NORE-029, BSTD-021. Starting.
 ```
+(The old `--yes` flag is accepted for backwards compatibility but is now the default and only
+behaviour. To exclude tasks from a run, change their Looper Status in Asana before invoking.)
 
 ---
 
@@ -296,7 +319,9 @@ any Looper Status, do not sync anything else, do not proceed to Step 3 or Step 4
 
 Get this session's own ID from the `CLAUDE_CODE_SESSION_ID` environment variable — do not invent
 one, and do not use `__pending__`. Write it to
-`.claude/studio-looper.{CLAUDE_CODE_SESSION_ID}.local.md`. First task in `current_task`, rest in body:
+`/tmp/studio-looper/studio-looper.{CLAUDE_CODE_SESSION_ID}.local.md` (`mkdir -p /tmp/studio-looper` first).
+State lives in /tmp, NOT `.claude/` — Claude Code hard-prompts on any write to the project root's
+`.claude/` ("sensitive file"), which kills unattended runs. First task in `current_task`, rest in body:
 
 ```
 ---
@@ -361,14 +386,49 @@ cd {PROJECT_DIR}
 Read `{PROJECT_DIR}/.claude/asana-mirror.md` for task Notes, Blockers, Dependencies.
 Read `{PROJECT_DIR}/CLAUDE.md` for the project's tech stack and build instructions.
 
+**Duplicate-work guard.** Before doing anything, check the task's Progress history and comments.
+If the task was already completed ("Ready for review {date}" or equivalent) and has been
+re-queued with **no new instructions** (Notes unchanged, no new comment explaining what more is
+wanted), do NOT redo the work. Move it back to Review with a note: "Previously completed {date}
+({commit/branch}); re-queued without new instructions — tell me what needs to change." Working a
+task twice within minutes/days because its status bounced is wasted quota and creates duplicate
+commits.
+
+**Target routing guard.** The task must be worked in the codebase it actually belongs to:
+- Resolve the home project ONLY from the task's ID prefix via the registry — **never** by
+  grepping codebases for plausible-looking code. A code match in the wrong repo is how a task
+  meant for one project gets committed to another.
+- If the prefix resolves to a project with no codebase (e.g. a native SL task), or the named
+  target isn't registered in `studio/projects.json`, mark **Blocked** asking Mark to register or
+  name the repo. Do not guess.
+- If the task names a specific site/property (e.g. a mini-site, subdomain, or microsite) and the
+  resolved repo serves a *different* site — a shared Asana board does NOT mean a shared codebase —
+  mark **Blocked** and ask which repo the target lives in, unless the mini-site's location is
+  explicitly documented in the project's CLAUDE.md.
+
 ### 4c. Work
 
-Do the work. One commit when done:
+All work happens on a **session review branch — never on develop/main directly, and never
+pushed**:
+
+```bash
+cd {PROJECT_DIR}
+# First task in this repo this session: create the branch off the repo's base branch.
+# Branch is named after the looper session ID (first 8 chars).
+git checkout -b looper/{SESSION_ID_SHORT} 2>/dev/null || git checkout looper/{SESSION_ID_SHORT}
+```
+
+Do the work. One commit per task on that branch:
 ```bash
 git add <specific files>
-git commit -m "..."
-git push origin develop
+git commit -m "... ({TASK_ID})"
 ```
+
+**Do NOT push the branch. Do NOT merge it.** It stays local for Mark's review — merging and
+pushing are review-time decisions that belong to Mark. The Progress note must name the branch and
+commit so Mark can find it (`git log looper/{SESSION_ID_SHORT}`). If the repo has uncommitted
+WIP that overlaps the files you must touch, mark the task Blocked instead of entangling the WIP
+in a looper commit.
 
 ### 4d. Assess completion
 
@@ -464,7 +524,7 @@ python3 /media/data/dev/bain-studio/studio/notifier.py \
 
 ## How the loop works
 
-After each promise, the stop hook reads `.claude/studio-looper.{session_id}.local.md` (the file
+After each promise, the stop hook reads `/tmp/studio-looper/studio-looper.{session_id}.local.md` (the file
 matching the firing session's own ID — never another session's), resolves the next task's project
 dir from its prefix, and re-injects a prompt carrying `{TARGET_PREFIX}` forward. Queue is empty
 when the body is empty — hook deletes its state file and notifies Mark.
@@ -474,7 +534,12 @@ when the body is empty — hook deletes its state file and notifies Mark.
 ## Guard rails
 
 - Never mark a task DONE in Asana — move to Review (Looper Status) and reassign to Mark
-- Never commit to main/master
+- All commits go on the local `looper/{session_id_short}` branch — never on develop/main/master,
+  never pushed, never merged. Review of the branch is Mark's job.
+- Never guess a task's target repo from code searches — registry prefix resolution only; blocked
+  if ambiguous (see Step 4b routing guard)
+- Never redo already-completed work on a re-queued task without new instructions (see Step 4b
+  duplicate-work guard)
 - Never push secrets
 - One commit per task
 - If prefix lookup fails, mark blocked immediately
@@ -483,3 +548,9 @@ when the body is empty — hook deletes its state file and notifies Mark.
   this skill safely instead of running a second `--project SL` (or default) invocation.
 - **A permission/access failure is never a reason to stop the loop.** If Edit/Write/Bash is denied on the project directory or mirror (missing `additionalDirectories` entry, git auth failure, sandboxed path, etc.), do not wait for interactive approval. Log a WARNING to `~/logs/task-looper.log`, mark the task Blocked with the specific access error as the reason, sync, and output the `_BLOCKED` promise so the queue advances to the next task. Skipping a task (or, if the whole project directory is inaccessible, every task under that prefix) is always correct; halting the loop is never correct.
 - Output the promise only when genuinely complete or blocked
+- **Never run two sync.py invocations for the same project concurrently** (e.g. one backgrounded,
+  one new). sync.py reads the mirror at start and rewrites it at the end — overlapping runs race,
+  and the loser rewrites the mirror with stale pre-push Asana state, silently reverting Looper
+  Status edits. Wait for any in-flight sync of that project to finish before editing its mirror
+  or starting another sync. After a batch of status changes, verify the push landed (sync output
+  "Pushed to {ID}", or the Asana API directly) rather than assuming.

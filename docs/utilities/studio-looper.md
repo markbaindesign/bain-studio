@@ -69,10 +69,16 @@ Tasks added to the Studio Looper project with no Looper Status are automatically
 
 ## State file
 
-`.claude/studio-looper.{session_id}.local.md` in the studio root — **session-scoped**, named
+`/tmp/studio-looper/studio-looper.{session_id}.local.md` — **session-scoped**, named
 from `$CLAUDE_CODE_SESSION_ID` at creation time (Step 3 of the skill). Written by the skill,
 read and advanced by the hook. Queue entries are bare task IDs (`MCF-007`, `NORE-029`). The hook
 resolves project paths at runtime via `studio/projects.json`.
+
+State moved out of `.claude/` on 2026-07-18: Claude Code hard-prompts on any write to the
+project root's `.claude/` directory ("sensitive file"), regardless of allow rules or permission
+mode, which broke unattended runs. `/tmp` writes never prompt. Loss of state on reboot is
+acceptable — a rebooted machine has no live loop to resume, and the concurrency guard treats a
+missing file as no conflict. The hook auto-migrates any old-location state file it finds.
 
 Session-scoping exists because two Claude Code sessions can share the same working directory
 (e.g. one interactive, one headless `--dangerously-skip-permissions` run). Before the fix, both
@@ -82,18 +88,16 @@ from whichever session actually started it. Naming the file after the session th
 removes the race entirely: each session's hook only ever reads/writes its own file.
 
 A **concurrency guard** (Step 1a) additionally refuses to start a second live run against the
-same `target_prefix` even under this scheme — it globs `.claude/studio-looper.*.local.md`,
-and if it finds another file targeting the same queue with a still-future deadline, it stops
-and reports rather than proceeding. Stale files (deadline passed, task never advanced past
-Queue) are auto-cleaned.
+same `target_prefix` even under this scheme — it globs `/tmp/studio-looper/studio-looper.*.local.md`,
+and if it finds another file targeting the same queue with a still-future deadline AND recent
+activity (touched within 15 minutes), it stops and reports rather than proceeding. Stale files
+(deadline passed, or 15+ minutes inactive, task never advanced past Queue) are auto-cleaned
+without confirmation.
 
-**Known limitation:** on an interactive (non-headless) session, creating this file for the first
-time each session triggers one unavoidable "Do you want to create X?" confirmation — Claude Code
-hard-codes an interactive prompt for any *new* file under a `.claude/` directory regardless of
-permission mode or allow-list rules (only `--dangerously-skip-permissions` bypasses it). This is
-a one-time-per-session prompt, not a recurring interruption: every subsequent update to the same
-file happens via the hook's own shell redirection (not a Claude tool call), so it never re-prompts
-mid-loop. For genuinely unattended runs, use `--at` or launch headless directly — see below.
+The old "one unavoidable prompt per session" limitation is gone: it was caused by the state file
+living under `.claude/`, which Claude Code treats as sensitive and always prompts on. With state
+in `/tmp` and correctly-written allow rules (`Edit(**)` globs, `//`-prefixed absolute paths),
+interactive runs are fully prompt-free.
 
 ## Test mode
 
