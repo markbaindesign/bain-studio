@@ -408,12 +408,17 @@ commits.
 
 ### 4c. Work
 
-**Escalation ladder.** Headless runs start on the cheapest model. For routine execution (clear
-task, clear repo, mechanical change) just do the work. When a task needs real judgment —
-architecture choices, ambiguous scope, unfamiliar stack, risk of touching the wrong thing —
-consult the **advisor tool** first if it's available in the session. If the advisor doesn't
-resolve it (or isn't available), mark the task **Blocked** with the specific question rather than
-guessing. Cheap model + block-on-ambiguity beats expensive mistakes.
+**Escalation ladder.** Headless runs start on the cheapest model (haiku). Escalate only as far
+as needed:
+1. Routine execution (clear task, clear repo, mechanical change) — just do the work.
+2. Real judgment needed (architecture choices, ambiguous scope, unfamiliar stack, wrong-repo
+   risk) — consult the **advisor tool** (configured as sonnet) if available in the session.
+3. Advisor can't settle it and the decision is genuinely high-stakes — one-shot fable consult:
+   ```bash
+   claude --model fable -p "Concise question with the relevant context pasted in"
+   ```
+   Use sparingly; this is the expensive rung.
+4. Still unresolved — mark the task **Blocked** with the specific question rather than guessing.
 
 All work happens on a **session review branch — never on develop/main directly, and never
 pushed**:
