@@ -2,7 +2,7 @@ import gzip
 import xml.etree.ElementTree as ET
 from fractions import Fraction
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 import os
 
@@ -23,18 +23,26 @@ def _finance_data_dir():
 
 
 def _load_overheads():
+    """Fixed costs are itemised by cadence (monthly/quarterly/annual) in
+    overheads.yaml; the monthly-equivalent total is computed here, not read as a
+    separately hand-maintained number -- that drift is exactly how Gestor ended up
+    double-counted as monthly when it's actually quarterly (2026-07-10)."""
     import yaml
     oh_path = _finance_config_dir() / "overheads.yaml"
     if not oh_path.exists():
         raise RuntimeError(f"overheads.yaml not found at {oh_path} -- no hardcoded fallback")
     docs = list(yaml.safe_load_all(oh_path.read_text()))
-    data = next((d for d in docs if isinstance(d, dict) and "reference_totals" in d), {})
-    ref = data["reference_totals"]
-    return (
-        ref["owner_draw_monthly"],
-        ref["breakeven_allin"],
-        ref["fixed_costs_approx"],
-    )
+    data = next((d for d in docs if isinstance(d, dict) and "monthly_fixed" in d), {})
+
+    monthly_total   = sum(data.get("monthly_fixed", {}).values())
+    quarterly_total = sum(data.get("quarterly_fixed", {}).values()) / 3
+    annual_total    = sum(data.get("annual_fixed", {}).values()) / 12
+    fixed_costs_approx = round(monthly_total + quarterly_total + annual_total, 2)
+
+    owner_draw = data["owner_draw_monthly"]
+    breakeven_allin = round(fixed_costs_approx + owner_draw + data["breakeven_buffer"], 2)
+
+    return (owner_draw, breakeven_allin, fixed_costs_approx)
 
 
 NS = {
@@ -49,7 +57,11 @@ NS = {
 def _load_upcoming_patterns():
     """Recurring bill -> billing account map, edited as data, not code -- see
     FINANCE_CONFIG_DIR/recurring-transactions.yaml. No hardcoded fallback: billing-
-    account moves (BBVA -> Wise etc.) must be reflected there, not silently guessed."""
+    account moves (BBVA -> Wise etc.) must be reflected there, not silently guessed.
+
+    Each entry's cadence is 'monthly' (default) or 'annual'. Annual entries need
+    month_of_year in addition to day_of_month -- a fixed day-of-month alone isn't
+    enough to place a once-a-year bill."""
     import yaml
     cfg_path = _finance_config_dir() / "recurring-transactions.yaml"
     if not cfg_path.exists():
@@ -57,10 +69,21 @@ def _load_upcoming_patterns():
     docs = list(yaml.safe_load_all(cfg_path.read_text()))
     data = next((d for d in docs if isinstance(d, dict) and "recurring" in d), {})
     entries = data["recurring"]
-    return [
-        (e["keyword"], e["label"], e["day_of_month"], e["type"], e["billing_account"])
-        for e in entries
-    ]
+    patterns = []
+    for e in entries:
+        cadence = e.get("cadence", "monthly")
+        if cadence == "annual" and "month_of_year" not in e:
+            raise RuntimeError(f"{e['keyword']}: annual cadence requires month_of_year")
+        patterns.append({
+            "keyword":        e["keyword"],
+            "label":          e["label"],
+            "day_of_month":   e["day_of_month"],
+            "type":           e["type"],
+            "billing_account": e["billing_account"],
+            "cadence":        cadence,
+            "month_of_year":  e.get("month_of_year"),
+        })
+    return patterns
 
 
 UPCOMING_PATTERNS = _load_upcoming_patterns()
@@ -303,7 +326,16 @@ def _compute_upcoming(rows, today, owner_draw):
     # Pattern-based recurring bills — amounts derived from transaction history
     exp_rows = [r for r in rows if r['type'] == 'EXPENSE' and r['val'] > 0 and r['date'] >= '2025-01-01']
 
-    for keyword, label, typical_day, bill_type, billing_account in UPCOMING_PATTERNS:
+    import calendar
+
+    for pattern in UPCOMING_PATTERNS:
+        keyword         = pattern['keyword']
+        label           = pattern['label']
+        typical_day     = pattern['day_of_month']
+        bill_type       = pattern['type']
+        billing_account = pattern['billing_account']
+        cadence         = pattern['cadence']
+
         matches = [r for r in exp_rows if keyword.lower() in r['desc'].lower()]
         if not matches:
             continue
@@ -314,11 +346,28 @@ def _compute_upcoming(rows, today, owner_draw):
             monthly_totals[r['date'][:7]] += r['eur']
         avg_amt = sum(monthly_totals.values()) / len(monthly_totals)
 
+        if cadence == 'annual':
+            month_of_year = pattern['month_of_year']
+            max_day = calendar.monthrange(today.year, month_of_year)[1]
+            d = date(today.year, month_of_year, min(typical_day, max_day))
+            if d <= today:
+                max_day = calendar.monthrange(today.year + 1, month_of_year)[1]
+                d = date(today.year + 1, month_of_year, min(typical_day, max_day))
+            upcoming.append({
+                'label':    label,
+                'date':     str(d),
+                'amount':   round(avg_amt, 2),
+                'currency': 'EUR',
+                'type':     bill_type,
+                'account':  billing_account,
+                'days':     (d - today).days,
+            })
+            continue
+
         for delta in range(3):
             m = last_date.month + delta
             y = last_date.year + (m - 1) // 12
             m = ((m - 1) % 12) + 1
-            import calendar
             max_day = calendar.monthrange(y, m)[1]
             d = date(y, m, min(typical_day, max_day))
             if d > today:
@@ -424,7 +473,12 @@ def _compute_upcoming(rows, today, owner_draw):
             })
 
     upcoming.sort(key=lambda x: x['date'])
-    return upcoming[:15]
+    # Date-based window, not a fixed count -- a count cap silently drops annual
+    # bills (Vimeo, GitKraken, Harvest, WPML) once enough monthly/quarterly items
+    # crowd the front of the list. 400 days safely covers one full cycle of every
+    # annual entry regardless of where in the year "today" falls.
+    horizon = today + timedelta(days=400)
+    return [u for u in upcoming if date.fromisoformat(u['date']) <= horizon]
 
 
 _FILING_ROW_RE = __import__('re').compile(
