@@ -110,8 +110,10 @@ def run_window(label: str) -> None:
     log(f"window {label}: launching headless looper — output -> {run_log.name}")
 
     with run_log.open("w") as out:
+        # Cheapest model drives the loop; the advisor tool (advisorModel in
+        # ~/.claude/settings.json) handles escalation when judgment is needed.
         r = subprocess.run(
-            ["claude", "--dangerously-skip-permissions", "--model", "sonnet",
+            ["claude", "--dangerously-skip-permissions", "--model", "haiku",
              "-p", "/studio-looper --yes"],
             cwd=STUDIO, stdout=out, stderr=subprocess.STDOUT,
         )
