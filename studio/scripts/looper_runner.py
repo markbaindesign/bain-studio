@@ -100,32 +100,71 @@ def notify(msg: str, priority: str = "normal") -> None:
         log(f"notify failed: {e}")
 
 
+def window_deadline() -> datetime.datetime:
+    """Quota-window end: reset_ts from ratelimit-current.json, else now+4h."""
+    try:
+        import json
+        data = json.loads((Path.home() / ".claude/ratelimit-current.json").read_text())
+        return datetime.datetime.fromtimestamp(data["reset_ts"])
+    except Exception:
+        return datetime.datetime.now() + datetime.timedelta(hours=4)
+
+
+def clear_orphan_state() -> None:
+    # State files are disposable: the queue rebuilds from Looper Status in the
+    # mirror/Asana. In -p mode the CLI exits after one result despite the Stop
+    # hook's block decision, orphaning the file — clear it so the next
+    # iteration's concurrency guard doesn't refuse to start.
+    for f in Path("/tmp/studio-looper").glob("studio-looper.*.local.md"):
+        f.unlink()
+        log(f"cleared orphan state file {f.name}")
+
+
+MAX_ITERATIONS = 30
+
+
 def run_window(label: str) -> None:
     if not presync():
         log(f"window {label}: pre-sync FAILED — launching looper anyway (it re-syncs itself)")
 
-    stamp = f"{datetime.datetime.now():%Y%m%d-%H%M}"
-    run_log = RUN_LOG_DIR / f"studio-looper-run-{stamp}.log"
-    before = task_log_size()
-    log(f"window {label}: launching headless looper — output -> {run_log.name}")
+    deadline = window_deadline()
+    log(f"window {label}: iterating until queue empty / no progress / {deadline:%H:%M}")
+    tasks_done = 0
 
-    with run_log.open("w") as out:
-        # Cheapest model drives the loop; the advisor tool (advisorModel in
-        # ~/.claude/settings.json) handles escalation when judgment is needed.
-        r = subprocess.run(
-            ["claude", "--dangerously-skip-permissions", "--model", "haiku",
-             "-p", "/studio-looper --yes"],
-            cwd=STUDIO, stdout=out, stderr=subprocess.STDOUT,
-        )
+    for i in range(1, MAX_ITERATIONS + 1):
+        if datetime.datetime.now() >= deadline:
+            log(f"window {label}: deadline {deadline:%H:%M} reached after {i - 1} iterations")
+            break
 
-    worked = task_log_size() > before
-    verdict = "task-looper.log grew (activity confirmed)" if worked else \
-              "task-looper.log DID NOT GROW — run likely did nothing, check the run log"
-    log(f"window {label}: looper exited {r.returncode} after run — {verdict}")
+        clear_orphan_state()
+        stamp = f"{datetime.datetime.now():%Y%m%d-%H%M%S}"
+        run_log = RUN_LOG_DIR / f"studio-looper-run-{stamp}.log"
+        before = task_log_size()
+        log(f"window {label}: iteration {i} — output -> {run_log.name}")
+
+        with run_log.open("w") as out:
+            # Cheapest model works the task; advisor (sonnet) and one-shot
+            # fable are the escalation rungs per the skill.
+            r = subprocess.run(
+                ["claude", "--dangerously-skip-permissions", "--model", "haiku",
+                 "-p", "/studio-looper --yes"],
+                cwd=STUDIO, stdout=out, stderr=subprocess.STDOUT,
+            )
+
+        if task_log_size() > before:
+            tasks_done += 1
+            log(f"window {label}: iteration {i} exited {r.returncode} — progress made")
+        else:
+            log(f"window {label}: iteration {i} exited {r.returncode} — NO progress "
+                f"(queue empty or failure, see {run_log.name}) — ending window")
+            break
+
+    clear_orphan_state()
+    log(f"window {label}: done — {tasks_done} productive iteration(s)")
     notify(
-        f"looper window '{label}' finished (exit {r.returncode}). "
-        f"{'Activity confirmed.' if worked else 'WARNING: no activity logged - check ' + run_log.name}",
-        priority="normal" if worked else "high",
+        f"looper window '{label}' finished: {tasks_done} productive iteration(s). "
+        f"Details in ~/logs/studio-looper.log",
+        priority="normal" if tasks_done else "high",
     )
 
 
