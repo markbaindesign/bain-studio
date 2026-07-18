@@ -206,7 +206,7 @@ If output starts with `PAST_DEADLINE:{TIME}`: the quota has reset and the sessio
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] deadline reached ({TIME}) — stopping before next task" >> ~/logs/task-looper.log
 python3 /media/data/dev/bain-studio/studio/notifier.py \
   "task-looper: quota reset at {TIME} — stopped cleanly, queue paused." \
-  --priority normal --sender task-looper --project {PREFIX}
+  --priority normal --sender task-looper --project {PREFIX} --channel looper
 ```
 
 **Usage check** — read current usage, check against `stop_at_pct` if set, then log and proceed.
@@ -251,7 +251,7 @@ Branch on output:
   echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] --use budget reached ({pct}% >= {threshold}%) — stopping before next task" >> ~/logs/task-looper.log
   python3 /media/data/dev/bain-studio/studio/notifier.py \
     "task-looper: --use budget reached ({pct}% used) — stopped cleanly." \
-    --priority normal --sender task-looper --project {PREFIX}
+    --priority normal --sender task-looper --project {PREFIX} --channel looper
   ```
 - **`usage:{pct}:{reset_str}`**: within budget. Log and continue to Step 2:
   ```bash
@@ -271,7 +271,7 @@ If none found, log and notify via Hermes and stop:
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{PREFIX}] Session ended — no outstanding BainBot tasks" >> ~/logs/task-looper.log
 python3 /media/data/dev/bain-studio/studio/notifier.py \
   "task-looper: no outstanding BainBot tasks in {Project}." \
-  --priority normal --sender task-looper --project {PREFIX}
+  --priority normal --sender task-looper --project {PREFIX} --channel looper
 ```
 
 Order the queue:
@@ -343,7 +343,7 @@ Notify via Hermes that the run is starting:
 ```bash
 python3 /media/data/dev/bain-studio/studio/notifier.py \
   "task-looper starting on {Project} — {N} tasks: {IDs}" \
-  --priority normal --sender task-looper --project {PREFIX}
+  --priority normal --sender task-looper --project {PREFIX} --channel looper
 ```
 
 Log session start:
@@ -451,7 +451,7 @@ Notify:
 ```bash
 python3 /media/data/dev/bain-studio/studio/notifier.py \
   "{ID} complete: {task name}." \
-  --priority normal --sender task-looper --project {PREFIX}
+  --priority normal --sender task-looper --project {PREFIX} --channel looper
 ```
 
 Log the notify call:
@@ -517,7 +517,7 @@ Notify:
 ```bash
 python3 /media/data/dev/bain-studio/studio/notifier.py \
   "{ID} blocked: {task name}. {One sentence blocker summary}. Branch {branch-name} has partial work." \
-  --priority high --sender task-looper --project {PREFIX}
+  --priority high --sender task-looper --project {PREFIX} --channel looper
 ```
 
 Log the notify call:
@@ -552,4 +552,5 @@ You do not need to manage the queue. Just work one task, output the promise, and
 - **Never touch tasks outside your queue.** Do not modify tasks assigned to Mark.
 - **One task per branch.** No mixing.
 - **Partial work is not lost.** Leave the branch. Document the blocker clearly.
+- **A permission/access failure is never a reason to stop the loop.** If Edit/Write/Bash is denied (missing `additionalDirectories` entry, git auth failure, sandboxed path, etc.), do not wait for interactive approval. Log a WARNING to `~/logs/task-looper.log`, follow the normal 4f blocked workflow with the access error as the reason, sync, and output the `_BLOCKED` promise so the queue advances. Skipping the task is always correct; halting the loop is never correct.
 - **Output the promise only when true.** Not to escape. The loop continues until genuine completion or a genuine blocker.

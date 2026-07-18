@@ -617,7 +617,10 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
     astat        = t.get("assignee_status") or "none"
 
     priority       = t.get("_priority") or "none"
-    looper_status  = t.get("_looper_status") or prev.get("looper_status") or "none"
+    # Never carry a stale Looper Status forward onto a completed task — it has
+    # nothing left to work, regardless of what the field showed pre-completion.
+    carried_looper = prev.get("looper_status") if not t.get("completed") else None
+    looper_status  = t.get("_looper_status") or carried_looper or "none"
     tags       = _fmt_refs(t.get("tags", []))
     followers  = _fmt_refs(t.get("followers", []))
     deps       = _fmt_task_refs(t.get("dependencies", []), gid_to_lid)
@@ -753,10 +756,14 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
 
     # Looper Status (enum custom field) — push if changed and field is configured
     if LOOPER_STATUS_FIELD_GID:
-        mirror_looper = (prev.get("looper_status") or "none").strip()
+        # A completed task's mirror-side value is never trusted as a push source —
+        # it may be a stale pre-completion carry-forward with nothing left to work.
+        prev_looper   = prev.get("looper_status") if not t.get("completed") else None
+        mirror_looper = (prev_looper or "none").strip()
         asana_looper  = (t.get("_looper_status") or "none").strip()
-        # Default to Queue when both sides are unset — acts as a project-level rule
-        if mirror_looper in ("none", "") and asana_looper in ("none", ""):
+        # Default to Queue when both sides are unset — acts as a project-level rule.
+        # Never default a completed task into Queue; it has nothing left to work.
+        if not t.get("completed") and mirror_looper in ("none", "") and asana_looper in ("none", ""):
             mirror_looper = "Queue"
             t["_looper_status"] = "Queue"  # reflect in mirror immediately
         if _diff(mirror_looper, asana_looper) and mirror_looper not in ("none", ""):

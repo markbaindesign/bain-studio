@@ -78,6 +78,7 @@ Quick reference (paths only — see project file for full details):
 | DOM | `/media/data/dev/misc/premium_domains` |
 | NORE | `/home/bain/code/vvv/clients/www/nore` |
 | BD | `/media/data/dev/bain/www/bain.design` |
+| FOOB | `/media/data/dev/vvv/bain/www/wp-foobot-api-plugin` |
 
 ## Skills
 

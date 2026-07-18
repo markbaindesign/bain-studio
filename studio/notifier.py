@@ -23,6 +23,10 @@ load_dotenv(Path(__file__).resolve().parent / '.env')
 
 WEBHOOK_URL = os.getenv('SLACK_WEBHOOK_URL', '')
 
+CHANNEL_WEBHOOKS = {
+    'looper': 'SLACK_WEBHOOK_TASK_LOOPER',
+}
+
 PRIORITY_EMOJI = {
     'urgent': ':rotating_light:',
     'high':   ':warning:',
@@ -50,12 +54,25 @@ def notify(
     sender: str = 'studio',
     project: str = '',
     details: str = '',
+    channel: str = '',
 ) -> bool:
     """
     Send a Slack notification.
     Returns True on success, False on failure (never raises).
     """
-    if not WEBHOOK_URL:
+    webhook_url = WEBHOOK_URL
+    if channel:
+        env_var = CHANNEL_WEBHOOKS.get(channel)
+        if not env_var:
+            print(f'[notifier] unknown channel "{channel}" — falling back to default', file=sys.stderr)
+        else:
+            channel_url = os.getenv(env_var, '')
+            if channel_url:
+                webhook_url = channel_url
+            else:
+                print(f'[notifier] {env_var} not set — falling back to default channel', file=sys.stderr)
+
+    if not webhook_url:
         print('[notifier] SLACK_WEBHOOK_URL not set — skipping', file=sys.stderr)
         return False
 
@@ -84,7 +101,7 @@ def notify(
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "<!channel>"}})
 
     try:
-        r = requests.post(WEBHOOK_URL, json={"blocks": blocks}, timeout=5)
+        r = requests.post(webhook_url, json={"blocks": blocks}, timeout=5)
         return r.status_code == 200
     except Exception as e:
         print(f'[notifier] Slack error: {e}', file=sys.stderr)
@@ -99,6 +116,8 @@ if __name__ == '__main__':
     parser.add_argument('--sender',           default='studio', help='Sending agent/god name')
     parser.add_argument('--project',          default='',       help='Project prefix (e.g. NORE)')
     parser.add_argument('--details',          default='',       help='Code block detail text')
+    parser.add_argument('--channel',          default='',       choices=['', *CHANNEL_WEBHOOKS.keys()],
+                         help='Route to a non-default Slack channel webhook (e.g. "looper")')
     args = parser.parse_args()
 
     ok = notify(
@@ -108,5 +127,6 @@ if __name__ == '__main__':
         sender=args.sender,
         project=args.project,
         details=args.details,
+        channel=args.channel,
     )
     sys.exit(0 if ok else 1)

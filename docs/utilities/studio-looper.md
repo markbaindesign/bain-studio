@@ -20,9 +20,10 @@ marking done.
 /studio-looper --yes              # skip queue confirmation
 /studio-looper --at 20:00         # schedule for 20:00 today
 /studio-looper --dry-run          # show queue without working tasks
+/studio-looper --test             # run against the sandbox SLT queue instead of SL
 ```
 
-Flags combine: `/studio-looper --at 20:00 --for 2h`
+Flags combine: `/studio-looper --at 20:00 --for 2h`, `/studio-looper --test --yes`
 
 Must be invoked from `/media/data/dev/bain-studio`.
 
@@ -39,6 +40,21 @@ Must be invoked from `/media/data/dev/bain-studio`.
 5. On blocker: task moves to **Blocked** section, reassigned to Mark with a note.
 6. Mark reviews tasks in the Review section, marks them done himself.
 
+## Permission/access failures never halt the loop
+
+A permission-denied on Edit/Write/Bash (missing `additionalDirectories` entry for the task's
+project, git auth failure, sandboxed path, etc.) is treated exactly like any other blocker: log
+a WARNING to `~/logs/task-looper.log`, mark the task Blocked with the access error as the reason,
+sync, and advance to the next task. The loop must never stop and wait for interactive approval
+mid-run — that defeats the point of running unattended.
+
+This only fully holds when denials come back as a **scripted** decision (e.g. a PreToolUse hook
+returning `permissionDecision: "deny"` with a reason) rather than an **interactive** permission
+prompt, since only the former returns an error the model can react to — an interactive prompt
+genuinely blocks on a human. Practical mitigation: keep `additionalDirectories` and the explicit
+`Edit()` allow rules in `.claude/settings.json` complete for every registered project, so paths
+the looper legitimately needs hit an allow (or a scripted deny) rather than an ambiguous ask.
+
 ## Looper Status field values
 
 | Value | Meaning |
@@ -53,16 +69,49 @@ Tasks added to the Studio Looper project with no Looper Status are automatically
 
 ## State file
 
-`.claude/studio-looper.local.md` in the studio root. Written by the skill, read by the hook.
-Queue entries are bare task IDs (`MCF-007`, `NORE-029`). The hook resolves project paths at
-runtime via `studio/projects.json`.
+`.claude/studio-looper.{session_id}.local.md` in the studio root — **session-scoped**, named
+from `$CLAUDE_CODE_SESSION_ID` at creation time (Step 3 of the skill). Written by the skill,
+read and advanced by the hook. Queue entries are bare task IDs (`MCF-007`, `NORE-029`). The hook
+resolves project paths at runtime via `studio/projects.json`.
+
+Session-scoping exists because two Claude Code sessions can share the same working directory
+(e.g. one interactive, one headless `--dangerously-skip-permissions` run). Before the fix, both
+wrote to the same fixed filename (`.claude/studio-looper.local.md`), and whichever session's Stop
+hook fired first "claimed" it via a `session_id: __pending__` race — silently hijacking the queue
+from whichever session actually started it. Naming the file after the session that created it
+removes the race entirely: each session's hook only ever reads/writes its own file.
+
+A **concurrency guard** (Step 1a) additionally refuses to start a second live run against the
+same `target_prefix` even under this scheme — it globs `.claude/studio-looper.*.local.md`,
+and if it finds another file targeting the same queue with a still-future deadline, it stops
+and reports rather than proceeding. Stale files (deadline passed, task never advanced past
+Queue) are auto-cleaned.
+
+**Known limitation:** on an interactive (non-headless) session, creating this file for the first
+time each session triggers one unavoidable "Do you want to create X?" confirmation — Claude Code
+hard-codes an interactive prompt for any *new* file under a `.claude/` directory regardless of
+permission mode or allow-list rules (only `--dangerously-skip-permissions` bypasses it). This is
+a one-time-per-session prompt, not a recurring interruption: every subsequent update to the same
+file happens via the hook's own shell redirection (not a Claude tool call), so it never re-prompts
+mid-loop. For genuinely unattended runs, use `--at` or launch headless directly — see below.
+
+## Test mode
+
+`/studio-looper --test` runs the entire pipeline against a sandbox Asana project (prefix `SLT`,
+GID `1216618878942979`) instead of the real `SL` queue, routing to `studio/looper-test/` instead
+of `studio/looper/`. Use it to safely test skill/hook changes, headless invocation, or the
+concurrency guard without any risk to the real queue or a client repo. Setup is documented in
+`studio/looper-test/CLAUDE.md` — it needs a one-time manual step from Mark (adding bainbot as a
+member and attaching the shared **Looper Status** field), since Asana project membership changes
+require human OAuth, not the bainbot PAT.
 
 ## Stop hook
 
-`~/.claude/hooks/studio-task-looper-stop-hook.sh` — fires on every session stop, reads the
-state file, resolves the next task's project directory, and re-injects the next task prompt
-into the current session. Runs alongside the per-project looper hook; only one fires per
-session (whichever state file exists).
+`~/.claude/hooks/studio-task-looper-stop-hook.sh` — fires on every session stop, resolves
+*that session's own* state file (`.claude/studio-looper.{firing session's id}.local.md`), reads
+it, resolves the next task's project directory, and re-injects the next task prompt into that
+same session. Runs alongside the per-project looper hook; each hook only acts on state files
+matching its own naming scheme.
 
 ## Local ID handling
 
