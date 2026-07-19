@@ -101,13 +101,25 @@ def notify(msg: str, priority: str = "normal") -> None:
 
 
 def window_deadline() -> datetime.datetime:
-    """Quota-window end: reset_ts from ratelimit-current.json, else now+4h."""
+    """Quota-window end: reset_ts from ratelimit-current.json.
+
+    The file only refreshes when a claude session runs, so at the start of a
+    window scheduled AT the reset time it still holds the boundary just passed
+    — a stale (past) deadline killed the 2026-07-19 01:00 window after zero
+    iterations. Sessions run in ~5h windows, so if the recorded reset is not
+    comfortably in the future, assume a fresh window from now.
+    """
+    now = datetime.datetime.now()
     try:
         import json
         data = json.loads((Path.home() / ".claude/ratelimit-current.json").read_text())
-        return datetime.datetime.fromtimestamp(data["reset_ts"])
+        deadline = datetime.datetime.fromtimestamp(data["reset_ts"])
+        if deadline > now + datetime.timedelta(minutes=10):
+            return deadline
+        log(f"recorded reset {deadline:%H:%M} is stale — assuming fresh 5h window")
     except Exception:
-        return datetime.datetime.now() + datetime.timedelta(hours=4)
+        pass
+    return now + datetime.timedelta(hours=5)
 
 
 def clear_orphan_state() -> None:
