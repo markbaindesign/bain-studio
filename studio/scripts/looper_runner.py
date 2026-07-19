@@ -201,6 +201,17 @@ def main() -> None:
         except (ValueError, AssertionError):
             ap.error(f"invalid time {hhmm!r} — expected HH:MM (00:00–23:59)")
 
+    import signal
+    import traceback
+
+    def on_signal(signum, frame):
+        log(f"received signal {signal.Signals(signum).name} — exiting")
+        release_lock()
+        sys.exit(128 + signum)
+
+    signal.signal(signal.SIGTERM, on_signal)
+    signal.signal(signal.SIGINT, on_signal)
+
     if not acquire_lock():
         sys.exit(1)
     try:
@@ -211,6 +222,12 @@ def main() -> None:
             run_window(hhmm)
         log("all windows done — runner exiting, nothing further scheduled")
         notify("looper runner done: all scheduled windows finished, nothing further scheduled.")
+    except Exception:
+        # The 2026-07-19 morning runner died silently: uncaught exception with
+        # stdout/stderr pointed at /dev/null. Never again — log and notify.
+        log("runner CRASHED:\n" + traceback.format_exc())
+        notify("looper runner CRASHED - see ~/logs/studio-looper.log", priority="high")
+        raise
     finally:
         release_lock()
 
