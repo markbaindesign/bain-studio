@@ -62,7 +62,9 @@ _LOOPER_STATUS_OPTIONS: dict = {}
 
 
 def _get_looper_status_option_gid(name: str):
-    """Return the Asana enum option GID for a Looper Status value, fetching once if needed."""
+    """Return the Asana enum option GID for a Looper Status value, fetching once if needed.
+    Matched case-insensitively -- mirrors/docs consistently write "In Progress" but the
+    Asana field's own option label has drifted to "In progress" at least once already."""
     global _LOOPER_STATUS_OPTIONS
     if not LOOPER_STATUS_FIELD_GID:
         return None
@@ -70,11 +72,11 @@ def _get_looper_status_option_gid(name: str):
         try:
             data = _get(f"/custom_fields/{LOOPER_STATUS_FIELD_GID}")["data"]
             _LOOPER_STATUS_OPTIONS = {
-                o["name"]: o["gid"] for o in data.get("enum_options", [])
+                o["name"].lower(): o["gid"] for o in data.get("enum_options", [])
             }
         except Exception as e:
             log.warning(f"Could not fetch Looper Status enum options: {e}")
-    return _LOOPER_STATUS_OPTIONS.get(name)
+    return _LOOPER_STATUS_OPTIONS.get(name.lower())
 
 JUNK_PATTERNS  = re.compile(r"^- |😍|📰|\[Product Update\]", re.IGNORECASE)
 PLAIN_CHECK    = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
@@ -887,6 +889,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
         # --- Bidirectional field sync ---
         pushed = 0
+        touched_gids = set()  # tasks WE wrote to this run — re-stamped after all writes
         for t in tasks:
             gid  = t["gid"]
             prev = carried.get(gid)
@@ -907,6 +910,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
             if _push_simple_fields(t, prev, dry_run, proj.prefix):
                 pushed += 1
+                touched_gids.add(gid)
 
             for label, mirror_key, asana_key, add_path, remove_path, item_key in [
                 ("tags",         "tags",         "tags",         "/tasks/{task_gid}/addTag",          "/tasks/{task_gid}/removeTag",          "tag"),
@@ -921,11 +925,13 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                     dry_run, proj.prefix, label,
                 ):
                     pushed += 1
+                    touched_gids.add(gid)
 
             mirror_section = prev.get("section")
             if mirror_section and mirror_section != t.get("_section"):
                 if _push_section(t, mirror_section, sections, dry_run, proj.prefix):
                     pushed += 1
+                    touched_gids.add(gid)
 
             last_sync_times[gid] = now_utc
 
@@ -965,10 +971,26 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                     if not dry_run:
                         posted_progress[gid] = curr_p
                     commented += 1
+                    touched_gids.add(gid)
                 except Exception as e:
                     log.warning(f"  Failed to comment on {local_id}: {e}")
 
         state["posted_progress"] = posted_progress
+
+        # Re-stamp tasks WE wrote to (pushes + comments) with a post-write
+        # timestamp. Our own writes bump each task's modified_at to AFTER the
+        # sync-start now_utc stamp, so the next run's "Asana is newer" gate saw
+        # every bot-touched task as externally modified and silently skipped
+        # pushing its mirror changes — the cause of the Review-push drops and
+        # the resulting duplicate-work cycles of 2026-07-18/19. A 60s margin
+        # absorbs clock skew vs Asana's servers; genuine human edits after this
+        # sync still register as newer and win, as intended.
+        if touched_gids and not dry_run:
+            post_write = (datetime.utcnow() + timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%S")
+            for gid in touched_gids:
+                last_sync_times[gid] = post_write
+            state["last_sync_times"] = last_sync_times
+
         save_ids(proj, state, dry_run)
 
         mirror = build_mirror(proj, tasks, carried, gid_to_lid)
