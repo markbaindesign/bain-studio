@@ -140,7 +140,8 @@ def run_window(label: str) -> None:
         log(f"window {label}: pre-sync FAILED — launching looper anyway (it re-syncs itself)")
 
     deadline = window_deadline()
-    log(f"window {label}: iterating until queue empty / no progress / {deadline:%H:%M}")
+    run_id = f"{datetime.datetime.now():%Y%m%d-%H%M}"
+    log(f"window {label}: run id {run_id} — iterating until queue empty / no progress / {deadline:%H:%M}")
     tasks_done = 0
 
     for i in range(1, MAX_ITERATIONS + 1):
@@ -156,11 +157,14 @@ def run_window(label: str) -> None:
 
         with run_log.open("w") as out:
             # Cheapest model works the task; advisor (sonnet) and one-shot
-            # fable are the escalation rungs per the skill.
+            # fable are the escalation rungs per the skill. LOOPER_RUN_ID keys
+            # the shared review branch (one per window, not per iteration) and
+            # arms the no-git-push PreToolUse hook.
+            env = dict(os.environ, LOOPER_RUN_ID=run_id)
             r = subprocess.run(
                 ["claude", "--dangerously-skip-permissions", "--model", "haiku",
                  "-p", "/studio-looper --yes"],
-                cwd=STUDIO, stdout=out, stderr=subprocess.STDOUT,
+                cwd=STUDIO, stdout=out, stderr=subprocess.STDOUT, env=env,
             )
 
         if task_log_size() > before:

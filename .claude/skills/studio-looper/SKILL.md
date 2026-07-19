@@ -432,20 +432,23 @@ as needed:
    Use sparingly; this is the expensive rung.
 4. Still unresolved — mark the task **Blocked** with the specific question rather than guessing.
 
-All work happens on a **session review branch — never on develop/main directly, and never
-pushed**:
+All work happens on a **run review branch — never on develop/main directly, and never pushed**.
+The branch is shared by every task in the same looper run: use `$LOOPER_RUN_ID` (set by the
+runner) as the branch key, falling back to this session's ID (first 8 chars) when unset:
 
 ```bash
 cd {PROJECT_DIR}
-# First task in this repo this session: create the branch off the repo's base branch.
-# Branch is named after the looper session ID (first 8 chars).
-git checkout -b looper/{SESSION_ID_SHORT} 2>/dev/null || git checkout looper/{SESSION_ID_SHORT}
+BRANCH="looper/${LOOPER_RUN_ID:-{SESSION_ID_SHORT}}"
+BASE=$(git branch --show-current)   # remember where the repo was
+git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
 ```
 
 Do the work. One commit per task on that branch:
 ```bash
 git add <specific files>
 git commit -m "... ({TASK_ID})"
+# Leave the repo where you found it — never stranded on a looper branch
+git checkout "$BASE"
 ```
 
 **Do NOT push the branch. Do NOT merge it.** It stays local for Mark's review — merging and
