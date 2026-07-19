@@ -232,6 +232,18 @@ spent, log `QUOTA_SPENT`, notify, and stop without outputting a promise (the loo
 
 ## Step 2 — Build queue from target mirror
 
+**Orphan recovery first.** A task can be stranded at `In progress` when the session working it
+died mid-task (session limit, crash, one-shot `-p` exit) — stranded tasks are invisible to the
+queue and sit there forever. Before building the queue: for every task in the target mirror with
+`**Looper Status:** In progress`, check whether a live state file in `/tmp/studio-looper/`
+claims it as `current_task`. If none does, it is orphaned — reset it to `Queue` in the mirror
+and log each one:
+```bash
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{TARGET_PREFIX}] Orphan recovery: {TASK_ID} was In progress with no live session — reset to Queue" >> ~/logs/task-looper.log
+```
+(The reset is pushed to Asana by this session's own sync flow; recovered tasks join the queue
+below.)
+
 Read `{TARGET_DIR}/.claude/asana-mirror.md`. Extract all tasks where:
 - `**Looper Status:** Queue`
 
