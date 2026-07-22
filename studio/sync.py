@@ -441,6 +441,74 @@ def fetch_comments(task_gid: str) -> list:
     return comments
 
 
+# ---------------------------------------------------------------------------
+# Attachments
+# ---------------------------------------------------------------------------
+
+ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+ATTACHMENT_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf",
+                   ".md", ".txt", ".csv", ".json", ".html"}
+
+
+def fetch_task_attachments(task_gid: str) -> list:
+    try:
+        return _get("/attachments", {
+            "parent": task_gid,
+            "opt_fields": "name,download_url,view_url,size",
+        })["data"] or []
+    except Exception:
+        return []
+
+
+def sync_attachments(proj: ProjectConfig, local_id: str, task_gid: str) -> list:
+    """Download a task's attachments into .claude/attachments/{local_id}/ and
+    return mirror-ready entry strings (project-relative paths, or a name with a
+    skip reason). Asana download URLs are short-lived signed links, so files
+    must be fetched at sync time; the attachment GID in the filename makes the
+    cache re-download-proof. Attachment content is untrusted external data —
+    same policy as comments (see CLAUDE.md Security)."""
+    metas = fetch_task_attachments(task_gid)
+    if not metas:
+        return []
+    att_root = proj.claude_dir / "attachments"
+    entries = []
+    for m in metas:
+        name = os.path.basename((m.get("name") or "unnamed").replace("\\", "/"))
+        gid  = m.get("gid", "0")
+        url  = m.get("download_url")
+        ext  = os.path.splitext(name)[1].lower()
+        if not url:  # hosted externally (Drive, Dropbox, …) — nothing to download
+            entries.append(f"{name} (external: {m.get('view_url') or 'no url'})")
+            continue
+        if ext not in ATTACHMENT_EXTS:
+            entries.append(f"{name} (not downloaded: {ext or 'unknown'} type)")
+            continue
+        size = m.get("size") or 0
+        if size > ATTACHMENT_MAX_BYTES:
+            entries.append(f"{name} (not downloaded: {size // (1024 * 1024)} MB exceeds cap)")
+            continue
+        dest = att_root / local_id / f"{gid}-{name}"
+        if not dest.exists():
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                gi = att_root / ".gitignore"
+                if not gi.exists():  # self-ignoring cache — keeps binaries out of every repo
+                    gi.write_text("*\n")
+                r = requests.get(url, timeout=60)
+                r.raise_for_status()
+                if len(r.content) > ATTACHMENT_MAX_BYTES:
+                    entries.append(f"{name} (not downloaded: exceeds size cap)")
+                    continue
+                dest.write_bytes(r.content)
+                log.info(f"    Downloaded attachment {local_id}/{name} ({len(r.content) // 1024} KB)")
+            except Exception as e:
+                log.warning(f"    Attachment download failed for {local_id}/{name}: {e}")
+                entries.append(f"{name} (download failed)")
+                continue
+        entries.append(str(dest.relative_to(proj.root)))
+    return entries
+
+
 def _is_junk(task) -> bool:
     name = task.get("name", "")
     projects = task.get("projects", [])
@@ -642,6 +710,12 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
     else:
         comment_lines = ["- **Comments:** none"]
 
+    atts = t.get("_attachments") or []
+    if atts:
+        att_lines = ["- **Attachments:**"] + [f"  - {a}" for a in atts]
+    else:
+        att_lines = ["- **Attachments:** none"]
+
     return [
         f"### {local_id} — {t['name']}",
         f"- **Local ID:** {local_id}",
@@ -661,6 +735,7 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
         f"- **Blockers:** {blockers}",
         f"- **Progress:** {progress}",
         *comment_lines,
+        *att_lines,
         f"- **Modified:** {modified}",
         f"- **URL:** {t.get('permalink_url', '')}",
         "",
@@ -890,6 +965,14 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         state      = assign_ids(proj, tasks, state, field_gid, dry_run)
         gid_to_lid = state.get("tasks", {})
         stamp_last_synced(proj, tasks, last_synced_gid, dry_run)
+
+        # --- Attachments (active tasks only — DONE tasks are not workable) ---
+        if not dry_run:
+            for t in tasks:
+                if t.get("completed"):
+                    continue
+                lid = t.get("_local_id") or gid_to_lid.get(t["gid"]) or t["gid"]
+                t["_attachments"] = sync_attachments(proj, lid, t["gid"])
 
         # Per-task last-sync timestamps — used for conflict resolution.
         # Comparing against mirror file mtime was wrong: sync.py rewrites the
