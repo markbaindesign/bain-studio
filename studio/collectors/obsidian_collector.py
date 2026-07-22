@@ -37,6 +37,7 @@ CONTENT_DIR = Path(os.getenv("STUDIO_CONTENT_DIR", Path(__file__).parent.parent.
 IDEAS_DIR = VAULT / "Ideas"
 STATE_FILE = Path(__file__).parent / "obsidian_collector_state.json"
 SPEC_DRAFTS = CONTENT_DIR / "specs" / "drafts"
+FEATURE_BACKLOG_DIR = CONTENT_DIR / "pipeline" / "feature-backlog"
 STANDUP_SUMMARY = Path(__file__).parent / "obsidian_standup.json"
 
 LOG_PREFIX = f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] obsidian"
@@ -178,17 +179,60 @@ _Source: Obsidian daily note {item['date']} — #{tag}_
     return True, filename
 
 
+def append_to_feature_backlog(item, dry_run):
+    """
+    Route #feature {PREFIX} description to pipeline/feature-backlog/{PREFIX}.md.
+    If no PREFIX detected, falls back to Ideas/misc.md with a note.
+    Returns (created, destination_label).
+    """
+    text = item["text"].strip()
+    # Expect: "PREFIX description" where PREFIX is uppercase word (letters/digits/hyphens)
+    m = re.match(r"^([A-Z][A-Z0-9-]+)\s+(.*)", text)
+    if m:
+        prefix = m.group(1)
+        description = m.group(2).strip()
+        FEATURE_BACKLOG_DIR.mkdir(parents=True, exist_ok=True)
+        dest = FEATURE_BACKLOG_DIR / f"{prefix}.md"
+        entry = f"- {description}  _(from {item['date']})_\n"
+        label = f"pipeline/feature-backlog/{prefix}.md"
+
+        if dest.exists() and description in dest.read_text():
+            return False, label
+
+        if dry_run:
+            log(f"  [dry] → {label}: {description[:60]}")
+            return True, label
+
+        with dest.open("a") as f:
+            if not dest.exists() or dest.stat().st_size == 0:
+                f.write(f"# {prefix} Feature Backlog\n\n")
+            f.write(entry)
+        return True, label
+    else:
+        # No PREFIX — fall back to Ideas/misc.md with a warning note
+        fallback_item = {**item, "text": f"[no-prefix] {text}"}
+        created = append_to_ideas("misc", fallback_item, dry_run)
+        return created, "Ideas/misc.md (no prefix)"
+
+
 def process_note(path, dry_run):
     date_str = path.stem  # YYYY-MM-DD
     text = path.read_text()
     items = extract_tagged_items(text, date_str)
 
-    counts = {"spec_stubs": 0, "ideas": 0, "skipped": 0}
+    counts = {"spec_stubs": 0, "ideas": 0, "features": 0, "skipped": 0}
     stub_names = []
 
     for item in items:
         tag = item["tag"]
-        if tag in SPEC_TAGS:
+        if tag == "feature":
+            created, label = append_to_feature_backlog(item, dry_run)
+            if created:
+                counts["features"] += 1
+                log(f"  feature: → {label}: {item['text'][:60]}")
+            else:
+                counts["skipped"] += 1
+        elif tag in SPEC_TAGS:
             created, stub_file = create_spec_stub(tag, item, dry_run)
             if created:
                 counts["spec_stubs"] += 1
@@ -230,7 +274,7 @@ def main():
 
     log(f"processing {len(notes)} note(s){' [dry run]' if args.dry_run else ''}")
 
-    total = {"spec_stubs": 0, "ideas": 0, "skipped": 0}
+    total = {"spec_stubs": 0, "ideas": 0, "features": 0, "skipped": 0}
     newly_processed = {}
     new_stub_names = []
 
@@ -242,7 +286,7 @@ def main():
         newly_processed[note.name] = file_hash(note)
         new_stub_names.extend(stubs)
 
-    log(f"done — {total['spec_stubs']} spec stubs, {total['ideas']} ideas filed, {total['skipped']} duplicates skipped")
+    log(f"done — {total['spec_stubs']} spec stubs, {total['ideas']} ideas, {total['features']} features filed, {total['skipped']} duplicates skipped")
 
     if not args.dry_run:
         processed_hashes.update(newly_processed)
@@ -253,6 +297,7 @@ def main():
             "notes_processed": len(newly_processed),
             "spec_stubs": total["spec_stubs"],
             "ideas": total["ideas"],
+            "features": total["features"],
             "new_stub_names": new_stub_names,
         }
         STANDUP_SUMMARY.write_text(json.dumps(summary, indent=2))
