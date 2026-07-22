@@ -246,6 +246,12 @@ below.)
 
 Read `{TARGET_DIR}/.claude/asana-mirror.md`. Extract all tasks where:
 - `**Looper Status:** Queue`
+- AND the task sits **above the `## DONE` section** of the mirror
+
+**Never queue a completed task.** Tasks in `## DONE` are finished in Asana regardless of what
+their Looper Status field reads — a stale "Queue" on a completed task is field noise, not work.
+(sync.py also annotates these as `Queue (completed, not workable)` so the exact match fails, but
+the section filter is the rule even if the annotation is ever missing.)
 
 Sort the queue by Priority, then mirror order as tiebreaker:
 1. High priority
@@ -370,6 +376,17 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{TARGET_PREFIX}] Session started ({P
 ---
 
 ## Step 4 — Work the first task
+
+### 4a0. Confirm the task is still workable
+
+The mirror may have re-synced since the queue was built (each completed task triggers a sync),
+and Mark may have completed or re-statused a task mid-run. Before starting ANY task, re-read its
+entry in the target mirror:
+
+- If the task now sits in the `## DONE` section, or its Looper Status is no longer
+  `Queue`/`In Progress`, **skip it**: log
+  `{TASK_ID} skipped — completed or re-statused since queue build`, remove it from the state
+  file queue, and take the next task. Never work a completed task.
 
 ### 4a. Navigate to the task's project
 

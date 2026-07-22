@@ -623,6 +623,11 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
     # nothing left to work, regardless of what the field showed pre-completion.
     carried_looper = prev.get("looper_status") if not t.get("completed") else None
     looper_status  = t.get("_looper_status") or carried_looper or "none"
+    # A completed task must never render an actionable status: the queue build
+    # greps for the exact value, and a stale "Queue" on a done task would get
+    # re-worked. Annotating breaks the exact match by construction.
+    if t.get("completed") and looper_status in ("Queue", "In Progress"):
+        looper_status = f"{looper_status} (completed, not workable)"
     tags       = _fmt_refs(t.get("tags", []))
     followers  = _fmt_refs(t.get("followers", []))
     deps       = _fmt_task_refs(t.get("dependencies", []), gid_to_lid)
