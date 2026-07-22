@@ -88,6 +88,15 @@ def task_log_size() -> int:
     return TASK_LOG.stat().st_size if TASK_LOG.exists() else 0
 
 
+def queued_count() -> int:
+    """Tasks in the SL mirror with Looper Status: Queue. -1 if the mirror is unreadable."""
+    mirror = STUDIO / "studio/looper/.claude/asana-mirror.md"
+    try:
+        return mirror.read_text().count("**Looper Status:** Queue\n")
+    except OSError:
+        return -1
+
+
 def notify(msg: str, priority: str = "normal") -> None:
     try:
         subprocess.run(
@@ -138,6 +147,13 @@ MAX_ITERATIONS = 30
 def run_window(label: str) -> None:
     if not presync():
         log(f"window {label}: pre-sync FAILED — launching looper anyway (it re-syncs itself)")
+
+    # A window with nothing queued should cost one sync, not a claude session.
+    # -1 (mirror unreadable) falls through: the looper's own queue build decides.
+    n = queued_count()
+    if n == 0:
+        log(f"window {label}: queue empty after pre-sync — skipping window, no session launched")
+        return
 
     deadline = window_deadline()
     run_id = f"{datetime.datetime.now():%Y%m%d-%H%M}"

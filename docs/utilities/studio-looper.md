@@ -133,8 +133,8 @@ workspace-level Local ID custom field. sync.py's `PRESERVE_FOREIGN_IDS: true` fl
 
 ## Per-project looper
 
-`/task-looper BSTD` (the original per-project looper) is unchanged. Use it for targeted
-single-project runs. Studio Looper is for cross-project queues curated in Asana.
+`/task-looper` is **deprecated** (ADR 009) — its SKILL.md is a redirect stub. For a
+targeted single-project run, queue only that project's tasks in Studio Looper.
 
 ## Source files
 
@@ -145,5 +145,5 @@ single-project runs. Studio Looper is for cross-project queues curated in Asana.
 
 ## See also
 
-- [task-looper](../gods/hermes/task-looper.md) — per-project version
+- [task-looper](../gods/hermes/task-looper.md) — per-project predecessor, deprecated (ADR 009)
 - [Hermes](../gods/hermes/) — session orchestration

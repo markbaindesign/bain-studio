@@ -1,7 +1,7 @@
 # ADR 008 — Task looper uses git flow for branch management
 
 **Date:** 2026-06-25
-**Status:** Accepted
+**Status:** Superseded by [ADR 009](009-studio-looper-canonical.md) — looper work now stays on a local `looper/{run_id}` branch, never pushed, never merged
 
 ## Decision
 

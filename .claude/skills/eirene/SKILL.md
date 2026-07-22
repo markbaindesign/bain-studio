@@ -8,6 +8,12 @@ allowed-tools: [Read, Write, Bash]
 
 Peace arrives only when everything works as it should. Eirene measures it.
 
+> **Measurement is delegated:** for live-URL Core Web Vitals, run `/perf-audit`
+> (PageSpeed Insights, saved report) and interpret its numbers here rather than
+> re-measuring. Eirene's own value is the judgement layer - pass/fail verdicts,
+> code-level anti-pattern review, and the fix priorities. `/seo-audit` also pulls
+> CWV; if one already ran for this project, reuse its report.
+
 ## Steps
 
 ### 1. Identify the subject
