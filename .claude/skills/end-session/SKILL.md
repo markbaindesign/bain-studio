@@ -43,7 +43,7 @@ If working tree is clean, note it.
 
 ### 4. Update mirror progress notes
 
-For each task that was actively worked on this session, update its `Progress:` line in `.claude/asana-mirror.md`:
+For each task that was actively worked on this session, update its `Progress:` line in `asana-mirror.md`:
 
 ```
 - **Progress:** {What was done today} {YYYY-MM-DD}.

@@ -20,7 +20,7 @@ Morning routine. Syncs all project mirrors, runs Abderus, surfaces what matters 
 ## What it does
 
 1. **Sync all project mirrors** — runs `python3 studio/sync.py` to pull the latest Asana state for all registered projects
-2. **Read the studio pulse** — reads `studio/projects.md` and each active project's `.claude/asana-mirror.md`, extracting overdue tasks and open questions
+2. **Read the studio pulse** — reads `studio/projects.md` and each active project's `asana-mirror.md`, extracting overdue tasks and open questions
 3. **Run Abderus** — invokes `/abderus` to surface harvest gaps, stale projects, and overdue obligations
 4. **Report** — outputs a combined startup report: overdue tasks by project, Abderus findings, anything needing immediate attention
 

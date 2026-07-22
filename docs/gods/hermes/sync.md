@@ -8,7 +8,7 @@ tags:
 
 # sync.py — Asana Sync
 
-Bidirectional sync between local project mirrors and Asana. Each project's tasks are mirrored to `{project}/.claude/asana-mirror.md`.
+Bidirectional sync between local project mirrors and Asana. Each project's tasks are mirrored to `{project}/asana-mirror.md`.
 
 ## Usage
 

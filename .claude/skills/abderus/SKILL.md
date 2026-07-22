@@ -13,7 +13,7 @@ Read all of the following that exist:
 
 1. `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv` — End Date, harvest status fields (Case Study, Blog Post, Testimonial Status)
 2. `{CONTENT_DIR}/pipeline/triage-log.md` — inbound signals logged as "Investigate" with no follow-up recorded
-3. Active project Asana mirrors — `.claude/asana-mirror.md` in each active project directory (paths from CLAUDE.md active projects table)
+3. Active project Asana mirrors — `asana-mirror.md` in each active project directory (paths from CLAUDE.md active projects table)
 
 Today's date is available from context. Use it to calculate days elapsed.
 

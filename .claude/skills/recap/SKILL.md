@@ -35,7 +35,7 @@ Note:
 
 ### 3. Asana state
 
-Read `.claude/asana-mirror.md`. Extract:
+Read `asana-mirror.md`. Extract:
 - Tasks marked **In Progress** (look for `status: In Progress` or `## In Progress` section)
 - Tasks marked **Blocked**
 - Tasks completed in the last 7 days (look for `completed_at` within range)

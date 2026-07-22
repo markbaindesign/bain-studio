@@ -90,7 +90,7 @@ Use `$ASANA_PAT` in all subsequent curl calls. Never use `$ASANA_TOKEN`.
 Check in this order:
 
 1. Read the project's CLAUDE.md for `ASANA_PROJECT_GID: <gid>`.
-2. Check `.claude/asana-ids.json` for a GID.
+2. Check `asana-ids.json` for a GID.
 3. If none found, ask the user.
 
 ### Step 2 — Find or create the TO DO section

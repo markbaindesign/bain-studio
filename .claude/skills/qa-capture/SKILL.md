@@ -61,7 +61,7 @@ Before asking the user anything, grep the project mirror for possible duplicates
 Extract keywords from the proposed title: split on spaces, drop words shorter than 4 characters and common stop words (the, and, for, with, on, in, at, to, of, is, are, was). Use the remaining words.
 
 ```bash
-grep -i "{keyword1}\|{keyword2}\|{keyword3}" {PROJECT_ROOT}/.claude/asana-mirror.md | grep "^### "
+grep -i "{keyword1}\|{keyword2}\|{keyword3}" {PROJECT_ROOT}/asana-mirror.md | grep "^### "
 ```
 
 Score each match by how many keywords appear in the task title. Flag any task with 2+ keyword matches as a likely duplicate.

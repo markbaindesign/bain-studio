@@ -110,46 +110,12 @@ target queue. This is what prevents the exact collision that motivated session-s
 first place: an interactive session and a headless session both racing on `SL`.
 
 ```bash
-python3 - <<'PYEOF'
-import datetime, glob, re
-from pathlib import Path
-
-target_prefix = "{TARGET_PREFIX}"
-now = datetime.datetime.now()
-INACTIVITY_MINUTES = 15  # no progress this long, deadline or not => treat as dead
-
-for path in glob.glob("/tmp/studio-looper/studio-looper.*.local.md"):
-    p = Path(path)
-    text = p.read_text()
-    fm = text.split("---")[1] if text.count("---") >= 2 else ""
-    def field(name):
-        m = re.search(rf"^{name}:\s*(.*)$", fm, re.MULTILINE)
-        return m.group(1).strip() if m else ""
-
-    file_target = field("target_prefix") or "SL"
-    deadline_s = field("deadline")
-    session = field("session_id")
-    current_task = field("current_task")
-
-    if file_target != target_prefix:
-        continue  # different queue entirely — no conflict, ignore
-
-    deadline = None
-    if deadline_s:
-        try: deadline = datetime.datetime.fromisoformat(deadline_s)
-        except ValueError: pass
-
-    mtime = datetime.datetime.fromtimestamp(p.stat().st_mtime)
-    idle_minutes = (now - mtime).total_seconds() / 60
-
-    if deadline and now >= deadline:
-        print(f"STALE:{path}:{deadline_s}:{session}:{current_task}:deadline")
-    elif idle_minutes >= INACTIVITY_MINUTES:
-        print(f"STALE:{path}:{deadline_s}:{session}:{current_task}:inactive-{idle_minutes:.0f}m")
-    else:
-        print(f"LIVE:{path}:{deadline_s}:{session}:{current_task}")
-PYEOF
+python3 /media/data/dev/bain-studio/studio/scripts/looper_logic.py concurrency {TARGET_PREFIX}
 ```
+
+(This calls the same `classify_concurrency` function covered by
+`studio/tests/test_looper_logic.py` — logic lives there, not inline, so it's unit-tested
+rather than re-derived by each session.)
 
 For each line printed:
 
@@ -234,55 +200,36 @@ spent, log `QUOTA_SPENT`, notify, and stop without outputting a promise (the loo
 
 **Orphan recovery first.** A task can be stranded at `In progress` when the session working it
 died mid-task (session limit, crash, one-shot `-p` exit) — stranded tasks are invisible to the
-queue and sit there forever. Before building the queue: for every task in the target mirror with
-`**Looper Status:** In progress`, check whether a live state file in `/tmp/studio-looper/`
-claims it as `current_task`. If none does, it is orphaned — reset it to `Queue` in the mirror
-and log each one:
+queue and sit there forever. Before building the queue, find orphans (an `In progress` task in
+the target mirror not claimed as `current_task` by any live state file):
+```bash
+LIVE_TASKS=$(python3 studio/scripts/looper_logic.py concurrency {TARGET_PREFIX} | grep '^LIVE:' | cut -d: -f5 | paste -sd, -)
+python3 studio/scripts/looper_logic.py orphans {TARGET_DIR}/asana-mirror.md "$LIVE_TASKS"
+```
+For each printed task ID, reset it to `Queue` in the mirror and log it:
 ```bash
 echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{TARGET_PREFIX}] Orphan recovery: {TASK_ID} was In progress with no live session — reset to Queue" >> ~/logs/task-looper.log
 ```
 (The reset is pushed to Asana by this session's own sync flow; recovered tasks join the queue
 below.)
 
-Read `{TARGET_DIR}/.claude/asana-mirror.md`. Extract all tasks where:
-- `**Looper Status:** Queue`
-- AND the task sits **above the `## DONE` section** of the mirror
+Build the queue — tasks with `**Looper Status:** Queue` that sit above the mirror's `## DONE`
+section, sorted by Priority (High > Medium > Low > none) then mirror order as tiebreak:
+```bash
+python3 studio/scripts/looper_logic.py queue {TARGET_DIR}/asana-mirror.md
+```
+Each line is `{local_id}\t{priority}\t{title}`, already in the order to work them.
 
 **Never queue a completed task.** Tasks in `## DONE` are finished in Asana regardless of what
 their Looper Status field reads — a stale "Queue" on a completed task is field noise, not work.
 (sync.py also annotates these as `Queue (completed, not workable)` so the exact match fails, but
-the section filter is the rule even if the annotation is ever missing.)
-
-Sort the queue by Priority, then mirror order as tiebreaker:
-1. High priority
-2. Medium priority
-3. Low priority
-4. No priority set
+the section filter — enforced by `looper_logic.build_queue`, see
+`studio/tests/test_looper_logic.py` — is the rule even if the annotation is ever missing.)
 
 Calculate deadline — earlier of quota reset or `--for` duration:
 ```bash
-python3 - <<'PYEOF'
-import json, datetime
-from pathlib import Path
-
-reset_deadline = None
-rl = Path.home() / ".claude/ratelimit-current.json"
-if rl.exists():
-    data = json.loads(rl.read_text())
-    ts = data.get("reset_ts")
-    if ts:
-        reset_deadline = datetime.datetime.fromtimestamp(ts)
-
-for_deadline = None
-for_str = "{FOR_DEADLINE}"
-if for_str and for_str != "{FOR_DEADLINE}":
-    try: for_deadline = datetime.datetime.fromisoformat(for_str)
-    except ValueError: pass
-
-candidates = [d for d in [reset_deadline, for_deadline] if d]
-if candidates:
-    print(min(candidates).isoformat())
-PYEOF
+RESET_TS=$(python3 -c "import json,pathlib; p=pathlib.Path.home()/'.claude/ratelimit-current.json'; print(json.loads(p.read_text()).get('reset_ts','') if p.exists() else '')")
+python3 studio/scripts/looper_logic.py deadline "$RESET_TS" "{FOR_DEADLINE}"
 ```
 
 If queue is empty: notify and stop.
@@ -310,7 +257,7 @@ file, no work done. Check each of the following and collect PASS/FAIL:
 3. **Project resolution** — for every distinct prefix in the queue (not every task, just distinct
    prefixes), run the same lookup as Step 4a against `studio/projects.json`. FAIL any prefix that
    resolves to `NOT_FOUND`, and name it.
-4. **Mirror presence** — for each resolved project dir, confirm `.claude/asana-mirror.md` and
+4. **Mirror presence** — for each resolved project dir, confirm `asana-mirror.md` and
    `CLAUDE.md` exist. FAIL any that are missing.
 5. **Log writable** — confirm `~/logs/task-looper.log` can be appended to.
 6. **Notifier reachable** — this is exercised by the notify call below; if `notifier.py` exits
@@ -358,7 +305,7 @@ target_prefix: {TARGET_PREFIX}
 
 In the target mirror, set `current_task`'s **Looper Status** to `In Progress`, then sync:
 ```bash
-# Edit {TARGET_DIR}/.claude/asana-mirror.md: change Looper Status from Queue → In Progress
+# Edit {TARGET_DIR}/asana-mirror.md: change Looper Status from Queue → In Progress
 python3 studio/sync.py --project {TARGET_PREFIX}
 ```
 
@@ -419,7 +366,7 @@ cd {PROJECT_DIR}
 
 ### 4b. Read the task
 
-Read `{PROJECT_DIR}/.claude/asana-mirror.md` for task Notes, Blockers, Dependencies.
+Read `{PROJECT_DIR}/asana-mirror.md` for task Notes, Blockers, Dependencies.
 Read `{PROJECT_DIR}/CLAUDE.md` for the project's tech stack and build instructions.
 
 **Duplicate-work guard.** Before doing anything, check the task's Progress history and comments.
@@ -507,14 +454,14 @@ print(f"usage:{pct}:{reset_dt}")
 PYEOF
 ```
 
-**1. Update target mirror** (`{TARGET_DIR}/.claude/asana-mirror.md`):
+**1. Update target mirror** (`{TARGET_DIR}/asana-mirror.md`):
 ```
 **Looper Status:** Review
 **Assignee:** Mark Bain (507443625075)
 **Progress:** Ready for review {YYYY-MM-DD}. {What was done, where, what to check.} Session: {pct}% used (resets {reset_dt}).
 ```
 
-**2. Update home project mirror** (`{PROJECT_DIR}/.claude/asana-mirror.md`):
+**2. Update home project mirror** (`{PROJECT_DIR}/asana-mirror.md`):
 Progress note only — do NOT change Section, Assignee, or Looper Status:
 ```
 **Progress:** Work complete {YYYY-MM-DD} via studio-looper [{TARGET_PREFIX}]. Awaiting Mark's review. Session: {pct}% used (resets {reset_dt}).

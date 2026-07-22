@@ -15,7 +15,7 @@ Pull Asana tasks on a schedule into a local markdown file (`asana-mirror.md`) th
 ```
 studio/sync.py          # runs on demand or via cron
   └── writes to
-      <project>/.claude/asana-mirror.md   # loaded automatically into Claude context
+      <project>/asana-mirror.md   # loaded automatically into Claude context
 ```
 
 The sync script is the only part that talks to Asana. Everything Claude does at session time is read from the local file.
@@ -58,7 +58,7 @@ This format was chosen because:
 
 ## Local IDs
 
-Asana GIDs are 16-digit numbers. They're stable but not human-memorable. The sync script assigns short prefixed IDs (`MCF-001`, `MCF-002`, …) the first time it sees each task, writes them to a workspace-level custom text field in Asana ("Local ID"), and stores the mapping in `.claude/asana-ids.json`.
+Asana GIDs are 16-digit numbers. They're stable but not human-memorable. The sync script assigns short prefixed IDs (`MCF-001`, `MCF-002`, …) the first time it sees each task, writes them to a workspace-level custom text field in Asana ("Local ID"), and stores the mapping in `asana-ids.json`.
 
 This means:
 - Claude can reference tasks by a short, memorable ID

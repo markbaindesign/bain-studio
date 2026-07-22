@@ -48,7 +48,7 @@ python3 ~/dev/bain-studio/studio/sync.py --dry-run      # preview
 
 ## How it works
 
-Scans `STUDIO_SCAN_ROOTS` for `CLAUDE.md` files containing `ASANA_PROJECT_GID`. For each project, fetches open tasks assigned to your Asana user and writes a mirror to `.claude/asana-mirror.md`. Tasks get sequential local IDs (e.g. `MCF-001`) stored in a custom Asana field.
+Scans `STUDIO_SCAN_ROOTS` for `CLAUDE.md` files containing `ASANA_PROJECT_GID`. For each project, fetches open tasks assigned to your Asana user and writes a mirror to `asana-mirror.md`. Tasks get sequential local IDs (e.g. `MCF-001`) stored in a custom Asana field.
 
 Add to a project's `CLAUDE.md`:
 

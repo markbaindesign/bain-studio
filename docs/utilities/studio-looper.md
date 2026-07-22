@@ -112,10 +112,42 @@ require human OAuth, not the bainbot PAT.
 ## Stop hook
 
 `~/.claude/hooks/studio-task-looper-stop-hook.sh` — fires on every session stop, resolves
-*that session's own* state file (`.claude/studio-looper.{firing session's id}.local.md`), reads
-it, resolves the next task's project directory, and re-injects the next task prompt into that
-same session. Runs alongside the per-project looper hook; each hook only acts on state files
+*that session's own* state file (`/tmp/studio-looper/studio-looper.{firing session's id}.local.md`),
+reads it, resolves the next task's project directory, and re-injects the next task prompt into
+that same session. Runs alongside the per-project looper hook; each hook only acts on state files
 matching its own naming scheme.
+
+## Mirror location
+
+`asana-mirror.md` and `asana-ids.json` live at each project's **root**, not `.claude/` — moved
+2026-07-22 for the same reason the state file moved to `/tmp`: Claude Code hard-prompts on any
+Edit/Write inside `.claude/`, and the looper edits the target mirror on every task it works
+(Looper Status, Progress). A mirror under `.claude/` meant at least one blocking prompt per task,
+fatal for unattended runs. See [ADR 011](../adr/011-mirrors-at-project-root.md). Symlinks were
+left at the old `.claude/asana-mirror.md` / `.claude/asana-ids.json` paths for anything not yet
+updated — read/write the root path, never the symlink.
+
+## Evals and tests
+
+Two layers, in `studio/scripts/looper_logic.py`:
+
+- **Unit tests** — `studio/tests/test_looper_logic.py` (pytest, part of the normal suite, free).
+  Cover the concurrency guard's LIVE/STALE classification, queue building (Priority sort, `## DONE`
+  exclusion), orphan detection, and deadline calculation — logic that used to be duplicated as
+  inline Python heredocs inside SKILL.md and was never tested. SKILL.md's Step 1a and Step 2 now
+  call this module via CLI (`python3 studio/scripts/looper_logic.py {concurrency|queue|orphans|deadline}`)
+  instead of re-embedding the logic, so the doc and the tested code can't drift apart.
+- **Behavioral evals** — `studio/evals/studio_looper/run_evals.py`. Invoke the actual skill
+  headless against the `SLT` sandbox to check an agent reading SKILL.md really behaves the way it's
+  documented to, not just that the extracted functions are correct in isolation. Costs real tokens
+  and touches real SLT Asana data — never run automatically, never part of CI. See
+  `studio/evals/studio_looper/README.md`.
+
+These evals caught a real bug on first use: `parse_state_frontmatter`'s field regex used `\s*`
+between key and value, which matches newlines — on the common case of an empty field followed by
+another key (`stop_at_pct:\ntarget_prefix: SL`), it silently swallowed the next line into the
+current key's value, corrupting `target_prefix` and making the concurrency guard blind to real
+conflicts. Fixed to `[ \t]*` (same line only); covered by a regression test.
 
 ## Local ID handling
 

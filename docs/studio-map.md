@@ -172,7 +172,7 @@ SIGNAL → QUALIFICATION → ESTIMATION → PRICING → [PROPOSAL GATE]
 | Shared utility docs | `docs/utilities/` |
 | Sync script | `studio/sync.py` |
 | Project registry | `studio/projects.json` |
-| Asana mirror | `.claude/asana-mirror.md` |
+| Asana mirror | `asana-mirror.md` |
 | Notifier | `studio/notifier.py` |
 | Project database | `~/Dropbox/Studio/context/portfolio/project-database.csv` |
 | Studio skills | `.claude/skills/` (symlinked to `~/.claude/skills/`) |

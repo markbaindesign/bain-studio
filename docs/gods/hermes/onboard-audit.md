@@ -20,7 +20,7 @@ Runs the onboarding checklist against every project in the studio registry and r
 **Infrastructure**
 - Path exists on disk
 - `CLAUDE.md` present with `ASANA_PROJECT_GID` and `ASANA_TASK_PREFIX`
-- `.claude/asana-mirror.md` exists and synced within 7 days
+- `asana-mirror.md` exists and synced within 7 days
 - `.claude/settings.json` exists
 
 **Project hygiene**

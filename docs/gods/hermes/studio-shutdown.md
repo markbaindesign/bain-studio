@@ -19,7 +19,7 @@ End-of-session routine. Commits mirror edits, captures learnings, flags unfinish
 
 ## What it does
 
-1. **Check for unsaved mirror edits** — scans each active project for uncommitted changes to `.claude/asana-mirror.md`; pushes any changes to Asana via `sync.py --project {PREFIX}`
+1. **Check for unsaved mirror edits** — scans each active project for uncommitted changes to `asana-mirror.md`; pushes any changes to Asana via `sync.py --project {PREFIX}`
 2. **Check for open feature branches** — reports branches with completed work but no PR
 3. **Run the session retro** — invokes `/studio-retro` to capture what was done, what was learned, and what's left open
 4. **Flag dangling work** — any in-progress tasks that weren't completed are listed explicitly so nothing is silently dropped

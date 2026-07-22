@@ -24,7 +24,7 @@ Wait for completion. If any project fails to sync, note it but continue.
 
 Read `/media/data/dev/bain-studio/studio/projects.md` for the registered project list.
 
-For each active project, read its `.claude/asana-mirror.md`. Extract:
+For each active project, read its `asana-mirror.md`. Extract:
 - Overdue tasks (due date in the past)
 - Tasks with no Progress note
 - Open questions from `.claude/open-questions.md` if it exists

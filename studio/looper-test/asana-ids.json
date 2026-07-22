@@ -1,0 +1,20 @@
+{
+  "custom_field_gid": "1214878337481923",
+  "last_synced_field_gid": "1214914270230951",
+  "tasks": {
+    "1216655593923669": "SLT-001",
+    "1216655593923675": "SLT-002",
+    "1216655593923672": "SLT-003"
+  },
+  "next_seq": 4,
+  "posted_progress": {
+    "1216655593923675": "Ready for review 2026-07-22. Created WEATHER_TEST.md with current weather conditions. Branch: looper/test-session-001, commit: 3593d30. Session: 53% used (resets 2026-07-22 20:20).",
+    "1216655593923672": "Ready for review 2026-07-22. Limerick: A looper that worked without rest, / Had a queue full of tasks to attest, / It synced and it ran, / Followed the plan, / And marked all the work as \"To test\"! Session: 14% used (resets 2026-07-22 20:20).",
+    "1216655593923669": "Previously completed 2026-07-18 (run 2); re-queued without new instructions \u2014 no new work added. Tell me what needs to change. Session: 34% used (resets 2026-07-22 20:20)."
+  },
+  "last_sync_times": {
+    "1216655593923669": "2026-07-22T15:14:29",
+    "1216655593923675": "2026-07-22T15:14:29",
+    "1216655593923672": "2026-07-22T15:14:29"
+  }
+}

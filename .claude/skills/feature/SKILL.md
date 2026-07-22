@@ -67,7 +67,7 @@ Increment `last` by 1, write back, and format the ref:
 
 Create an Asana task directly via the mirror:
 
-1. Read `.claude/asana-mirror.md`
+1. Read `asana-mirror.md`
 2. Find the `TO DO` section for this project
 3. Append a new task block:
 

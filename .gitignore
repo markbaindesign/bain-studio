@@ -22,13 +22,21 @@ context/
 .claude/*.local.md
 
 # Internal PM data — not for public repo
+# asana-mirror.md / asana-ids.json moved from .claude/ to project root 2026-07-22
+# (ADR 011) — ignore both locations; old-location symlinks are covered too since
+# gitignore matches the symlink path itself, not its target.
+asana-mirror.md
+asana-ids.json
 .claude/asana-mirror.md
 .claude/asana-ids.json
 .claude/pm-log.md
 .claude/open-questions.md
 .claude/inbox/
-studio/looper/.claude/asana-mirror.md
-studio/looper/.claude/asana-ids.json
+
+# Exception: the SLT sandbox fixture is intentionally committed (reproducible test data
+# for the studio-looper evals/health-check) — same reasoning as commit 9442374.
+!studio/looper-test/asana-mirror.md
+!studio/looper-test/asana-ids.json
 
 # Collector logs and runtime state
 studio/collectors/*.log

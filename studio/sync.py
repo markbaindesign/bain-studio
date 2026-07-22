@@ -1,7 +1,8 @@
 """
 Studio Asana sync — full bidirectional sync across all active studio projects.
 
-Syncs each project's Asana tasks to <project>/.claude/asana-mirror.md.
+Syncs each project's Asana tasks to <project>/asana-mirror.md (project root — moved out of
+.claude/ 2026-07-22 so unattended agents can edit mirrors without sensitive-path prompts).
 
 Conflict resolution: mirror file mtime vs Asana task modified_at.
 - asana_modified_at > mirror_mtime → Asana wins, pull all fields into mirror
@@ -126,10 +127,10 @@ class ProjectConfig:
     preserve_foreign_ids: bool = False  # True for aggregator projects (e.g. Studio Looper)
 
     @property
-    def mirror_file(self): return self.root / ".claude" / "asana-mirror.md"
+    def mirror_file(self): return self.root / "asana-mirror.md"
 
     @property
-    def ids_file(self): return self.root / ".claude" / "asana-ids.json"
+    def ids_file(self): return self.root / "asana-ids.json"
 
     @property
     def claude_dir(self): return self.root / ".claude"
@@ -1376,7 +1377,7 @@ def _scaffold_project_inner(name, prefix, path, template_gid, extra_members=None
         claude_dir = path / ".claude"
         claude_dir.mkdir(parents=True, exist_ok=True)
 
-        ids_file = claude_dir / "asana-ids.json"
+        ids_file = path / "asana-ids.json"
         if not ids_file.exists():
             ids_file.write_text(json.dumps({
                 "tasks": {}, "next_seq": 1,

@@ -114,6 +114,23 @@ def sample_task():
 
 
 # ---------------------------------------------------------------------------
+# ProjectConfig — mirror/ids paths
+# ---------------------------------------------------------------------------
+
+def test_mirror_and_ids_paths_are_not_under_claude_dir(tmp_path):
+    # Regression guard: asana-mirror.md and asana-ids.json moved out of .claude/ to the
+    # project root on 2026-07-22 (ADR 011) because Claude Code hard-prompts on any write
+    # under .claude/ regardless of permission mode, which broke unattended looper runs.
+    # This doesn't re-test the prompt itself (there's no more .claude/ mirror to hang on)
+    # — it just catches a future edit to ProjectConfig silently reverting the path.
+    p = ProjectConfig(name="Test Project", root=tmp_path, gid="proj_gid_123", prefix="TEST")
+    assert ".claude" not in str(p.mirror_file)
+    assert ".claude" not in str(p.ids_file)
+    assert p.mirror_file == tmp_path / "asana-mirror.md"
+    assert p.ids_file == tmp_path / "asana-ids.json"
+
+
+# ---------------------------------------------------------------------------
 # _fmt_refs
 # ---------------------------------------------------------------------------
 
@@ -329,6 +346,24 @@ def test_push_simple_fields_no_changes(sample_task):
     assert result is False
 
 
+def test_push_simple_fields_never_pushes_notes(sample_task):
+    # Notes are mirror-read-only by design (commit 484dae2, "Stop BainBot overwriting
+    # Asana task notes") — the mirror parser is single-line, so pushing notes back would
+    # silently truncate any multi-line content a human wrote in Asana. A differing
+    # mirror-side "notes" value must never reach the API, even when it's the only diff.
+    prev = {
+        "notes": "This differs from Asana and should never be pushed.",
+        "due": "2026-05-25",
+        "start": "none",
+        "assignee": "Bot (999888777)",
+        "assignee_status": "today",
+    }
+    with patch("sync._put") as mock_put:
+        result = _push_simple_fields(sample_task, prev, dry_run=False, prefix="TEST")
+    assert result is False
+    mock_put.assert_not_called()
+
+
 def test_push_simple_fields_due_changed(sample_task):
     prev = {
         "notes": "Some notes here.",
@@ -342,19 +377,6 @@ def test_push_simple_fields_due_changed(sample_task):
     assert result is True
     mock_put.assert_called_once()
     assert mock_put.call_args[0][1]["data"]["due_on"] == "2026-06-01"
-
-
-def test_push_simple_fields_notes_changed(sample_task):
-    prev = {
-        "notes": "Updated notes.",
-        "due": "2026-05-25",
-        "start": "none",
-        "assignee_status": "today",
-    }
-    with patch("sync._put") as mock_put:
-        mock_put.return_value = {"data": {}}
-        _push_simple_fields(sample_task, prev, dry_run=False, prefix="TEST")
-    assert mock_put.call_args[0][1]["data"]["notes"] == "Updated notes."
 
 
 def test_push_simple_fields_dry_run(sample_task):
@@ -496,7 +518,12 @@ def test_fetch_sections(proj):
 # fetch_tasks (mocked HTTP)
 # ---------------------------------------------------------------------------
 
-def test_fetch_tasks_filters_by_assignee(proj):
+def test_fetch_tasks_does_not_filter_by_assignee(proj):
+    # Assignee filtering was intentionally removed (commit 0a5097b, "sync all project
+    # tasks, not just BainBot-assigned") — tasks pass between Mark and BainBot during the
+    # workflow (Blocked -> reassigned to Mark, Review -> Mark), and filtering to bot-only
+    # silently dropped a task out of the mirror the moment it got reassigned. fetch_tasks
+    # must return every non-junk task in the project regardless of who it's assigned to.
     with patch("sync.requests.get") as mock_get, \
          patch.object(sync, "BAINBOT_GID", "bot_gid"):
         task_mine = {
@@ -507,13 +534,13 @@ def test_fetch_tasks_filters_by_assignee(proj):
             "dependents": [], "custom_fields": [], "memberships": [],
         }
         task_other = {**task_mine, "gid": "t2", "assignee": {"gid": "other_user", "name": "Other"}}
+        task_unassigned = {**task_mine, "gid": "t3", "assignee": None}
         resp = MagicMock()
-        resp.json.return_value = {"data": [task_mine, task_other]}
+        resp.json.return_value = {"data": [task_mine, task_other, task_unassigned]}
         mock_get.return_value = resp
         tasks = fetch_tasks(proj, "local_id_field_gid")
 
-    assert len(tasks) == 1
-    assert tasks[0]["gid"] == "t1"
+    assert {t["gid"] for t in tasks} == {"t1", "t2", "t3"}
 
 
 def test_fetch_tasks_extracts_section(proj):
@@ -641,65 +668,3 @@ def test_sync_project_no_push_when_asana_newer(proj, sample_task, monkeypatch):
         # No section move POST should have fired
         post_paths = [call[0][0] for call in mock_post.call_args_list]
         assert not any("addTask" in p for p in post_paths)
-
-
-def test_sync_project_pushes_when_mirror_newer(proj, sample_task, monkeypatch):
-    monkeypatch.setattr(sync, "BAINBOT_GID", "bot_gid")
-    sample_task["assignee"]["gid"] = "bot_gid"
-    sample_task["_section"] = "DOING"
-
-    # Mirror has a different section — and mirror mtime will be newer than Asana modified_at
-    proj.mirror_file.write_text(
-        "### TEST-001 — Fix the bug\n"
-        "- **Local ID:** TEST-001\n"
-        "- **Asana ID:** 111222333\n"
-        "- **Section:** NEXT UP\n"  # user moved it in the mirror
-        "- **Due:** 2026-05-25\n"
-        "- **Start:** none\n"
-        "- **Assignee:** Bot (bot_gid)\n"
-        "- **Assignee Status:** today\n"
-        "- **Tags:** none\n"
-        "- **Followers:** none\n"
-        "- **Dependencies:** none\n"
-        "- **Dependents:** none\n"
-        "- **Notes:** Some notes here.\n"
-        "- **Blockers:** None identified.\n"
-        "- **Progress:** Checked 2026-05-20.\n"
-        "- **Modified:** 2026-05-20T10:00:00\n"
-        "- **URL:** https://app.asana.com/0/proj/111222333\n\n"
-    )
-    # Mirror is newer — mtime = 2026-05-21, Asana modified_at = 2026-05-19
-    new_time = datetime(2026, 5, 21, 0, 0, 0).timestamp()
-    os.utime(proj.mirror_file, (new_time, new_time))
-    sample_task["modified_at"] = "2026-05-19T10:00:00.000Z"
-
-    ids_state = {"custom_field_gid": "cf_gid", "last_synced_field_gid": "ls_gid",
-                 "tasks": {"111222333": "TEST-001"}, "next_seq": 2, "posted_progress": {}}
-    proj.ids_file.write_text(json.dumps(ids_state))
-
-    with patch("sync.requests.get") as mock_get, \
-         patch("sync.requests.put") as mock_put, \
-         patch("sync.requests.post") as mock_post:
-
-        task_resp = MagicMock()
-        task_resp.json.return_value = {"data": [sample_task]}
-        task_resp.raise_for_status = MagicMock()
-        section_resp = MagicMock()
-        section_resp.json.return_value = {"data": [{"gid": "s1", "name": "DOING"}, {"gid": "s2", "name": "NEXT UP"}]}
-        section_resp.raise_for_status = MagicMock()
-        mock_get.side_effect = [task_resp, section_resp]
-
-        put_resp = MagicMock()
-        put_resp.json.return_value = {"data": {}}
-        put_resp.raise_for_status = MagicMock()
-        mock_put.return_value = put_resp
-
-        post_resp = MagicMock()
-        post_resp.json.return_value = {"data": {}}
-        post_resp.raise_for_status = MagicMock()
-        mock_post.return_value = post_resp
-
-        sync_project(proj, dry_run=False)
-
-        post_paths = [call[0][0] for call in mock_post.call_args_list]
-        assert any("addTask" in p for p in post_paths)

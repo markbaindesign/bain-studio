@@ -94,7 +94,7 @@ def queued_count() -> int:
     Only the active section counts — a completed task in ## DONE with a stale
     "Queue" field must never trigger (or be counted toward) a window.
     """
-    mirror = STUDIO / "studio/looper/.claude/asana-mirror.md"
+    mirror = STUDIO / "studio/looper/asana-mirror.md"
     try:
         active = mirror.read_text().split("\n## DONE")[0]
         return active.count("**Looper Status:** Queue\n")

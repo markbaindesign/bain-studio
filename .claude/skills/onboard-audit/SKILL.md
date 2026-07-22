@@ -23,7 +23,7 @@ For each project, check the following. Mark each ✓ (present), ✗ (missing), o
 - [ ] `CLAUDE.md` present at project root
 - [ ] `ASANA_PROJECT_GID` set in `CLAUDE.md`
 - [ ] `ASANA_TASK_PREFIX` set in `CLAUDE.md`
-- [ ] `.claude/asana-mirror.md` exists
+- [ ] `asana-mirror.md` exists
 - [ ] Mirror synced within last 7 days (check `Last synced:` line at top of mirror)
 - [ ] `.claude/settings.json` exists
 
