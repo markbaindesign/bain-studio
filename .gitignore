@@ -32,6 +32,10 @@ studio/looper/.claude/asana-ids.json
 
 # Collector logs and runtime state
 studio/collectors/*.log
+
+# Per-project feature tracking (local only)
+.claude/feature-counter.json
+.claude/features/
 studio/collectors/obsidian_collector_state.json
 studio/collectors/obsidian_standup.json
 studio/collectors/careers_watch_state/

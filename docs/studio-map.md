@@ -129,6 +129,7 @@ graph TD
 | The Memory     | Auto-memory system in `~/.claude/projects/…/memory/`         | ✓ Built                          |
 | Web Researcher | `/web-researcher` skill                                      | ✓ Built                          |
 | Notifier       | `studio/notifier.py` · Slack webhook                         | ✓ Built — [[utilities/notifier]] |
+| /feature       | `.claude/skills/feature/SKILL.md` · per-project feature capture | ✓ Built                       |
 
 ---
 
@@ -176,6 +177,9 @@ SIGNAL → QUALIFICATION → ESTIMATION → PRICING → [PROPOSAL GATE]
 | Project database | `~/Dropbox/Studio/context/portfolio/project-database.csv` |
 | Studio skills | `.claude/skills/` (symlinked to `~/.claude/skills/`) |
 | Studio memory | `~/.claude/projects/-media-data-dev-bain-studio/memory/` |
+| Idea pipeline spec | `context/internal/greenhouse-feature-pipeline.md` |
+| Feature backlog (per project) | `context/pipeline/feature-backlog/{PREFIX}.md` |
+| Someday-maybe | `context/someday-maybe.md` |
 
 ---
 
