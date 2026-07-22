@@ -43,13 +43,15 @@ re-stamp gate, no-push enforcement hook, run review branch) settled on local-onl
 Both rulebooks stayed live, and on 2026-07-22 a manually launched looper run pushed
 `develop` directly - the old behaviour surfacing through the deprecated path.
 
-## Known gap
+## Known gap (closed 2026-07-22)
 
-The no-git-push PreToolUse hook is armed by `LOOPER_RUN_ID`, which only the runner sets.
-A manually launched `/studio-looper` (or any ad-hoc looper-style session) runs **without**
-push enforcement and relies on the skill text alone - this is how the 2026-07-22 `pushed
-develop` violation happened. Until the hook arms unconditionally for looper sessions,
-prefer launching windows through the runner.
+The no-git-push PreToolUse hook was originally armed only by `LOOPER_RUN_ID`, which the
+runner sets - a manually launched `/studio-looper` ran **without** push enforcement and
+relied on the skill text alone, which is how the 2026-07-22 `pushed develop` violation
+happened. The hook (now versioned at `.claude/hooks/looper-no-push.sh`, symlinked into
+`~/.claude/hooks/`) additionally arms when the calling session owns a looper state file
+in `/tmp/studio-looper/` - written at Step 3 of every looper run, manual or scheduled -
+so all looper sessions are enforced and interactive sessions remain unaffected.
 
 ## Consequences
 
