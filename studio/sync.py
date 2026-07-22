@@ -756,8 +756,14 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
     if _diff(mirror_assignee_gid, asana_assignee_gid):
         updates["assignee"] = mirror_assignee_gid if mirror_assignee_gid != "none" else None
 
-    # Looper Status (enum custom field) — push if changed and field is configured
-    if LOOPER_STATUS_FIELD_GID:
+    # Looper Status (enum custom field) — push if changed and field is configured.
+    # Only Looper/Looper-test use this field; on other projects it isn't attached
+    # to the project at all, so pushing it 400s. Check the task's own custom_fields
+    # (not just LOOPER_STATUS_FIELD_GID truthiness) to confirm the field applies here.
+    field_on_project = any(
+        cf.get("gid") == LOOPER_STATUS_FIELD_GID for cf in t.get("custom_fields", [])
+    )
+    if LOOPER_STATUS_FIELD_GID and field_on_project:
         # A completed task's mirror-side value is never trusted as a push source —
         # it may be a stale pre-completion carry-forward with nothing left to work.
         prev_looper   = prev.get("looper_status") if not t.get("completed") else None
