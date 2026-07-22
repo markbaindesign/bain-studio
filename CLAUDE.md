@@ -79,6 +79,7 @@ Quick reference (paths only — see project file for full details):
 | NORE | `/home/bain/code/vvv/clients/www/nore` |
 | BD | `/media/data/dev/bain/www/bain.design` |
 | FOOB | `/media/data/dev/vvv/bain/www/wp-foobot-api-plugin` |
+| TARA | `/media/data/dev/misc/kf-tara-web` |
 
 ## Skills
 

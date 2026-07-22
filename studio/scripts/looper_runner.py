@@ -88,6 +88,20 @@ def task_log_size() -> int:
     return TASK_LOG.stat().st_size if TASK_LOG.exists() else 0
 
 
+def queued_count() -> int:
+    """Tasks in the SL mirror with Looper Status: Queue. -1 if the mirror is unreadable.
+
+    Only the active section counts — a completed task in ## DONE with a stale
+    "Queue" field must never trigger (or be counted toward) a window.
+    """
+    mirror = STUDIO / "studio/looper/.claude/asana-mirror.md"
+    try:
+        active = mirror.read_text().split("\n## DONE")[0]
+        return active.count("**Looper Status:** Queue\n")
+    except OSError:
+        return -1
+
+
 def notify(msg: str, priority: str = "normal") -> None:
     try:
         subprocess.run(
@@ -100,32 +114,94 @@ def notify(msg: str, priority: str = "normal") -> None:
         log(f"notify failed: {e}")
 
 
+def window_deadline() -> datetime.datetime:
+    """Quota-window end: reset_ts from ratelimit-current.json.
+
+    The file only refreshes when a claude session runs, so at the start of a
+    window scheduled AT the reset time it still holds the boundary just passed
+    — a stale (past) deadline killed the 2026-07-19 01:00 window after zero
+    iterations. Sessions run in ~5h windows, so if the recorded reset is not
+    comfortably in the future, assume a fresh window from now.
+    """
+    now = datetime.datetime.now()
+    try:
+        import json
+        data = json.loads((Path.home() / ".claude/ratelimit-current.json").read_text())
+        deadline = datetime.datetime.fromtimestamp(data["reset_ts"])
+        if deadline > now + datetime.timedelta(minutes=10):
+            return deadline
+        log(f"recorded reset {deadline:%H:%M} is stale — assuming fresh 5h window")
+    except Exception:
+        pass
+    return now + datetime.timedelta(hours=5)
+
+
+def clear_orphan_state() -> None:
+    # State files are disposable: the queue rebuilds from Looper Status in the
+    # mirror/Asana. In -p mode the CLI exits after one result despite the Stop
+    # hook's block decision, orphaning the file — clear it so the next
+    # iteration's concurrency guard doesn't refuse to start.
+    for f in Path("/tmp/studio-looper").glob("studio-looper.*.local.md"):
+        f.unlink()
+        log(f"cleared orphan state file {f.name}")
+
+
+MAX_ITERATIONS = 30
+
+
 def run_window(label: str) -> None:
     if not presync():
         log(f"window {label}: pre-sync FAILED — launching looper anyway (it re-syncs itself)")
 
-    stamp = f"{datetime.datetime.now():%Y%m%d-%H%M}"
-    run_log = RUN_LOG_DIR / f"studio-looper-run-{stamp}.log"
-    before = task_log_size()
-    log(f"window {label}: launching headless looper — output -> {run_log.name}")
+    # A window with nothing queued should cost one sync, not a claude session.
+    # -1 (mirror unreadable) falls through: the looper's own queue build decides.
+    n = queued_count()
+    if n == 0:
+        log(f"window {label}: queue empty after pre-sync — skipping window, no session launched")
+        return
 
-    with run_log.open("w") as out:
-        # Cheapest model drives the loop; the advisor tool (advisorModel in
-        # ~/.claude/settings.json) handles escalation when judgment is needed.
-        r = subprocess.run(
-            ["claude", "--dangerously-skip-permissions", "--model", "haiku",
-             "-p", "/studio-looper --yes"],
-            cwd=STUDIO, stdout=out, stderr=subprocess.STDOUT,
-        )
+    deadline = window_deadline()
+    run_id = f"{datetime.datetime.now():%Y%m%d-%H%M}"
+    log(f"window {label}: run id {run_id} — iterating until queue empty / no progress / {deadline:%H:%M}")
+    tasks_done = 0
 
-    worked = task_log_size() > before
-    verdict = "task-looper.log grew (activity confirmed)" if worked else \
-              "task-looper.log DID NOT GROW — run likely did nothing, check the run log"
-    log(f"window {label}: looper exited {r.returncode} after run — {verdict}")
+    for i in range(1, MAX_ITERATIONS + 1):
+        if datetime.datetime.now() >= deadline:
+            log(f"window {label}: deadline {deadline:%H:%M} reached after {i - 1} iterations")
+            break
+
+        clear_orphan_state()
+        stamp = f"{datetime.datetime.now():%Y%m%d-%H%M%S}"
+        run_log = RUN_LOG_DIR / f"studio-looper-run-{stamp}.log"
+        before = task_log_size()
+        log(f"window {label}: iteration {i} — output -> {run_log.name}")
+
+        with run_log.open("w") as out:
+            # Cheapest model works the task; advisor (sonnet) and one-shot
+            # fable are the escalation rungs per the skill. LOOPER_RUN_ID keys
+            # the shared review branch (one per window, not per iteration) and
+            # arms the no-git-push PreToolUse hook.
+            env = dict(os.environ, LOOPER_RUN_ID=run_id)
+            r = subprocess.run(
+                ["claude", "--dangerously-skip-permissions", "--model", "haiku",
+                 "-p", "/studio-looper --yes"],
+                cwd=STUDIO, stdout=out, stderr=subprocess.STDOUT, env=env,
+            )
+
+        if task_log_size() > before:
+            tasks_done += 1
+            log(f"window {label}: iteration {i} exited {r.returncode} — progress made")
+        else:
+            log(f"window {label}: iteration {i} exited {r.returncode} — NO progress "
+                f"(queue empty or failure, see {run_log.name}) — ending window")
+            break
+
+    clear_orphan_state()
+    log(f"window {label}: done — {tasks_done} productive iteration(s)")
     notify(
-        f"looper window '{label}' finished (exit {r.returncode}). "
-        f"{'Activity confirmed.' if worked else 'WARNING: no activity logged - check ' + run_log.name}",
-        priority="normal" if worked else "high",
+        f"looper window '{label}' finished: {tasks_done} productive iteration(s). "
+        f"Details in ~/logs/studio-looper.log",
+        priority="normal" if tasks_done else "high",
     )
 
 
@@ -146,6 +222,17 @@ def main() -> None:
         except (ValueError, AssertionError):
             ap.error(f"invalid time {hhmm!r} — expected HH:MM (00:00–23:59)")
 
+    import signal
+    import traceback
+
+    def on_signal(signum, frame):
+        log(f"received signal {signal.Signals(signum).name} — exiting")
+        release_lock()
+        sys.exit(128 + signum)
+
+    signal.signal(signal.SIGTERM, on_signal)
+    signal.signal(signal.SIGINT, on_signal)
+
     if not acquire_lock():
         sys.exit(1)
     try:
@@ -156,6 +243,12 @@ def main() -> None:
             run_window(hhmm)
         log("all windows done — runner exiting, nothing further scheduled")
         notify("looper runner done: all scheduled windows finished, nothing further scheduled.")
+    except Exception:
+        # The 2026-07-19 morning runner died silently: uncaught exception with
+        # stdout/stderr pointed at /dev/null. Never again — log and notify.
+        log("runner CRASHED:\n" + traceback.format_exc())
+        notify("looper runner CRASHED - see ~/logs/studio-looper.log", priority="high")
+        raise
     finally:
         release_lock()
 

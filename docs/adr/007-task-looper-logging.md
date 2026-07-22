@@ -1,7 +1,7 @@
 # ADR 007 — Task looper logging
 
 **Date:** 2026-06-25
-**Status:** Accepted
+**Status:** Accepted — conventions inherited unchanged by studio-looper ([ADR 009](009-studio-looper-canonical.md))
 
 ## Decision
 

@@ -62,7 +62,9 @@ _LOOPER_STATUS_OPTIONS: dict = {}
 
 
 def _get_looper_status_option_gid(name: str):
-    """Return the Asana enum option GID for a Looper Status value, fetching once if needed."""
+    """Return the Asana enum option GID for a Looper Status value, fetching once if needed.
+    Matched case-insensitively -- mirrors/docs consistently write "In Progress" but the
+    Asana field's own option label has drifted to "In progress" at least once already."""
     global _LOOPER_STATUS_OPTIONS
     if not LOOPER_STATUS_FIELD_GID:
         return None
@@ -70,11 +72,11 @@ def _get_looper_status_option_gid(name: str):
         try:
             data = _get(f"/custom_fields/{LOOPER_STATUS_FIELD_GID}")["data"]
             _LOOPER_STATUS_OPTIONS = {
-                o["name"]: o["gid"] for o in data.get("enum_options", [])
+                o["name"].lower(): o["gid"] for o in data.get("enum_options", [])
             }
         except Exception as e:
             log.warning(f"Could not fetch Looper Status enum options: {e}")
-    return _LOOPER_STATUS_OPTIONS.get(name)
+    return _LOOPER_STATUS_OPTIONS.get(name.lower())
 
 JUNK_PATTERNS  = re.compile(r"^- |😍|📰|\[Product Update\]", re.IGNORECASE)
 PLAIN_CHECK    = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
@@ -439,6 +441,74 @@ def fetch_comments(task_gid: str) -> list:
     return comments
 
 
+# ---------------------------------------------------------------------------
+# Attachments
+# ---------------------------------------------------------------------------
+
+ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+ATTACHMENT_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf",
+                   ".md", ".txt", ".csv", ".json", ".html"}
+
+
+def fetch_task_attachments(task_gid: str) -> list:
+    try:
+        return _get("/attachments", {
+            "parent": task_gid,
+            "opt_fields": "name,download_url,view_url,size",
+        })["data"] or []
+    except Exception:
+        return []
+
+
+def sync_attachments(proj: ProjectConfig, local_id: str, task_gid: str) -> list:
+    """Download a task's attachments into .claude/attachments/{local_id}/ and
+    return mirror-ready entry strings (project-relative paths, or a name with a
+    skip reason). Asana download URLs are short-lived signed links, so files
+    must be fetched at sync time; the attachment GID in the filename makes the
+    cache re-download-proof. Attachment content is untrusted external data —
+    same policy as comments (see CLAUDE.md Security)."""
+    metas = fetch_task_attachments(task_gid)
+    if not metas:
+        return []
+    att_root = proj.claude_dir / "attachments"
+    entries = []
+    for m in metas:
+        name = os.path.basename((m.get("name") or "unnamed").replace("\\", "/"))
+        gid  = m.get("gid", "0")
+        url  = m.get("download_url")
+        ext  = os.path.splitext(name)[1].lower()
+        if not url:  # hosted externally (Drive, Dropbox, …) — nothing to download
+            entries.append(f"{name} (external: {m.get('view_url') or 'no url'})")
+            continue
+        if ext not in ATTACHMENT_EXTS:
+            entries.append(f"{name} (not downloaded: {ext or 'unknown'} type)")
+            continue
+        size = m.get("size") or 0
+        if size > ATTACHMENT_MAX_BYTES:
+            entries.append(f"{name} (not downloaded: {size // (1024 * 1024)} MB exceeds cap)")
+            continue
+        dest = att_root / local_id / f"{gid}-{name}"
+        if not dest.exists():
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                gi = att_root / ".gitignore"
+                if not gi.exists():  # self-ignoring cache — keeps binaries out of every repo
+                    gi.write_text("*\n")
+                r = requests.get(url, timeout=60)
+                r.raise_for_status()
+                if len(r.content) > ATTACHMENT_MAX_BYTES:
+                    entries.append(f"{name} (not downloaded: exceeds size cap)")
+                    continue
+                dest.write_bytes(r.content)
+                log.info(f"    Downloaded attachment {local_id}/{name} ({len(r.content) // 1024} KB)")
+            except Exception as e:
+                log.warning(f"    Attachment download failed for {local_id}/{name}: {e}")
+                entries.append(f"{name} (download failed)")
+                continue
+        entries.append(str(dest.relative_to(proj.root)))
+    return entries
+
+
 def _is_junk(task) -> bool:
     name = task.get("name", "")
     projects = task.get("projects", [])
@@ -621,6 +691,11 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
     # nothing left to work, regardless of what the field showed pre-completion.
     carried_looper = prev.get("looper_status") if not t.get("completed") else None
     looper_status  = t.get("_looper_status") or carried_looper or "none"
+    # A completed task must never render an actionable status: the queue build
+    # greps for the exact value, and a stale "Queue" on a done task would get
+    # re-worked. Annotating breaks the exact match by construction.
+    if t.get("completed") and looper_status in ("Queue", "In Progress"):
+        looper_status = f"{looper_status} (completed, not workable)"
     tags       = _fmt_refs(t.get("tags", []))
     followers  = _fmt_refs(t.get("followers", []))
     deps       = _fmt_task_refs(t.get("dependencies", []), gid_to_lid)
@@ -634,6 +709,12 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
             comment_lines.append(f"  > {c['created_at']} **{c['author']}:** {text}")
     else:
         comment_lines = ["- **Comments:** none"]
+
+    atts = t.get("_attachments") or []
+    if atts:
+        att_lines = ["- **Attachments:**"] + [f"  - {a}" for a in atts]
+    else:
+        att_lines = ["- **Attachments:** none"]
 
     return [
         f"### {local_id} — {t['name']}",
@@ -654,6 +735,7 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
         f"- **Blockers:** {blockers}",
         f"- **Progress:** {progress}",
         *comment_lines,
+        *att_lines,
         f"- **Modified:** {modified}",
         f"- **URL:** {t.get('permalink_url', '')}",
         "",
@@ -754,8 +836,14 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
     if _diff(mirror_assignee_gid, asana_assignee_gid):
         updates["assignee"] = mirror_assignee_gid if mirror_assignee_gid != "none" else None
 
-    # Looper Status (enum custom field) — push if changed and field is configured
-    if LOOPER_STATUS_FIELD_GID:
+    # Looper Status (enum custom field) — push if changed and field is configured.
+    # Only Looper/Looper-test use this field; on other projects it isn't attached
+    # to the project at all, so pushing it 400s. Check the task's own custom_fields
+    # (not just LOOPER_STATUS_FIELD_GID truthiness) to confirm the field applies here.
+    field_on_project = any(
+        cf.get("gid") == LOOPER_STATUS_FIELD_GID for cf in t.get("custom_fields", [])
+    )
+    if LOOPER_STATUS_FIELD_GID and field_on_project:
         # A completed task's mirror-side value is never trusted as a push source —
         # it may be a stale pre-completion carry-forward with nothing left to work.
         prev_looper   = prev.get("looper_status") if not t.get("completed") else None
@@ -878,6 +966,14 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         gid_to_lid = state.get("tasks", {})
         stamp_last_synced(proj, tasks, last_synced_gid, dry_run)
 
+        # --- Attachments (active tasks only — DONE tasks are not workable) ---
+        if not dry_run:
+            for t in tasks:
+                if t.get("completed"):
+                    continue
+                lid = t.get("_local_id") or gid_to_lid.get(t["gid"]) or t["gid"]
+                t["_attachments"] = sync_attachments(proj, lid, t["gid"])
+
         # Per-task last-sync timestamps — used for conflict resolution.
         # Comparing against mirror file mtime was wrong: sync.py rewrites the
         # mirror every run, so mirror_mtime was always "now", causing any Asana
@@ -887,6 +983,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
         # --- Bidirectional field sync ---
         pushed = 0
+        touched_gids = set()  # tasks WE wrote to this run — re-stamped after all writes
         for t in tasks:
             gid  = t["gid"]
             prev = carried.get(gid)
@@ -907,6 +1004,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
             if _push_simple_fields(t, prev, dry_run, proj.prefix):
                 pushed += 1
+                touched_gids.add(gid)
 
             for label, mirror_key, asana_key, add_path, remove_path, item_key in [
                 ("tags",         "tags",         "tags",         "/tasks/{task_gid}/addTag",          "/tasks/{task_gid}/removeTag",          "tag"),
@@ -921,11 +1019,13 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                     dry_run, proj.prefix, label,
                 ):
                     pushed += 1
+                    touched_gids.add(gid)
 
             mirror_section = prev.get("section")
             if mirror_section and mirror_section != t.get("_section"):
                 if _push_section(t, mirror_section, sections, dry_run, proj.prefix):
                     pushed += 1
+                    touched_gids.add(gid)
 
             last_sync_times[gid] = now_utc
 
@@ -965,10 +1065,26 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                     if not dry_run:
                         posted_progress[gid] = curr_p
                     commented += 1
+                    touched_gids.add(gid)
                 except Exception as e:
                     log.warning(f"  Failed to comment on {local_id}: {e}")
 
         state["posted_progress"] = posted_progress
+
+        # Re-stamp tasks WE wrote to (pushes + comments) with a post-write
+        # timestamp. Our own writes bump each task's modified_at to AFTER the
+        # sync-start now_utc stamp, so the next run's "Asana is newer" gate saw
+        # every bot-touched task as externally modified and silently skipped
+        # pushing its mirror changes — the cause of the Review-push drops and
+        # the resulting duplicate-work cycles of 2026-07-18/19. A 60s margin
+        # absorbs clock skew vs Asana's servers; genuine human edits after this
+        # sync still register as newer and win, as intended.
+        if touched_gids and not dry_run:
+            post_write = (datetime.utcnow() + timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%S")
+            for gid in touched_gids:
+                last_sync_times[gid] = post_write
+            state["last_sync_times"] = last_sync_times
+
         save_ids(proj, state, dry_run)
 
         mirror = build_mirror(proj, tasks, carried, gid_to_lid)

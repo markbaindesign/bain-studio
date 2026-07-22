@@ -25,7 +25,7 @@ Invoke in Claude Code with `/skill-name [args]`.
 | `studio-ghost-projects` | `/studio-ghost-projects` | Scan for inactive/stale registered projects |
 | `studio-pm-align` | `/studio-pm-align` | Align a project's Asana board with studio template |
 | `abderus` | `/abderus` | Timing sweep: harvest gaps, overdue tasks, stale triage |
-| `task-looper` | `/task-looper` | Work through BainBot Asana tasks in a loop |
+| `task-looper` | `/task-looper` | DEPRECATED — redirects to `/studio-looper` (ADR 009) |
 | `check-inbox` | `/check-inbox` | Process messages in `.claude/inbox/` |
 
 ### Project Lifecycle

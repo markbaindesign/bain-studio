@@ -66,7 +66,7 @@ graph TD
 
     I["🌈 IRIS\nSocial · Event Broadcasting\n/iris"]
     I --> I1["Arke — Event Spotter · /arke"]
-    I --> I2["Aura — Post Writer · /aura"]
+    I --> I2["Aura — Post Writer · /aura-post"]
     I --> I3["Kairos — Scheduler · /kairos"]
 
     P["💰 FINANCIAL REVIEW\nFinance · Invoicing · Tax · Cashflow\n/financial-review · /harvest"]
@@ -113,7 +113,7 @@ graph TD
 | Dike | Themis | `/dike` | ✓ Built |
 | Eirene | Themis | `/eirene` | ✓ Built |
 | Arke | Iris | `/arke` | ✓ Built |
-| Aura | Iris | `/aura` | ✓ Built |
+| Aura | Iris | `/aura-post` | ✓ Built — `/aura` is now SEO strategy |
 | Kairos | Iris | `/kairos` | ✓ Built |
 | Raise Invoice | Financial Review | `/raise-invoice` | ✓ Built |
 | Tax Prep | Financial Review | `/tax-prep` | ✓ Built |
