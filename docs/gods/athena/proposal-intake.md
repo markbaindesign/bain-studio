@@ -11,7 +11,7 @@ tags:
 
 # Proposal Intake — Elicitor
 
-Takes raw client input and maps it onto the studio's 12-part proposal skeleton, so gaps are visible before any client-facing copy gets written. This is a scaffolding step, not a writing step — output is a working document with source material mapped in and explicit `[NEEDS: ...]` markers, not client-ready prose.
+Takes raw client input and maps it onto the studio's 11-part proposal skeleton, so gaps are visible before any client-facing copy gets written. This is a scaffolding step, not a writing step — output is a working document with source material mapped in and explicit `[NEEDS: ...]` markers, not client-ready prose.
 
 ## Invoke
 
@@ -23,11 +23,11 @@ Pass raw client input directly (pasted RFP text, attached files, notes stated in
 
 ## What it produces
 
-A skeleton mapped to the 12-part structure defined in `$STUDIO_CONTENT_DIR/internal/proposal-template.md` (rationale/source research in the sibling file `$STUDIO_CONTENT_DIR/internal/2026-07-18-proposal-research.md`):
+A skeleton mapped to the 11-part structure defined in `$STUDIO_CONTENT_DIR/internal/proposal-template.md` (rationale/source research in the sibling file `$STUDIO_CONTENT_DIR/internal/2026-07-18-proposal-research.md`):
 
-1. Cover, 2. Executive summary, 3. The problem, 4. Proposed approach, 5. Deliverables, 6. Timeline, 7. Investment, 8. Case Studies, 9. Assumptions & out of scope, 10. About / why us, 11. Next steps, 12. Terms
+1. Cover, 2. Executive summary, 3. The problem, 4. Proposed approach, 5. Deliverables, 6. Investment & timeline, 7. Case Studies, 8. Assumptions & out of scope, 9. About / why us, 10. Next steps, 11. Terms
 
-Populated where the source material supports it; every unfilled section is marked `[NEEDS: ...]`. Below the skeleton, a flat checklist of every gap. Sections 10 (About/why us) and 12 (Terms) are pre-filled with studio boilerplate in the template and are rarely gaps.
+Populated where the source material supports it; every unfilled section is marked `[NEEDS: ...]`. Below the skeleton, a flat checklist of every gap. Sections 9 (About/why us) and 11 (Terms) are pre-filled with studio boilerplate in the template and are rarely gaps.
 
 ## Output format
 

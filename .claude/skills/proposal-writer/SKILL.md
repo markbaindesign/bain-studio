@@ -33,7 +33,7 @@ source /media/data/dev/bain-studio/studio/.env
 cat "$STUDIO_CONTENT_DIR/internal/proposal-template.md"
 ```
 
-This is the working template — 12-part structure, fixed boilerplate for "About / why us" and
+This is the working template — 11-part structure, fixed boilerplate for "About / why us" and
 "Terms" already written, `[NEEDS: ...]` markers on the sections that vary per client.
 Rationale/source research for the structure is in the sibling file
 `$STUDIO_CONTENT_DIR/internal/2026-07-18-proposal-research.md` if background is needed, but
@@ -48,7 +48,7 @@ requires different terms. Investment tiers (Essential/Recommended/Complete) are 
 use them only for projects large or ambiguous enough that scope is a real client decision;
 skip them for small, well-defined jobs.
 
-Non-negotiable sections: the problem, deliverables, investment, assumptions & out of scope, next steps. Keep the whole document to 6-8 pages; the executive summary must stand alone.
+Non-negotiable sections: the problem, deliverables, investment & timeline, assumptions & out of scope, next steps. Keep the whole document to 6-8 pages; the executive summary must stand alone.
 
 **Refinement** — Apply studio voice to an existing proposal draft, remove filler, tighten structure. Do not change facts or scope.
 

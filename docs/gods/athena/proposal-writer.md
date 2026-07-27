@@ -26,7 +26,7 @@ If the input still contains `[NEEDS: ...]` markers, it stops and reports them ba
 ## Steps
 
 1. **Load brand voice** — reads the master doc at `/media/data/Dropbox/Work/Content/Brand Voice/brand-voice.md`, mandatory before any copy is written
-2. **Load the proposal template** — reads `$STUDIO_CONTENT_DIR/internal/proposal-template.md` (12-part structure, studio boilerplate for About/why us and Terms already written, `[NEEDS: ...]` markers on the sections that vary per client); rationale/source research in the sibling `$STUDIO_CONTENT_DIR/internal/2026-07-18-proposal-research.md`
+2. **Load the proposal template** — reads `$STUDIO_CONTENT_DIR/internal/proposal-template.md` (11-part structure, studio boilerplate for About/why us and Terms already written, `[NEEDS: ...]` markers on the sections that vary per client); rationale/source research in the sibling `$STUDIO_CONTENT_DIR/internal/2026-07-18-proposal-research.md`
 3. **Write or refine** — new proposal works through the template top to bottom; refinement mode applies studio voice to an existing draft without changing facts or scope
 4. **Write** — uses only facts/figures/comps supplied; never invents; unresolved gaps stay flagged
 5. **Copywriter voice pass** — applies the Copywriter's voice rules (`/home/bain/.claude/skills/copywriter/SKILL.md`) as an explicit self-review, not an assertion

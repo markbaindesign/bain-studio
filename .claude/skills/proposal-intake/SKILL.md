@@ -6,7 +6,7 @@ allowed-tools: [Read, Write, Glob]
 
 # Proposal Intake
 
-Takes raw client input, structures it against the studio's 12-part proposal skeleton, then walks Mark through every resulting gap one question at a time until the skeleton is complete. This is a scaffolding step, not a writing step — the saved output is a working document with source material mapped in, not client-ready prose. **The skeleton is never sent to the client** — it is internal-only, a handoff artifact for `proposal-writer`, which is the only skill that produces client-facing output.
+Takes raw client input, structures it against the studio's 11-part proposal skeleton, then walks Mark through every resulting gap one question at a time until the skeleton is complete. This is a scaffolding step, not a writing step — the saved output is a working document with source material mapped in, not client-ready prose. **The skeleton is never sent to the client** — it is internal-only, a handoff artifact for `proposal-writer`, which is the only skill that produces client-facing output.
 
 Source material is always the current working directory (the folder this skill was invoked from), plus anything supplied directly in the request (pasted text, attached files, notes stated inline). Does not read from or write to the pipeline, Mnemosyne, or any snippet library.
 
@@ -39,13 +39,12 @@ cat "$STUDIO_CONTENT_DIR/internal/proposal-template.md"
 3. **The problem** — pull 2 specifics directly from the source; do not paraphrase into generic language
 4. **Proposed approach** — draft a phase/workstream breakdown if the source implies one; otherwise `[NEEDS: approach]`
 5. **Deliverables** — list anything explicitly requested or implied; flag anything under-specified as `[NEEDS: deliverable count/detail]`
-6. **Timeline** — dates/deadlines mentioned in source; otherwise `[NEEDS: timeline]`
-7. **Investment** — this is almost never in the source. Default to `[NEEDS: pricing — tier structure? breakdown by part? payment terms?]`
-8. **Case Studies** — leave as `[NEEDS: comps/case studies — sector-matched]` unless the caller supplies specific ones
-9. **Assumptions & out of scope** — draft likely exclusions based on what's requested vs. adjacent scope not mentioned; flag for review, don't assume final
-10. **About / why us** — already covered by studio boilerplate in the template; no gap to elicit unless this engagement needs a different pitch
-11. **Next steps** — `[NEEDS: next action + validity date]`
-12. **Terms** — already covered by studio boilerplate in the template; no gap to elicit unless this engagement needs different terms
+6. **Investment & timeline** — one milestone table (date, deliverable, cost, payment trigger). Dates/deadlines may be in the source; pricing almost never is. Default to `[NEEDS: milestone table — dates? cost per milestone? tier structure?]`
+7. **Case Studies** — leave as `[NEEDS: comps/case studies — sector-matched]` unless the caller supplies specific ones
+8. **Assumptions & out of scope** — draft likely exclusions based on what's requested vs. adjacent scope not mentioned; flag for review, don't assume final
+9. **About / why us** — already covered by studio boilerplate in the template; no gap to elicit unless this engagement needs a different pitch
+10. **Next steps** — `[NEEDS: next action + validity date]`
+11. **Terms** — already covered by studio boilerplate in the template; no gap to elicit unless this engagement needs different terms
 
 ### 3. Elicit answers, one question at a time
 
