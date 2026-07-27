@@ -24,14 +24,21 @@ The `Bd` mark is drawn programmatically — it's a typographic CSS mark from the
 
 ## Fonts
 
-Fonts live in `assets/fonts/`. All four are required for correct rendering:
+Fonts live in `assets/fonts/`. All seven are required for correct rendering:
 
 | File | Used for |
 |------|----------|
-| `JetBrainsMono-Regular.ttf` | Body text |
-| `JetBrainsMono-Medium.ttf` | Italic equivalent, H4/H5 |
-| `JetBrainsMono-Bold.ttf` | Headings, bold inline |
-| `IBMPlexMono-Regular.ttf` | Code blocks, inline code |
+| `SourceSerif4-Regular.ttf` | Body text, list items, table cells |
+| `SourceSerif4-Semibold.ttf` | Bold inline (within body text) |
+| `SourceSerif4-Italic.ttf` | Italic inline, blockquotes |
+| `JetBrainsMono-Regular.ttf` | Header/footer chrome |
+| `JetBrainsMono-Medium.ttf` | H4/H5, italic equivalent within headings |
+| `JetBrainsMono-Bold.ttf` | Headings, cover title, bold inline within headings |
+| `IBMPlexMono-Regular.ttf` | Code blocks, inline code, captions |
+
+Body copy uses `Source Serif 4` (matching `--font-serif` in the studio design system) — monospace reads
+poorly at paragraph length, so mono is reserved for headings, chrome (header/footer), titles, table
+headers, and code.
 
 ## Dependencies
 

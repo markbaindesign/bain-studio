@@ -39,6 +39,9 @@ FONT_FILES = {
     'JetBrainsMono-Medium':  FONTS / 'JetBrainsMono-Medium.ttf',
     'JetBrainsMono-Bold':    FONTS / 'JetBrainsMono-Bold.ttf',
     'IBMPlexMono-Regular':   FONTS / 'IBMPlexMono-Regular.ttf',
+    'SourceSerif4-Regular':  FONTS / 'SourceSerif4-Regular.ttf',
+    'SourceSerif4-Semibold': FONTS / 'SourceSerif4-Semibold.ttf',
+    'SourceSerif4-Italic':   FONTS / 'SourceSerif4-Italic.ttf',
 }
 
 MARK = IMAGES / 'bain-logo.png'
@@ -67,6 +70,9 @@ def register_fonts():
         ('MonoMedium', 'JetBrainsMono-Medium',  'Courier'),
         ('MonoBold',   'JetBrainsMono-Bold',     'Courier-Bold'),
         ('Code',       'IBMPlexMono-Regular',    'Courier'),
+        ('Serif',      'SourceSerif4-Regular',   'Times-Roman'),
+        ('SerifBold',  'SourceSerif4-Semibold',  'Times-Bold'),
+        ('SerifItalic','SourceSerif4-Italic',    'Times-Italic'),
     ]:
         path = FONT_FILES.get(key)
         if path and path.exists():
@@ -97,12 +103,12 @@ def build_styles(F):
     add('BH5', fontName=F['MonoMedium'], fontSize=10, textColor=GRAPHITE, spaceBefore=5,  spaceAfter=2,  leading=14)
     add('BH6', fontName=F['MonoMedium'], fontSize=9,  textColor=PENCIL,   spaceBefore=4,  spaceAfter=2,  leading=13)
 
-    add('BBody',     fontName=F['Mono'],       fontSize=10, textColor=INK,     spaceAfter=6,  leading=17)
-    add('BListItem', fontName=F['Mono'],       fontSize=10, textColor=INK,     spaceAfter=3,  leading=16, leftIndent=14)
-    add('BQuote',    fontName=F['Mono'],       fontSize=10, textColor=GRAPHITE, spaceBefore=4, spaceAfter=4, leading=17, leftIndent=12)
+    add('BBody',     fontName=F['Serif'],      fontSize=11, textColor=INK,     spaceAfter=7,  leading=17)
+    add('BListItem', fontName=F['Serif'],      fontSize=11, textColor=INK,     spaceAfter=4,  leading=16, leftIndent=14, bulletIndent=0)
+    add('BQuote',    fontName=F['SerifItalic'],fontSize=11, textColor=GRAPHITE, spaceBefore=4, spaceAfter=4, leading=17, leftIndent=12)
     add('BCaption',  fontName=F['Code'],       fontSize=8,  textColor=PENCIL,  spaceAfter=3,  leading=11)
     add('BTableHead',fontName=F['MonoBold'],   fontSize=9,  textColor=INK,     spaceAfter=0,  leading=13)
-    add('BTableCell',fontName=F['Mono'],       fontSize=9,  textColor=INK,     spaceAfter=0,  leading=13)
+    add('BTableCell',fontName=F['Serif'],      fontSize=9.5,textColor=INK,     spaceAfter=0,  leading=13)
     return s
 
 
@@ -169,7 +175,9 @@ def _slug(heading_text):
 
 # ─── Inline markdown → ReportLab XML ─────────────────────────────────────────
 
-def _inline(text, F):
+def _inline(text, F, bold=None, italic=None):
+    bold_font   = bold or F['SerifBold']
+    italic_font = italic or F['SerifItalic']
     # Escape XML special chars first
     text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     # Internal anchor links [label](#anchor) → clickable link
@@ -193,10 +201,10 @@ def _inline(text, F):
             url = url[:-1]
         return f'<a href="{url}" color="#{CLAY_HEX}">{url}</a>' + trail
     text = re.sub(r'(?<!href=")(https?://[^\s<>"\']+)', _bare_url, text)
-    text = re.sub(r'\*\*(.+?)\*\*', lambda m: f'<font name="{F["MonoBold"]}">{m.group(1)}</font>', text)
-    text = re.sub(r'__(.+?)__',     lambda m: f'<font name="{F["MonoBold"]}">{m.group(1)}</font>', text)
-    text = re.sub(r'\*(.+?)\*',     lambda m: f'<font name="{F["MonoMedium"]}">{m.group(1)}</font>', text)
-    text = re.sub(r'_(.+?)_',       lambda m: f'<font name="{F["MonoMedium"]}">{m.group(1)}</font>', text)
+    text = re.sub(r'\*\*(.+?)\*\*', lambda m: f'<font name="{bold_font}">{m.group(1)}</font>', text)
+    text = re.sub(r'__(.+?)__',     lambda m: f'<font name="{bold_font}">{m.group(1)}</font>', text)
+    text = re.sub(r'\*(.+?)\*',     lambda m: f'<font name="{italic_font}">{m.group(1)}</font>', text)
+    text = re.sub(r'_(.+?)_',       lambda m: f'<font name="{italic_font}">{m.group(1)}</font>', text)
     text = re.sub(r'`(.+?)`',       lambda m: '<font name="' + F['Code'] + '" color="#' + CLAY_HEX + '">' + m.group(1) + '</font>', text)
     return text
 
@@ -242,7 +250,7 @@ def md_to_story(md_text, ST, F, skip_h1=False, base_dir=None):
             level = len(hm.group(1))
             raw_heading = hm.group(2)
             anchor = _slug(raw_heading)
-            text  = f'<a name="{anchor}"/>' + _inline(raw_heading, F)
+            text  = f'<a name="{anchor}"/>' + _inline(raw_heading, F, bold=F['MonoBold'], italic=F['MonoMedium'])
             smap  = {1:'BH1', 2:'BH2', 3:'BH3', 4:'BH4', 5:'BH5', 6:'BH6'}
             if level == 1:
                 story.append(Spacer(1, 4 * mm))
@@ -284,7 +292,7 @@ def md_to_story(md_text, ST, F, skip_h1=False, base_dir=None):
             while i < len(lines) and re.match(r'^[-*+]\s+', lines[i]):
                 text = _inline(re.sub(r'^[-*+]\s+', '', lines[i]), F)
                 story.append(Paragraph(
-                    f'<font color="#{CLAY_HEX}">–</font>  {text}',
+                    f'<font color="#{CLAY_HEX}">•</font>  {text}',
                     ST['BListItem']))
                 i += 1
             story.append(Spacer(1, 2 * mm))
