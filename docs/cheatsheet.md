@@ -36,7 +36,7 @@ Invoke in Claude Code with `/skill-name [args]`.
 | `athena` | `/athena` | Qualify brief, research client, estimate, draft proposal |
 | `erichthonius` | `/erichthonius [brief]` | Estimate hours using Mnemosyne comps |
 | `financial-review` | `/financial-review` | Margin check and tax review on any proposal |
-| `nike` | `/nike` | Write or refine a proposal or scope doc |
+| `proposal-writer` | `/proposal-writer` | Write or refine a proposal or scope doc |
 | `commission` | `/commission` | Commission an approved spec — scaffold + Asana create |
 | `register-project` | `/register-project` | Add a project to projects.json + CLAUDE.md |
 | `scaffold-dir` | `/scaffold-dir` | Create project directory + git init |

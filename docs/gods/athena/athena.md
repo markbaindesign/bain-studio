@@ -29,7 +29,7 @@ Athena works through her household — each handles a distinct phase:
 |---|---|
 | **Pallas** (researcher) | Researches the client, sector, and comparable work |
 | **Ericthonius** (estimator) | Estimates scope and hours from the brief |
-| **Nike** (proposal writer) | Writes the final proposal document |
+| **Proposal Writer** | Writes the final proposal document |
 
 ## Prospecting (Upwork Pipeline)
 

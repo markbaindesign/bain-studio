@@ -47,7 +47,7 @@ graph TD
 
     A["🟡 ATHENA\nStrategy · Qualification · Proposals\n/athena · /commission · /review-spec"]
     A --> A1["Pallas — Researcher · /pallas"]
-    A --> A2["Nike — Proposal Writer · /nike"]
+    A --> A2["Proposal Writer · /proposal-writer"]
     A --> A3["Erichthonius — Estimator · /erichthonius\n⚠ also claimed by Hephaestus"]
 
     AP["🌸 APHRODITE\nVisual Design · Brand · Pre-QA Gate\n/aphrodite"]
@@ -103,7 +103,7 @@ graph TD
 | Autolycus | Hermes | `/triage` | ✓ Built |
 | Abderus | Hermes | `/abderus` | ✓ Built — timing sweep |
 | Pallas | Athena | `/pallas` | ✓ Built |
-| Nike | Athena | `/nike` | ✓ Built |
+| Proposal Writer | Athena | `/proposal-writer` | ✓ Built |
 | Erichthonius | Athena + Hephaestus | `/erichthonius` | ✓ Built |
 | Harmonia | Aphrodite | `/harmonia` | ✓ Built |
 | Anteros | Aphrodite | `/anteros` | ✓ Built |

@@ -213,7 +213,7 @@ def invoke_athena(brief_path):
 
     prompt = f"""Run the Athena skill on this brief: {brief_path}
 
-Process all six steps (Pallas research, Erichthonius estimate, Nike questions/proposal, gate prep) and save the complete Athena Report to context/pipeline/athena/."""
+Process all six steps (Pallas research, Erichthonius estimate, Proposal Writer questions/proposal, gate prep) and save the complete Athena Report to context/pipeline/athena/."""
 
     result = subprocess.run(
         ["claude", "-p", prompt, "--system", athena_content, "--output-format", "text"],

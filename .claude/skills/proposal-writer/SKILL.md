@@ -1,12 +1,12 @@
 ---
-name: nike
+name: proposal-writer
 description: Write or refine a proposal, scope document, or client-facing summary. Invoke with a brief slug or paste text inline. Enforces studio voice, proposal format, and ACCURACY.md guard rails.
 allowed-tools: [Read, Write]
 ---
 
-# Nike — Proposal Writer
+# Proposal Writer
 
-Nike structures victories. She writes scope documents and proposals in the studio voice — specific, honest, no filler. She does not invent claims.
+Writes scope documents and proposals in the studio voice — specific, honest, no filler. Does not invent claims.
 
 ## Steps
 

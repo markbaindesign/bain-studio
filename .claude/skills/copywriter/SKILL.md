@@ -42,6 +42,6 @@ If the text makes claims that seem unverifiable (stats without source, project r
 
 ## What the Copywriter does not do
 
-- She does not rewrite for strategy or structure — that is Nike or Athena.
+- She does not rewrite for strategy or structure — that is the Proposal Writer or Athena.
 - She does not check factual accuracy beyond flagging suspicious claims.
 - She does not change the meaning — only the expression.

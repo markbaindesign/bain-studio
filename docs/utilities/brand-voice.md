@@ -20,7 +20,7 @@ Interviews Mark to capture and refine his writing voice, one context at a time (
 ## Files
 
 - **Master doc:** `/media/data/Dropbox/Work/Content/Brand Voice/brand-voice.md` — canonical source, personal/general (not studio-only). Structured as `## Core voice` (always-on rules) plus `## Contexts` (situational registers layered on top).
-- **Agent-facing pointer:** `{STUDIO_CONTENT_DIR}/internal/brand.md` — the compact summary read by Copywriter, Nike, Aura, and Anteros. Points to the master doc rather than duplicating it.
+- **Agent-facing pointer:** `{STUDIO_CONTENT_DIR}/internal/brand.md` — the compact summary read by Copywriter, Proposal Writer, Aura, and Anteros. Points to the master doc rather than duplicating it.
 
 ## Design notes
 

@@ -78,7 +78,7 @@ When a project is running, Athena holds the strategic thread -- she ensures the 
 
 - **Pallas** *(Researcher)* -- Athena's childhood companion, inseparable from her, trained in all fields of knowledge. Gathers context before strategy is formed: client background, competitor landscape, relevant prior projects from Mnemosyne, technology considerations.
 
-- **Nike** *(Proposal Writer)* -- Athena's constant attendant, the one who seals victories. Structures scope documents and proposals. Knows the studio's proposal format, the language of scope, the way to frame deliverables so clients understand exactly what they are buying.
+- **Proposal Writer** *(formerly "Nike")* -- Structures scope documents and proposals. Knows the studio's proposal format, the language of scope, the way to frame deliverables so clients understand exactly what they are buying.
 
 - **Erichthonius** *(Estimator)* -- Athena's ward, raised by her, became a king through careful preparation rather than force. Queries Mnemosyne for similar past work, extracts time and cost signals, produces a reasoned estimate range. Does not guess. Cites his sources. *Erichthonius is claimed also by Hephaestus -- his lineage is disputed between the goddess of strategy and the god of the forge. He is therefore the one household member invocable by both, bridging the moment when a plan becomes a build.*
 
@@ -209,7 +209,7 @@ A project in the Olympus model passes through the following stations:
 
 **2. Qualification** -- Athena and Pallas assess fit against the studio's criteria. Poor fit: Hermes drafts a polite decline for Mark to send. Good fit: proceed.
 
-**3. Estimation** -- Erichthonius queries Mnemosyne. Nike structures the scope doc. A plan takes shape.
+**3. Estimation** -- Erichthonius queries Mnemosyne. The Proposal Writer structures the scope doc. A plan takes shape.
 
 **4. Pricing** -- Financial Review runs a margin check. The scope doc is updated with commercial terms.
 
@@ -256,7 +256,7 @@ The studio does not market itself. It documents itself. The pantheon turns craft
 | Hermes | Coordinator | Autolycus | Triage clerk |
 | Hermes | Coordinator | Abderus | Scheduler |
 | Athena | Strategist | Pallas | Researcher |
-| Athena | Strategist | Nike | Proposal writer |
+| Athena | Strategist | Proposal Writer | Proposal writer |
 | Athena / Hephaestus | Strategy + Build | Erichthonius | Estimator / bridge |
 | Aphrodite | Designer | Harmonia | Layout artist |
 | Aphrodite | Designer | Anteros | Brand guardian |
