@@ -104,7 +104,7 @@ def build_styles(F):
     add('BH6', fontName=F['MonoMedium'], fontSize=9,  textColor=PENCIL,   spaceBefore=4,  spaceAfter=2,  leading=13)
 
     add('BBody',     fontName=F['Serif'],      fontSize=11, textColor=INK,     spaceAfter=7,  leading=17)
-    add('BListItem', fontName=F['Serif'],      fontSize=11, textColor=INK,     spaceAfter=4,  leading=16, leftIndent=14, bulletIndent=0)
+    add('BListItem', fontName=F['Serif'],      fontSize=11, textColor=INK,     spaceAfter=4,  leading=16, leftIndent=16, bulletIndent=2)
     add('BQuote',    fontName=F['SerifItalic'],fontSize=11, textColor=GRAPHITE, spaceBefore=4, spaceAfter=4, leading=17, leftIndent=12)
     add('BCaption',  fontName=F['Code'],       fontSize=8,  textColor=PENCIL,  spaceAfter=3,  leading=11)
     add('BTableHead',fontName=F['MonoBold'],   fontSize=9,  textColor=INK,     spaceAfter=0,  leading=13)
@@ -291,9 +291,8 @@ def md_to_story(md_text, ST, F, skip_h1=False, base_dir=None):
         if re.match(r'^[-*+]\s+', line):
             while i < len(lines) and re.match(r'^[-*+]\s+', lines[i]):
                 text = _inline(re.sub(r'^[-*+]\s+', '', lines[i]), F)
-                story.append(Paragraph(
-                    f'<font color="#{CLAY_HEX}">•</font>  {text}',
-                    ST['BListItem']))
+                bullet = f'<bullet><font color="#{CLAY_HEX}">•</font></bullet>'
+                story.append(Paragraph(bullet + text, ST['BListItem']))
                 i += 1
             story.append(Spacer(1, 2 * mm))
             continue
@@ -303,9 +302,9 @@ def md_to_story(md_text, ST, F, skip_h1=False, base_dir=None):
             n = 1
             while i < len(lines) and re.match(r'^\d+\.\s+', lines[i]):
                 text = _inline(re.sub(r'^\d+\.\s+', '', lines[i]), F)
-                story.append(Paragraph(
-                    '<font color="#' + CLAY_HEX + '" name="' + F['Code'] + '">' + str(n) + '.</font>  ' + text,
-                    ST['BListItem']))
+                bullet = ('<bullet><font color="#' + CLAY_HEX + '" name="' + F['Code'] + '">'
+                          + str(n) + '.</font></bullet>')
+                story.append(Paragraph(bullet + text, ST['BListItem']))
                 i += 1
                 n += 1
             story.append(Spacer(1, 2 * mm))
