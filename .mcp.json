@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cloudways": {
+      "command": "node",
+      "args": ["/media/data/dev/bain-studio/studio/tools/cloudways-mcp-server/dist/index.js"]
+    }
+  }
+}
