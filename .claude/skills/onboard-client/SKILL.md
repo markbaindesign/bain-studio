@@ -116,7 +116,10 @@ Then branch on project type from Step 1:
 - **Fresh install**: run `ddev wp core download` and `ddev wp core install`
   with placeholder admin credentials (Mark's own, not the client's — the
   client's WP account request goes out via the tech access doc, not here).
-  This step is fully automated, nothing further needed from Mark.
+  Then run `/wp-defaults` in the same directory — it sets the standard debug
+  wp-config constants and clears WordPress's default sample content/plugins
+  (Hello Dolly, Akismet, Jetpack if present, the sample post/page). This
+  step is fully automated, nothing further needed from Mark.
 
 - **Existing site**: leave DDEV configured but empty. Do **not** attempt to
   pull site files or a database — there's nothing to pull yet. Add to the
@@ -167,8 +170,12 @@ tree.
 
 ## Step 6 — Manual-steps checklist
 
-Print a final checklist. This is the whole point of the "tells me to do it"
-design — nothing below gets attempted automatically:
+Print a final checklist, and — since the Asana project now exists from Step
+2 — also create one task per item in it, so the checklist lives where the
+rest of the project's work already lives, not just in this chat transcript.
+
+Use `/seed-tasks {gid} "Task 1" "Task 2" ...` with one task per item below
+(skip the existing-site item if this was a fresh install):
 
 ```
 Manual steps remaining for {Client}:
@@ -190,6 +197,16 @@ Manual steps remaining for {Client}:
 [ ] (existing-site projects only) Pull the live site into DDEV once tech
     access comes back — see Step 4 for the exact commands.
 ```
+
+Suggested task names for `/seed-tasks`:
+- "Create Harvest client + project for {Client}"
+- "Add Chrome bookmarks folder for {Client}"
+- "Create git remote for {slug} (optional/deferred)"
+- "Pull {Client}'s live site into DDEV once tech access arrives" (existing-site only)
+
+Report which tasks were created (with links) alongside the printed checklist
+— the checklist stays useful as a plain-text summary even though the tasks
+are now the actual source of truth for follow-up.
 
 ---
 

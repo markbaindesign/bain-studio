@@ -56,7 +56,7 @@ Ask the user (do not assume): does this project already have an Asana project, o
   ASANA_PROJECT_NAME: {asana project name}
   ```
 
-  Then tell the user to confirm bainbot is a member of that Asana project (not just Mark), and to run `python3 /media/data/dev/bain-studio/studio/sync.py --setup --project {PREFIX}` to wire up the Local ID / Last Synced custom fields.
+  Then run `/looper-onboard {PREFIX}` — it wires the shared Local ID/Last Synced custom fields, runs a real sync to confirm bainbot actually has access (not just asked-and-assumed) and to assign proper prefixed IDs to any existing tasks, and reports whether the project is genuinely ready to have tasks multi-homed into Studio Looper.
 
 - **Needs a new Asana project**: don't create it yourself in this skill — point the user at `python3 studio/sync.py --create --name "{name}" --prefix "{PREFIX}" --path {path}` (documented in `bain-studio/CLAUDE.md` under "New project scaffold"). That command writes the `## Asana` block into the target `CLAUDE.md` for you as part of scaffolding.
 
