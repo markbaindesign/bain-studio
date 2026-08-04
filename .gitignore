@@ -35,8 +35,6 @@ asana-ids.json
 
 # Exception: the SLT sandbox fixture is intentionally committed (reproducible test data
 # for the studio-looper evals/health-check) — same reasoning as commit 9442374.
-!studio/looper-test/asana-mirror.md
-!studio/looper-test/asana-ids.json
 
 # Collector logs and runtime state
 studio/collectors/*.log
