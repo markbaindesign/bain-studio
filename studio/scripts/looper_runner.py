@@ -24,6 +24,7 @@ that exhausts quota simply ends, and the runner moves on or exits.
 import argparse
 import datetime
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -34,6 +35,10 @@ LOG = Path.home() / "logs/studio-looper.log"
 RUN_LOG_DIR = Path.home() / "logs"
 LOCK = Path("/tmp/studio-looper/runner.lock")
 TASK_LOG = Path.home() / "logs/task-looper.log"
+# cron's PATH doesn't include ~/.local/bin, where `claude` actually lives, so a
+# bare "claude" in subprocess.run silently FileNotFoundErrors every run. Resolve
+# it explicitly at import time, falling back to the known install path.
+CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
 
 def log(msg: str) -> None:
@@ -183,7 +188,7 @@ def run_window(label: str) -> None:
             # arms the no-git-push PreToolUse hook.
             env = dict(os.environ, LOOPER_RUN_ID=run_id)
             r = subprocess.run(
-                ["claude", "--dangerously-skip-permissions", "--model", "haiku",
+                [CLAUDE_BIN, "--dangerously-skip-permissions", "--model", "haiku",
                  "-p", "/studio-looper --yes"],
                 cwd=STUDIO, stdout=out, stderr=subprocess.STDOUT, env=env,
             )

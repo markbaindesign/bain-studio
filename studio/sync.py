@@ -883,7 +883,16 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
         if "assignee_status" in updates:
             t["assignee_status"] = updates["assignee_status"]
         if "assignee" in updates:
-            t["assignee"] = {"gid": updates["assignee"]} if updates["assignee"] else None
+            if updates["assignee"]:
+                # build_mirror() needs both name and gid; pull the name back out
+                # of the mirror text we just pushed from (e.g. "Mark Bain (12345)").
+                name_match = re.match(r"^(.*?)\s*\(\d+\)\s*$", mirror_assignee)
+                t["assignee"] = {
+                    "gid": updates["assignee"],
+                    "name": name_match.group(1) if name_match else updates["assignee"],
+                }
+            else:
+                t["assignee"] = None
         if "custom_fields" in updates and LOOPER_STATUS_FIELD_GID in updates["custom_fields"]:
             t["_looper_status"] = mirror_looper
         return True

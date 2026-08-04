@@ -304,14 +304,20 @@ def _quarter_start(d):
 def _compute_upcoming(rows, today, owner_draw):
     upcoming = []
 
-    # Owner's draw — end of month, per aletheia-codex.md §"Owner's Draw" (source: BBVA EUR)
+    # Owner's draw — booked end-of-month per aletheia-codex.md §"Owner's Draw", but
+    # actually paid out of BBVA around the 7th of the following month, not on the
+    # booking date (confirmed by Mark 2026-07-27). Forecast the pay date so cash-flow
+    # projections don't flag a shortfall a week early. range(-1, 3) covers a draw
+    # still due from last month if today falls before this month's 7th.
     import calendar
-    for delta_months in range(3):
+    for delta_months in range(-1, 3):
         m = today.month + delta_months
         y = today.year + (m - 1) // 12
         m = ((m - 1) % 12) + 1
-        max_day = calendar.monthrange(y, m)[1]
-        d = date(y, m, max_day)
+        pay_m = m + 1
+        pay_y = y + (pay_m - 1) // 12
+        pay_m = ((pay_m - 1) % 12) + 1
+        d = date(pay_y, pay_m, 7)
         if d >= today:
             upcoming.append({
                 'label':    "Owner's Draw",
