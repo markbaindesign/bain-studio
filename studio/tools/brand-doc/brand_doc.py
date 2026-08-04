@@ -39,6 +39,9 @@ FONT_FILES = {
     'JetBrainsMono-Medium':  FONTS / 'JetBrainsMono-Medium.ttf',
     'JetBrainsMono-Bold':    FONTS / 'JetBrainsMono-Bold.ttf',
     'IBMPlexMono-Regular':   FONTS / 'IBMPlexMono-Regular.ttf',
+    'SourceSerif4-Regular':  FONTS / 'SourceSerif4-Regular.ttf',
+    'SourceSerif4-Semibold': FONTS / 'SourceSerif4-Semibold.ttf',
+    'SourceSerif4-Italic':   FONTS / 'SourceSerif4-Italic.ttf',
 }
 
 MARK = IMAGES / 'bain-logo.png'
@@ -67,6 +70,9 @@ def register_fonts():
         ('MonoMedium', 'JetBrainsMono-Medium',  'Courier'),
         ('MonoBold',   'JetBrainsMono-Bold',     'Courier-Bold'),
         ('Code',       'IBMPlexMono-Regular',    'Courier'),
+        ('Serif',      'SourceSerif4-Regular',   'Times-Roman'),
+        ('SerifBold',  'SourceSerif4-Semibold',  'Times-Bold'),
+        ('SerifItalic','SourceSerif4-Italic',    'Times-Italic'),
     ]:
         path = FONT_FILES.get(key)
         if path and path.exists():
@@ -97,12 +103,12 @@ def build_styles(F):
     add('BH5', fontName=F['MonoMedium'], fontSize=10, textColor=GRAPHITE, spaceBefore=5,  spaceAfter=2,  leading=14)
     add('BH6', fontName=F['MonoMedium'], fontSize=9,  textColor=PENCIL,   spaceBefore=4,  spaceAfter=2,  leading=13)
 
-    add('BBody',     fontName=F['Mono'],       fontSize=10, textColor=INK,     spaceAfter=6,  leading=17)
-    add('BListItem', fontName=F['Mono'],       fontSize=10, textColor=INK,     spaceAfter=3,  leading=16, leftIndent=14)
-    add('BQuote',    fontName=F['Mono'],       fontSize=10, textColor=GRAPHITE, spaceBefore=4, spaceAfter=4, leading=17, leftIndent=12)
+    add('BBody',     fontName=F['Serif'],      fontSize=11, textColor=INK,     spaceAfter=7,  leading=17)
+    add('BListItem', fontName=F['Serif'],      fontSize=11, textColor=INK,     spaceAfter=4,  leading=16, leftIndent=16, bulletIndent=2)
+    add('BQuote',    fontName=F['SerifItalic'],fontSize=11, textColor=GRAPHITE, spaceBefore=4, spaceAfter=4, leading=17, leftIndent=12)
     add('BCaption',  fontName=F['Code'],       fontSize=8,  textColor=PENCIL,  spaceAfter=3,  leading=11)
     add('BTableHead',fontName=F['MonoBold'],   fontSize=9,  textColor=INK,     spaceAfter=0,  leading=13)
-    add('BTableCell',fontName=F['Mono'],       fontSize=9,  textColor=INK,     spaceAfter=0,  leading=13)
+    add('BTableCell',fontName=F['Serif'],      fontSize=9.5,textColor=INK,     spaceAfter=0,  leading=13)
     return s
 
 
@@ -169,7 +175,9 @@ def _slug(heading_text):
 
 # ─── Inline markdown → ReportLab XML ─────────────────────────────────────────
 
-def _inline(text, F):
+def _inline(text, F, bold=None, italic=None):
+    bold_font   = bold or F['SerifBold']
+    italic_font = italic or F['SerifItalic']
     # Escape XML special chars first
     text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     # Internal anchor links [label](#anchor) → clickable link
@@ -184,10 +192,19 @@ def _inline(text, F):
         lambda m: f'<a href="{m.group(2)}" color="#{CLAY_HEX}">{m.group(1)}</a>',
         text,
     )
-    text = re.sub(r'\*\*(.+?)\*\*', lambda m: f'<font name="{F["MonoBold"]}">{m.group(1)}</font>', text)
-    text = re.sub(r'__(.+?)__',     lambda m: f'<font name="{F["MonoBold"]}">{m.group(1)}</font>', text)
-    text = re.sub(r'\*(.+?)\*',     lambda m: f'<font name="{F["MonoMedium"]}">{m.group(1)}</font>', text)
-    text = re.sub(r'_(.+?)_',       lambda m: f'<font name="{F["MonoMedium"]}">{m.group(1)}</font>', text)
+    # Bare URLs → clickable link (skip URLs already inside an href attribute)
+    def _bare_url(m):
+        url = m.group(1)
+        trail = ''
+        while url and url[-1] in '.,;:!?)':
+            trail = url[-1] + trail
+            url = url[:-1]
+        return f'<a href="{url}" color="#{CLAY_HEX}">{url}</a>' + trail
+    text = re.sub(r'(?<!href=")(https?://[^\s<>"\']+)', _bare_url, text)
+    text = re.sub(r'\*\*(.+?)\*\*', lambda m: f'<font name="{bold_font}">{m.group(1)}</font>', text)
+    text = re.sub(r'__(.+?)__',     lambda m: f'<font name="{bold_font}">{m.group(1)}</font>', text)
+    text = re.sub(r'\*(.+?)\*',     lambda m: f'<font name="{italic_font}">{m.group(1)}</font>', text)
+    text = re.sub(r'_(.+?)_',       lambda m: f'<font name="{italic_font}">{m.group(1)}</font>', text)
     text = re.sub(r'`(.+?)`',       lambda m: '<font name="' + F['Code'] + '" color="#' + CLAY_HEX + '">' + m.group(1) + '</font>', text)
     return text
 
@@ -233,7 +250,7 @@ def md_to_story(md_text, ST, F, skip_h1=False, base_dir=None):
             level = len(hm.group(1))
             raw_heading = hm.group(2)
             anchor = _slug(raw_heading)
-            text  = f'<a name="{anchor}"/>' + _inline(raw_heading, F)
+            text  = f'<a name="{anchor}"/>' + _inline(raw_heading, F, bold=F['MonoBold'], italic=F['MonoMedium'])
             smap  = {1:'BH1', 2:'BH2', 3:'BH3', 4:'BH4', 5:'BH5', 6:'BH6'}
             if level == 1:
                 story.append(Spacer(1, 4 * mm))
@@ -274,9 +291,8 @@ def md_to_story(md_text, ST, F, skip_h1=False, base_dir=None):
         if re.match(r'^[-*+]\s+', line):
             while i < len(lines) and re.match(r'^[-*+]\s+', lines[i]):
                 text = _inline(re.sub(r'^[-*+]\s+', '', lines[i]), F)
-                story.append(Paragraph(
-                    f'<font color="#{CLAY_HEX}">–</font>  {text}',
-                    ST['BListItem']))
+                bullet = f'<bullet><font color="#{CLAY_HEX}">•</font></bullet>'
+                story.append(Paragraph(bullet + text, ST['BListItem']))
                 i += 1
             story.append(Spacer(1, 2 * mm))
             continue
@@ -286,9 +302,9 @@ def md_to_story(md_text, ST, F, skip_h1=False, base_dir=None):
             n = 1
             while i < len(lines) and re.match(r'^\d+\.\s+', lines[i]):
                 text = _inline(re.sub(r'^\d+\.\s+', '', lines[i]), F)
-                story.append(Paragraph(
-                    '<font color="#' + CLAY_HEX + '" name="' + F['Code'] + '">' + str(n) + '.</font>  ' + text,
-                    ST['BListItem']))
+                bullet = ('<bullet><font color="#' + CLAY_HEX + '" name="' + F['Code'] + '">'
+                          + str(n) + '.</font></bullet>')
+                story.append(Paragraph(bullet + text, ST['BListItem']))
                 i += 1
                 n += 1
             story.append(Spacer(1, 2 * mm))
@@ -419,7 +435,7 @@ def _cover(canvas, doc, title, subtitle, F):
     canvas.restoreState()
 
 
-def _header_footer(canvas, doc, title, F):
+def _header_footer(canvas, doc, title, F, version=''):
     if doc.page == 1:
         return
     canvas.saveState()
@@ -433,6 +449,8 @@ def _header_footer(canvas, doc, title, F):
     canvas.line(18 * mm, 12 * mm, W - 18 * mm, 12 * mm)
     canvas.setFont(F['Code'], 7)
     canvas.drawString(18 * mm, 9 * mm, 'Bain Design  ·  mark@bain.design')
+    if version:
+        canvas.drawRightString(W - 18 * mm, 9 * mm, version)
     canvas.restoreState()
 
 
@@ -501,7 +519,18 @@ def build(input_path, output_path=None, one_pager=False):
                 fm_subtitle = ln[9:].strip().strip('"\'')
         body_text = md_text[fm_match.end():]
 
-    title_match = re.match(r'^#\s+(.+)', body_text, re.MULTILINE)
+    # Extract version from HTML comment (<!-- version: X | updated: Y -->)
+    fm_version = ''
+    vm = re.search(r'<!--\s*version:\s*([^|>]+?)(?:\|\s*updated:\s*([^>]+?))?\s*-->', body_text)
+    if vm:
+        fm_version = vm.group(1).strip()
+        if vm.group(2):
+            fm_version += '  \u00b7  updated: ' + vm.group(2).strip()
+
+    # Strip HTML comments so they don't render as body text
+    body_text = re.sub(r'<!--.*?-->', '', body_text, flags=re.DOTALL)
+
+    title_match = re.search(r'^#\s+(.+)', body_text, re.MULTILINE)
     title = (title_match.group(1) if title_match
              else fm_title
              or input_path.stem.replace('-', ' ').replace('_', ' ').title())
@@ -526,7 +555,7 @@ def build(input_path, output_path=None, one_pager=False):
             topMargin=24 * mm,  bottomMargin=16 * mm,
             title=title, author='Bain Design',
         )
-        story = md_to_story(md_text, ST, F, skip_h1=True, base_dir=input_path.parent)
+        story = md_to_story(body_text, ST, F, skip_h1=True, base_dir=input_path.parent)
         hf = lambda c, d: _one_pager_header(c, d, title, F)
         doc.build(story, onFirstPage=hf, onLaterPages=hf)
     else:
@@ -538,11 +567,11 @@ def build(input_path, output_path=None, one_pager=False):
             title=title, author='Bain Design',
         )
         story = [Spacer(1, 720)]   # fill cover page
-        story.extend(md_to_story(md_text, ST, F, base_dir=input_path.parent))
+        story.extend(md_to_story(body_text, ST, F, base_dir=input_path.parent))
         doc.build(
             story,
             onFirstPage=lambda c, d: _cover(c, d, title, subtitle, F),
-            onLaterPages=lambda c, d: _header_footer(c, d, title, F),
+            onLaterPages=lambda c, d: _header_footer(c, d, title, F, version=fm_version),
         )
     print(f'\nDone → {output_path}')
     return output_path

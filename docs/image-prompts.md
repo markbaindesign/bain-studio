@@ -92,19 +92,3 @@ centre of a radiating transmission. Surrounding her: analytics dashboards,
 follower pulses, reach visualizations. Expression: luminous energy, the joy of 
 being seen and heard. Cinematic, vivid colour contrast, ultra-photorealistic.
 ```
-
----
-
-## Plutus — The Treasurer
-
-```
-Photorealistic Marvel-style god of finance and cashflow. Male figure — sharp, 
-precise, no excess — in structured dark armour with gold leaf detail and deep 
-burgundy accents. One hand holds a glowing invoice stack like a weapon; the other 
-gestures across a floating financial ledger showing margins, projections, tax 
-exposure. A river of gold flows beneath him, controlled and directed — wealth 
-commanded, not hoarded. Expression: measured authority, the quiet power of 
-someone who knows exactly what everything costs and what it's worth. No excess, 
-no frivolity. Wealth as discipline. Cinematic lighting, God of War gravitas, 
-photorealistic detail.
-```

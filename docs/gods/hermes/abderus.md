@@ -27,7 +27,7 @@ Usually called automatically by `/studio-startup`, but can be run standalone for
 |---|---|
 | `project-database.csv` | End Date, harvest status per project |
 | `{CONTENT_DIR}/pipeline/triage-log.md` | Investigate verdicts with no follow-up |
-| Active project Asana mirrors | `.claude/asana-mirror.md` per project |
+| Active project Asana mirrors | `asana-mirror.md` per project |
 
 ## Checks run
 

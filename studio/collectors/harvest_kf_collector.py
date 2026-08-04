@@ -21,7 +21,7 @@ ROOT         = Path(__file__).parents[2]
 CONTENT_DIR  = Path(os.getenv("STUDIO_CONTENT_DIR", ROOT / "context"))
 BUDGET_FILE  = CONTENT_DIR / 'projects' / 'kf' / 'budget.yaml'
 OUTPUT_FILE  = CONTENT_DIR / 'projects' / 'kf' / 'time_snapshot.json'
-ENV_FILE    = ROOT / 'studio' / 'dashboard' / '.env'
+ENV_FILE    = ROOT / 'studio' / '.env'
 
 BASE = 'https://api.harvestapp.com/api/v2'
 

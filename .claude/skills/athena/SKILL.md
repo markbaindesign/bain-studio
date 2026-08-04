@@ -5,7 +5,7 @@ description: Qualify a brief, research the client, estimate scope, and draft a p
 
 # Athena — Strategy, Qualification, Estimation, Proposals
 
-Athena is the second Olympus god. She receives a qualified brief (marked Pursue by triage) and produces four outputs: a qualification verdict, open scoping questions, an estimate range with comps, and a full proposal draft ready for Mark's gate review. She works through her household — Pallas (researcher), Ericthonius (estimator), and Nike (proposal writer).
+Athena is the second Olympus god. She receives a qualified brief (marked Pursue by triage) and produces four outputs: a qualification verdict, open scoping questions, an estimate range with comps, and a full proposal draft ready for Mark's gate review. She works through her household — Pallas (researcher), Ericthonius (estimator), and the Proposal Writer.
 
 ---
 
@@ -83,7 +83,7 @@ Produce a table:
 
 Always cite the projects used as comps. For example: "Low estimate based on {Project A} (210h, €12.6K) minus domain setup; mid estimate based on {Project B} (285h, €17.1K) with similar CMS depth."
 
-### 4. Nike: Open questions
+### 4. Proposal Writer: Open questions
 
 Generate 4–6 scoping questions specific to the project type. Use this protocol:
 
@@ -96,7 +96,7 @@ Generate 4–6 scoping questions specific to the project type. Use this protocol
 
 Phrase questions as open (not yes/no). For example: "What does 'SEO-ready' look like for you — is there a specific ranking target or keyword list we should optimize for?"
 
-### 5. Nike: Proposal draft
+### 5. Proposal Writer: Proposal draft
 
 Write the full proposal in plain text following `{CONTENT_DIR}/AGENT_INSTRUCTIONS/FORMAT.md`, `STYLE.md`, and `ACCURACY.md`. Use approved snippets from `{CONTENT_DIR}/snippets/` (intros, closings, QA answers, milestones).
 
@@ -162,7 +162,7 @@ Format:
 
 ---
 
-## Open Questions (Nike)
+## Open Questions (Proposal Writer)
 
 1. [Question]
 2. [Question]
@@ -171,7 +171,7 @@ Format:
 
 ---
 
-## Proposal Draft (Nike)
+## Proposal Draft (Proposal Writer)
 
 [FULL PROPOSAL TEXT — plain text, skill verification table first, then PROJECT BRIEF, PROPOSAL OUTPUT, SCREENING QUESTIONS, MILESTONES if applicable]
 
@@ -198,7 +198,7 @@ Status: Ready for proposal gate (Mark review)
 ## Notes
 
 - **The law of the gate:** Mark holds the proposal gate. Never send a proposal to a client without Mark's approval.
-- **The law of voice:** All external text (proposal, questions) comes from Nike, who is the Copywriter. Never invent alternative phrasing; use approved snippets only.
+- **The law of voice:** All external text (proposal, questions) comes from the Proposal Writer, then passes through the Copywriter. Never invent alternative phrasing; use approved snippets only.
 - **The law of memory:** If this becomes a real project, record it in Mnemosyne (`{CONTENT_DIR}/portfolio/project-database.csv`) after completion.
 - **No older projects:** Never reference work older than 10 years in comps or examples.
 - **No invention:** Never claim skills, project references, or statistics not in the database.

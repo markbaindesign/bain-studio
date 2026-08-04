@@ -16,7 +16,7 @@ Read `/media/data/dev/bain-studio/studio/projects.json`. Each entry is `{"path":
 
 ### 2. Check last sync date
 
-For each project, read its `.claude/asana-mirror.md`. Extract `Last synced:` date.
+For each project, read its `asana-mirror.md`. Extract `Last synced:` date.
 
 Flag any project where the mirror has not been synced in **14+ days**.
 

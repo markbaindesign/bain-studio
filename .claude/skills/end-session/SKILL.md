@@ -43,7 +43,7 @@ If working tree is clean, note it.
 
 ### 4. Update mirror progress notes
 
-For each task that was actively worked on this session, update its `Progress:` line in `.claude/asana-mirror.md`:
+For each task that was actively worked on this session, update its `Progress:` line in `asana-mirror.md`:
 
 ```
 - **Progress:** {What was done today} {YYYY-MM-DD}.
@@ -65,7 +65,7 @@ If sync fails, note it but do not block - the mirror edit is the source of truth
 
 ### 6. Write the handoff note
 
-Append to `.claude/pm-log.md` in the **bain-studio root** (not the current project). Create the file if it doesn't exist.
+Append to `.claude/pm-log.md` in the **current project directory**. Create the file if it doesn't exist.
 
 Format:
 

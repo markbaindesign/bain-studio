@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+# repo-create — create a GitHub or Bitbucket repository and wire up the local
+# git repo (init, branch, remote, push, default branch). Provider-agnostic
+# successor to create-repo (GitHub) and bb-repo-create (Bitbucket).
+#
+# Provider selection:
+#   --gh                  GitHub (via gh CLI, already authenticated)
+#   --bb                  Bitbucket (via Atlassian API token)
+#   Default: Bitbucket for private repos (the default), GitHub for --public.
+#
+# Bitbucket credentials are read from ~/.config/bb-pr (shared with bb-pr),
+# or from BITBUCKET_USER / BITBUCKET_APP_PASSWORD env vars.
+#
+# NOTE: Bitbucket Cloud app passwords are deprecated (disabled 2026-06-09).
+# Use an Atlassian API token instead:
+#   https://id.atlassian.com/manage-profile/security/api-tokens
+#   -> "Create API token with scopes" -> app: Bitbucket
+#   -> scopes: read:repository:bitbucket, write:repository:bitbucket
+# BITBUCKET_USER must then be the Atlassian account EMAIL — auth is
+# email:api_token.
+#
+# Usage:
+#   repo-create [name] [options]
+#
+# Options:
+#   -n, --name NAME        Repo name (default: current directory basename)
+#   -w, --workspace SLUG   Bitbucket workspace slug (default: markbaindesign)
+#   --gh | --bb            Force provider (see above for defaults)
+#   --public               Public repo (default: private)
+#   --desc TEXT            Repository description
+#   --branch NAME          Default branch name (default: main)
+#   --no-push              Only create the repo; skip git init/remote/push
+#   --clone PATH           Clone the new repo to PATH instead of wiring cwd
+#   --setup                Configure Bitbucket credentials
+#   -h, --help             Show this help
+
+set -euo pipefail
+
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/bb-pr"
+
+usage() {
+  grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//'
+  exit 0
+}
+
+# ── Bitbucket credential management ──────────────────────────────────────────
+setup_bitbucket() {
+  echo "Bitbucket credentials setup"
+  echo "Create a scoped API token at: https://id.atlassian.com/manage-profile/security/api-tokens"
+  echo "  -> Create API token with scopes -> app: Bitbucket"
+  echo "  -> scopes: read:repository:bitbucket, write:repository:bitbucket"
+  echo ""
+  read -rp "Atlassian account email: " input_user
+  read -rsp "API token: " input_pass
+  echo ""
+  mkdir -p "$(dirname "$CONFIG_FILE")"
+  cat > "$CONFIG_FILE" <<EOF
+BITBUCKET_USER=$input_user
+BITBUCKET_APP_PASSWORD=$input_pass
+EOF
+  chmod 600 "$CONFIG_FILE"
+  echo "Credentials saved to $CONFIG_FILE"
+}
+
+load_bitbucket_creds() {
+  if [[ -z "${BITBUCKET_USER:-}" || -z "${BITBUCKET_APP_PASSWORD:-}" ]]; then
+    if [[ -f "$CONFIG_FILE" ]]; then
+      # shellcheck source=/dev/null
+      source "$CONFIG_FILE"
+    fi
+  fi
+  if [[ -z "${BITBUCKET_USER:-}" || -z "${BITBUCKET_APP_PASSWORD:-}" ]]; then
+    echo "No Bitbucket credentials found. Running setup..."
+    echo ""
+    setup_bitbucket
+    source "$CONFIG_FILE"
+  fi
+}
+
+# ── shared local wiring ──────────────────────────────────────────────────────
+wire_local() {
+  local remote_url="$1" branch="$2"
+
+  if ! git rev-parse --git-dir &>/dev/null; then
+    git init -q
+    echo "git initialized"
+  fi
+
+  local current_branch
+  current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  if [[ "$current_branch" != "$branch" ]]; then
+    git checkout -B "$branch" -q
+  fi
+
+  if git remote get-url origin &>/dev/null; then
+    git remote set-url origin "$remote_url"
+  else
+    git remote add origin "$remote_url"
+  fi
+  echo "remote 'origin' -> $remote_url"
+
+  if git rev-parse HEAD &>/dev/null; then
+    git push -u origin "$branch"
+  else
+    echo "No commits yet — skipping push. Commit, then run:"
+    echo "  git push -u origin $branch"
+    return 1
+  fi
+}
+
+# ── GitHub ───────────────────────────────────────────────────────────────────
+create_github() {
+  local name="$1" desc="$2" is_private="$3" branch="$4" do_push="$5" clone_path="$6"
+
+  local gh_user
+  gh_user=$(gh api user --jq .login)
+
+  if gh repo view "$gh_user/$name" &>/dev/null; then
+    echo "Repo already exists, continuing: https://github.com/$gh_user/$name"
+  else
+    echo "Creating GitHub repository: $gh_user/$name"
+    local gh_args=("$name")
+    [[ "$is_private" == "true" ]] && gh_args+=(--private) || gh_args+=(--public)
+    [[ -n "$desc" ]] && gh_args+=(--description "$desc")
+    gh repo create "${gh_args[@]}"
+  fi
+
+  local remote_url="git@github.com:$gh_user/$name.git"
+
+  if [[ -n "$clone_path" ]]; then
+    gh repo clone "$gh_user/$name" "$clone_path"
+    echo "Cloned to: $clone_path"
+  elif [[ "$do_push" -eq 1 ]]; then
+    wire_local "$remote_url" "$branch" || true
+  fi
+
+  echo ""
+  echo "Done: https://github.com/$gh_user/$name"
+}
+
+# ── Bitbucket ────────────────────────────────────────────────────────────────
+create_bitbucket() {
+  local name="$1" desc="$2" is_private="$3" branch="$4" do_push="$5" clone_path="$6" workspace="$7"
+
+  load_bitbucket_creds
+
+  local slug
+  slug=$(echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
+
+  echo "Creating Bitbucket repository: $workspace/$slug (private: $is_private)"
+
+  local payload
+  payload=$(python3 -c "
+import json, sys
+d = {'scm': 'git', 'is_private': sys.argv[1] == 'true'}
+if sys.argv[2]:
+    d['description'] = sys.argv[2]
+print(json.dumps(d))
+" "$is_private" "${desc:-}")
+
+  local response http_code body
+  response=$(curl -s -w '\n%{http_code}' \
+    -u "$BITBUCKET_USER:$BITBUCKET_APP_PASSWORD" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d "$payload" \
+    "https://api.bitbucket.org/2.0/repositories/$workspace/$slug")
+
+  http_code=$(echo "$response" | tail -n1)
+  body=$(echo "$response" | sed '$d')
+
+  if [[ "$http_code" == "200" ]]; then
+    echo "Repo created: https://bitbucket.org/$workspace/$slug"
+  elif [[ "$http_code" == "400" ]] && echo "$body" | grep -qi "already exists"; then
+    echo "Repo already exists, continuing: https://bitbucket.org/$workspace/$slug"
+  else
+    echo "Error creating repo (HTTP $http_code):" >&2
+    echo "$body" >&2
+    exit 1
+  fi
+
+  local remote_url="git@bitbucket.org:$workspace/$slug.git"
+  local pushed=0
+
+  if [[ -n "$clone_path" ]]; then
+    git clone "$remote_url" "$clone_path"
+    echo "Cloned to: $clone_path"
+  elif [[ "$do_push" -eq 1 ]]; then
+    wire_local "$remote_url" "$branch" && pushed=1 || true
+  fi
+
+  # Default branch can only be set once the branch exists on the remote.
+  if [[ "$pushed" -eq 1 ]]; then
+    local branch_payload
+    branch_payload=$(python3 -c "
+import json, sys
+print(json.dumps({'mainbranch': {'name': sys.argv[1]}}))
+" "$branch")
+    curl -s -o /dev/null \
+      -u "$BITBUCKET_USER:$BITBUCKET_APP_PASSWORD" \
+      -X PUT \
+      -H "Content-Type: application/json" \
+      -d "$branch_payload" \
+      "https://api.bitbucket.org/2.0/repositories/$workspace/$slug"
+    echo "default branch set to '$branch'"
+  fi
+
+  echo ""
+  echo "Done: https://bitbucket.org/$workspace/$slug"
+}
+
+# ── parse args ───────────────────────────────────────────────────────────────
+NAME=""
+WORKSPACE="markbaindesign"
+PROVIDER=""
+IS_PRIVATE="true"
+DESC=""
+BRANCH="main"
+DO_PUSH=1
+CLONE_PATH=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)      usage ;;
+    --setup)        setup_bitbucket; exit 0 ;;
+    -n|--name)      NAME="$2"; shift 2 ;;
+    -w|--workspace) WORKSPACE="$2"; shift 2 ;;
+    --gh|--github)  PROVIDER="github"; shift ;;
+    --bb|--bitbucket) PROVIDER="bitbucket"; shift ;;
+    --public)       IS_PRIVATE="false"; shift ;;
+    --private)      IS_PRIVATE="true"; shift ;;
+    --desc)         DESC="$2"; shift 2 ;;
+    --branch)       BRANCH="$2"; shift 2 ;;
+    --no-push)      DO_PUSH=0; shift ;;
+    --clone)        CLONE_PATH="$2"; shift 2 ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      exit 1 ;;
+    *)
+      if [[ -z "$NAME" ]]; then NAME="$1"; fi
+      shift ;;
+  esac
+done
+
+[[ -z "$NAME" ]] && NAME=$(basename "$PWD")
+
+# Default provider: private work lives on Bitbucket, public on GitHub.
+if [[ -z "$PROVIDER" ]]; then
+  if [[ "$IS_PRIVATE" == "true" ]]; then PROVIDER="bitbucket"; else PROVIDER="github"; fi
+fi
+
+case "$PROVIDER" in
+  github)    create_github    "$NAME" "$DESC" "$IS_PRIVATE" "$BRANCH" "$DO_PUSH" "$CLONE_PATH" ;;
+  bitbucket) create_bitbucket "$NAME" "$DESC" "$IS_PRIVATE" "$BRANCH" "$DO_PUSH" "$CLONE_PATH" "$WORKSPACE" ;;
+esac

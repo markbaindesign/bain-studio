@@ -12,10 +12,10 @@ Run this at the end of every work session. It closes loops, captures learnings, 
 
 ### 1. Check for unsaved mirror edits
 
-For each active project, check if `.claude/asana-mirror.md` has uncommitted changes:
+For each active project, check if `asana-mirror.md` has uncommitted changes:
 
 ```bash
-cd /path/to/project && git diff .claude/asana-mirror.md
+cd /path/to/project && git diff asana-mirror.md
 ```
 
 If there are changes, push them to Asana:

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# bb-repo-create — thin wrapper kept for muscle memory and existing docs.
+# The real tool is repo-create (provider-agnostic); this forces Bitbucket.
+exec "$(dirname "$0")/repo-create" --bb "$@"

@@ -1,7 +1,8 @@
 """
 Studio Asana sync — full bidirectional sync across all active studio projects.
 
-Syncs each project's Asana tasks to <project>/.claude/asana-mirror.md.
+Syncs each project's Asana tasks to <project>/asana-mirror.md (project root — moved out of
+.claude/ 2026-07-22 so unattended agents can edit mirrors without sensitive-path prompts).
 
 Conflict resolution: mirror file mtime vs Asana task modified_at.
 - asana_modified_at > mirror_mtime → Asana wins, pull all fields into mirror
@@ -50,11 +51,33 @@ BAINBOT_GID          = os.getenv("ASANA_BAINBOT_GID")
 ASSIGNEE_NAME        = os.getenv("STUDIO_ASSIGNEE_NAME", "Bot")
 TEMPLATE_PROJECT_GID = os.getenv("ASANA_TEMPLATE_PROJECT_GID")
 USER_GID             = os.getenv("ASANA_USER_GID")
-PRIORITY_FIELD_GID   = os.getenv("ASANA_PRIORITY_FIELD_GID", "1155368350785978")
+PRIORITY_FIELD_GID       = os.getenv("ASANA_PRIORITY_FIELD_GID", "1155368350785978")
+LOOPER_STATUS_FIELD_GID  = os.getenv("ASANA_LOOPER_STATUS_FIELD_GID", "")
 TODAY          = date.today().isoformat()
 BASE_URL       = "https://app.asana.com/api/1.0"
 
 SKIP_PREFIXES  = set()
+
+# Cache of Looper Status enum option names → GIDs, populated once per sync run.
+_LOOPER_STATUS_OPTIONS: dict = {}
+
+
+def _get_looper_status_option_gid(name: str):
+    """Return the Asana enum option GID for a Looper Status value, fetching once if needed.
+    Matched case-insensitively -- mirrors/docs consistently write "In Progress" but the
+    Asana field's own option label has drifted to "In progress" at least once already."""
+    global _LOOPER_STATUS_OPTIONS
+    if not LOOPER_STATUS_FIELD_GID:
+        return None
+    if not _LOOPER_STATUS_OPTIONS:
+        try:
+            data = _get(f"/custom_fields/{LOOPER_STATUS_FIELD_GID}")["data"]
+            _LOOPER_STATUS_OPTIONS = {
+                o["name"].lower(): o["gid"] for o in data.get("enum_options", [])
+            }
+        except Exception as e:
+            log.warning(f"Could not fetch Looper Status enum options: {e}")
+    return _LOOPER_STATUS_OPTIONS.get(name.lower())
 
 JUNK_PATTERNS  = re.compile(r"^- |😍|📰|\[Product Update\]", re.IGNORECASE)
 PLAIN_CHECK    = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
@@ -101,12 +124,13 @@ class ProjectConfig:
     root:   Path
     gid:    str
     prefix: str
+    preserve_foreign_ids: bool = False  # True for aggregator projects (e.g. Studio Looper)
 
     @property
-    def mirror_file(self): return self.root / ".claude" / "asana-mirror.md"
+    def mirror_file(self): return self.root / "asana-mirror.md"
 
     @property
-    def ids_file(self): return self.root / ".claude" / "asana-ids.json"
+    def ids_file(self): return self.root / "asana-ids.json"
 
     @property
     def claude_dir(self): return self.root / ".claude"
@@ -185,7 +209,11 @@ def discover_projects(filter_prefix=None) -> list:
             root.name.replace("_", " ").replace("-", " ").title()
         )
 
-        projects.append(ProjectConfig(name=name, root=root, gid=gid, prefix=prefix))
+        preserve_m = re.search(r"PRESERVE_FOREIGN_IDS:\s*(\S+)", text)
+        preserve_foreign = bool(preserve_m and preserve_m.group(1).lower() == "true")
+
+        projects.append(ProjectConfig(name=name, root=root, gid=gid, prefix=prefix,
+                                      preserve_foreign_ids=preserve_foreign))
         seen_gids.add(gid)
 
     return projects
@@ -351,7 +379,7 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
         "opt_fields": (
             "gid,name,notes,due_on,due_at,start_on,completed,modified_at,permalink_url,"
             "assignee.gid,assignee.name,assignee_status,"
-            "custom_fields.gid,custom_fields.text_value,custom_fields.enum_value.name,"
+            "custom_fields.gid,custom_fields.text_value,custom_fields.enum_value.name,custom_fields.enum_value.gid,"
             "memberships.section.name,memberships.section.gid,memberships.project.gid,"
             "tags.gid,tags.name,"
             "followers.gid,followers.name,"
@@ -367,11 +395,14 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
         t["_section"]  = None
         t["_section_gid"] = None
         t["_priority"] = None
+        t["_looper_status"] = None
         for cf in t.get("custom_fields", []):
             if cf.get("gid") == field_gid:
                 t["_local_id"] = cf.get("text_value") or None
             if cf.get("gid") == PRIORITY_FIELD_GID:
                 t["_priority"] = (cf.get("enum_value") or {}).get("name") or None
+            if LOOPER_STATUS_FIELD_GID and cf.get("gid") == LOOPER_STATUS_FIELD_GID:
+                t["_looper_status"] = (cf.get("enum_value") or {}).get("name") or None
         for m in t.get("memberships", []):
             if (m.get("project") or {}).get("gid") == proj.gid:
                 sec = m.get("section") or {}
@@ -411,6 +442,74 @@ def fetch_comments(task_gid: str) -> list:
     return comments
 
 
+# ---------------------------------------------------------------------------
+# Attachments
+# ---------------------------------------------------------------------------
+
+ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+ATTACHMENT_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf",
+                   ".md", ".txt", ".csv", ".json", ".html"}
+
+
+def fetch_task_attachments(task_gid: str) -> list:
+    try:
+        return _get("/attachments", {
+            "parent": task_gid,
+            "opt_fields": "name,download_url,view_url,size",
+        })["data"] or []
+    except Exception:
+        return []
+
+
+def sync_attachments(proj: ProjectConfig, local_id: str, task_gid: str) -> list:
+    """Download a task's attachments into .claude/attachments/{local_id}/ and
+    return mirror-ready entry strings (project-relative paths, or a name with a
+    skip reason). Asana download URLs are short-lived signed links, so files
+    must be fetched at sync time; the attachment GID in the filename makes the
+    cache re-download-proof. Attachment content is untrusted external data —
+    same policy as comments (see CLAUDE.md Security)."""
+    metas = fetch_task_attachments(task_gid)
+    if not metas:
+        return []
+    att_root = proj.claude_dir / "attachments"
+    entries = []
+    for m in metas:
+        name = os.path.basename((m.get("name") or "unnamed").replace("\\", "/"))
+        gid  = m.get("gid", "0")
+        url  = m.get("download_url")
+        ext  = os.path.splitext(name)[1].lower()
+        if not url:  # hosted externally (Drive, Dropbox, …) — nothing to download
+            entries.append(f"{name} (external: {m.get('view_url') or 'no url'})")
+            continue
+        if ext not in ATTACHMENT_EXTS:
+            entries.append(f"{name} (not downloaded: {ext or 'unknown'} type)")
+            continue
+        size = m.get("size") or 0
+        if size > ATTACHMENT_MAX_BYTES:
+            entries.append(f"{name} (not downloaded: {size // (1024 * 1024)} MB exceeds cap)")
+            continue
+        dest = att_root / local_id / f"{gid}-{name}"
+        if not dest.exists():
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                gi = att_root / ".gitignore"
+                if not gi.exists():  # self-ignoring cache — keeps binaries out of every repo
+                    gi.write_text("*\n")
+                r = requests.get(url, timeout=60)
+                r.raise_for_status()
+                if len(r.content) > ATTACHMENT_MAX_BYTES:
+                    entries.append(f"{name} (not downloaded: exceeds size cap)")
+                    continue
+                dest.write_bytes(r.content)
+                log.info(f"    Downloaded attachment {local_id}/{name} ({len(r.content) // 1024} KB)")
+            except Exception as e:
+                log.warning(f"    Attachment download failed for {local_id}/{name}: {e}")
+                entries.append(f"{name} (download failed)")
+                continue
+        entries.append(str(dest.relative_to(proj.root)))
+    return entries
+
+
 def _is_junk(task) -> bool:
     name = task.get("name", "")
     projects = task.get("projects", [])
@@ -427,12 +526,38 @@ def _is_junk(task) -> bool:
 
 def assign_ids(proj: ProjectConfig, tasks: list, state: dict, field_gid: str, dry_run=False) -> dict:
     assigned = 0
+    rehomed = 0
     for t in tasks:
         gid = t["gid"]
-        if t["_local_id"]:
-            if gid not in state["tasks"]:
-                state["tasks"][gid] = t["_local_id"]
+        existing = t["_local_id"]
+
+        # Re-homed task: has an ID from a different project
+        if existing and not existing.startswith(f"{proj.prefix}-"):
+            if proj.preserve_foreign_ids:
+                # Aggregator project (e.g. Studio Looper) — keep the original ID so the
+                # looper can route tasks to the correct project directory by prefix.
+                if gid not in state["tasks"]:
+                    state["tasks"][gid] = existing
+                continue
+            # Normal project — reassign with this project's prefix
+            old_id = existing
+            lid = _next_lid(state, proj.prefix)
+            state["tasks"][gid] = lid
+            t["_local_id"] = lid
+            log.info(f"  [{proj.prefix}] Re-homed task {gid}: {old_id} → {lid} ({t.get('name', '')})")
+            if not dry_run:
+                try:
+                    _put(f"/tasks/{gid}", {"data": {"custom_fields": {field_gid: lid}}})
+                    rehomed += 1
+                except Exception as e:
+                    log.warning(f"  [{proj.prefix}] Could not reassign re-homed ID ({gid}): {e}")
             continue
+
+        if existing:
+            if gid not in state["tasks"]:
+                state["tasks"][gid] = existing
+            continue
+
         lid = state["tasks"].get(gid) or _next_lid(state, proj.prefix)
         state["tasks"][gid] = lid
         t["_local_id"] = lid
@@ -442,9 +567,12 @@ def assign_ids(proj: ProjectConfig, tasks: list, state: dict, field_gid: str, dr
                 assigned += 1
             except Exception as e:
                 log.warning(f"  [{proj.prefix}] Note: could not write Local ID to Asana ({gid}): {e}")
+
     save_ids(proj, state, dry_run)
     if assigned:
         log.info(f"  [{proj.prefix}] Assigned {assigned} new Local ID(s).")
+    if rehomed:
+        log.info(f"  [{proj.prefix}] Re-homed {rehomed} task(s) with new Local IDs.")
     return state
 
 
@@ -512,6 +640,7 @@ def parse_existing_mirror(proj: ProjectConfig) -> dict:
         carried[gid] = {
             "local_id":        fields.get("local_id", "—"),
             "section":         fields.get("section") or None,
+            "looper_status":   fields.get("looper_status") or None,
             "due":             due,
             "start":           fields.get("start", "none"),
             "notes":           fields.get("notes", ""),
@@ -558,7 +687,16 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
     assignee_str = f"{assignee['name']} ({assignee['gid']})" if assignee.get("gid") else "none"
     astat        = t.get("assignee_status") or "none"
 
-    priority   = t.get("_priority") or "none"
+    priority       = t.get("_priority") or "none"
+    # Never carry a stale Looper Status forward onto a completed task — it has
+    # nothing left to work, regardless of what the field showed pre-completion.
+    carried_looper = prev.get("looper_status") if not t.get("completed") else None
+    looper_status  = t.get("_looper_status") or carried_looper or "none"
+    # A completed task must never render an actionable status: the queue build
+    # greps for the exact value, and a stale "Queue" on a done task would get
+    # re-worked. Annotating breaks the exact match by construction.
+    if t.get("completed") and looper_status in ("Queue", "In Progress"):
+        looper_status = f"{looper_status} (completed, not workable)"
     tags       = _fmt_refs(t.get("tags", []))
     followers  = _fmt_refs(t.get("followers", []))
     deps       = _fmt_task_refs(t.get("dependencies", []), gid_to_lid)
@@ -573,12 +711,19 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
     else:
         comment_lines = ["- **Comments:** none"]
 
+    atts = t.get("_attachments") or []
+    if atts:
+        att_lines = ["- **Attachments:**"] + [f"  - {a}" for a in atts]
+    else:
+        att_lines = ["- **Attachments:** none"]
+
     return [
         f"### {local_id} — {t['name']}",
         f"- **Local ID:** {local_id}",
         f"- **Asana ID:** {gid}",
         f"- **Section:** {section}",
         f"- **Priority:** {priority}",
+        f"- **Looper Status:** {looper_status}",
         f"- **Due:** {due}{overdue}",
         f"- **Start:** {start}",
         f"- **Assignee:** {assignee_str}",
@@ -591,6 +736,7 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
         f"- **Blockers:** {blockers}",
         f"- **Progress:** {progress}",
         *comment_lines,
+        *att_lines,
         f"- **Modified:** {modified}",
         f"- **URL:** {t.get('permalink_url', '')}",
         "",
@@ -683,6 +829,39 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
     if _diff(astat, t.get("assignee_status") or "none") and astat != "none":
         updates["assignee_status"] = astat
 
+    # Assignee — extract GID from mirror value e.g. "Mark Bain (507443625075)"
+    mirror_assignee = prev.get("assignee", "none")
+    asana_assignee_gid = (t.get("assignee") or {}).get("gid") or "none"
+    mirror_assignee_gid = _extract_gids(mirror_assignee)
+    mirror_assignee_gid = mirror_assignee_gid[0] if mirror_assignee_gid else "none"
+    if _diff(mirror_assignee_gid, asana_assignee_gid):
+        updates["assignee"] = mirror_assignee_gid if mirror_assignee_gid != "none" else None
+
+    # Looper Status (enum custom field) — push if changed and field is configured.
+    # Only Looper/Looper-test use this field; on other projects it isn't attached
+    # to the project at all, so pushing it 400s. Check the task's own custom_fields
+    # (not just LOOPER_STATUS_FIELD_GID truthiness) to confirm the field applies here.
+    field_on_project = any(
+        cf.get("gid") == LOOPER_STATUS_FIELD_GID for cf in t.get("custom_fields", [])
+    )
+    if LOOPER_STATUS_FIELD_GID and field_on_project:
+        # A completed task's mirror-side value is never trusted as a push source —
+        # it may be a stale pre-completion carry-forward with nothing left to work.
+        prev_looper   = prev.get("looper_status") if not t.get("completed") else None
+        mirror_looper = (prev_looper or "none").strip()
+        asana_looper  = (t.get("_looper_status") or "none").strip()
+        # Default to Queue when both sides are unset — acts as a project-level rule.
+        # Never default a completed task into Queue; it has nothing left to work.
+        if not t.get("completed") and mirror_looper in ("none", "") and asana_looper in ("none", ""):
+            mirror_looper = "Queue"
+            t["_looper_status"] = "Queue"  # reflect in mirror immediately
+        if _diff(mirror_looper, asana_looper) and mirror_looper not in ("none", ""):
+            option_gid = _get_looper_status_option_gid(mirror_looper)
+            if option_gid:
+                updates.setdefault("custom_fields", {})[LOOPER_STATUS_FIELD_GID] = option_gid
+            else:
+                log.warning(f"  [{prefix}] Unknown Looper Status value '{mirror_looper}' for {lid} — skipping")
+
     if not updates:
         return False
     if dry_run:
@@ -691,6 +870,31 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
     try:
         _put(f"/tasks/{gid}", {"data": updates})
         log.info(f"  [{prefix}] Pushed to {lid}: {list(updates.keys())}")
+        # Reflect the just-pushed values on the in-memory task immediately —
+        # build_mirror() renders from this same `t` object later in the same
+        # run. Without this, the mirror file is written with the pre-push
+        # (stale) values for one cycle, and the *next* sync run reads that
+        # stale mirror value as authoritative, pushing it back over the
+        # correct Asana state we just set — silently reverting every push.
+        if "due_on" in updates:
+            t["due_on"] = updates["due_on"]
+        if "start_on" in updates:
+            t["start_on"] = updates["start_on"]
+        if "assignee_status" in updates:
+            t["assignee_status"] = updates["assignee_status"]
+        if "assignee" in updates:
+            if updates["assignee"]:
+                # build_mirror() needs both name and gid; pull the name back out
+                # of the mirror text we just pushed from (e.g. "Mark Bain (12345)").
+                name_match = re.match(r"^(.*?)\s*\(\d+\)\s*$", mirror_assignee)
+                t["assignee"] = {
+                    "gid": updates["assignee"],
+                    "name": name_match.group(1) if name_match else updates["assignee"],
+                }
+            else:
+                t["assignee"] = None
+        if "custom_fields" in updates and LOOPER_STATUS_FIELD_GID in updates["custom_fields"]:
+            t["_looper_status"] = mirror_looper
         return True
     except Exception as e:
         log.warning(f"  [{prefix}] Could not push fields to {lid}: {e}")
@@ -788,6 +992,14 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         gid_to_lid = state.get("tasks", {})
         stamp_last_synced(proj, tasks, last_synced_gid, dry_run)
 
+        # --- Attachments (active tasks only — DONE tasks are not workable) ---
+        if not dry_run:
+            for t in tasks:
+                if t.get("completed"):
+                    continue
+                lid = t.get("_local_id") or gid_to_lid.get(t["gid"]) or t["gid"]
+                t["_attachments"] = sync_attachments(proj, lid, t["gid"])
+
         # Per-task last-sync timestamps — used for conflict resolution.
         # Comparing against mirror file mtime was wrong: sync.py rewrites the
         # mirror every run, so mirror_mtime was always "now", causing any Asana
@@ -797,6 +1009,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
         # --- Bidirectional field sync ---
         pushed = 0
+        touched_gids = set()  # tasks WE wrote to this run — re-stamped after all writes
         for t in tasks:
             gid  = t["gid"]
             prev = carried.get(gid)
@@ -817,6 +1030,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
             if _push_simple_fields(t, prev, dry_run, proj.prefix):
                 pushed += 1
+                touched_gids.add(gid)
 
             for label, mirror_key, asana_key, add_path, remove_path, item_key in [
                 ("tags",         "tags",         "tags",         "/tasks/{task_gid}/addTag",          "/tasks/{task_gid}/removeTag",          "tag"),
@@ -831,11 +1045,13 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                     dry_run, proj.prefix, label,
                 ):
                     pushed += 1
+                    touched_gids.add(gid)
 
             mirror_section = prev.get("section")
             if mirror_section and mirror_section != t.get("_section"):
                 if _push_section(t, mirror_section, sections, dry_run, proj.prefix):
                     pushed += 1
+                    touched_gids.add(gid)
 
             last_sync_times[gid] = now_utc
 
@@ -875,10 +1091,26 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                     if not dry_run:
                         posted_progress[gid] = curr_p
                     commented += 1
+                    touched_gids.add(gid)
                 except Exception as e:
                     log.warning(f"  Failed to comment on {local_id}: {e}")
 
         state["posted_progress"] = posted_progress
+
+        # Re-stamp tasks WE wrote to (pushes + comments) with a post-write
+        # timestamp. Our own writes bump each task's modified_at to AFTER the
+        # sync-start now_utc stamp, so the next run's "Asana is newer" gate saw
+        # every bot-touched task as externally modified and silently skipped
+        # pushing its mirror changes — the cause of the Review-push drops and
+        # the resulting duplicate-work cycles of 2026-07-18/19. A 60s margin
+        # absorbs clock skew vs Asana's servers; genuine human edits after this
+        # sync still register as newer and win, as intended.
+        if touched_gids and not dry_run:
+            post_write = (datetime.utcnow() + timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%S")
+            for gid in touched_gids:
+                last_sync_times[gid] = post_write
+            state["last_sync_times"] = last_sync_times
+
         save_ids(proj, state, dry_run)
 
         mirror = build_mirror(proj, tasks, carried, gid_to_lid)
@@ -1089,6 +1321,32 @@ def _scaffold_project_inner(name, prefix, path, template_gid, extra_members=None
         log.error("No template project GID. Set ASANA_TEMPLATE_PROJECT_GID in .env or use --template.")
         sys.exit(1)
 
+    # 0. Pre-flight checks — detect conflicts before touching Asana
+    registry = load_projects_registry()
+    for entry in registry:
+        if entry.get("prefix", "").upper() == prefix.upper():
+            log.error(f"  Prefix '{prefix}' already in use by: {entry.get('path')} (GID: {entry.get('gid', 'unknown')})")
+            log.error("  Use a different prefix or remove the existing entry from projects.json.")
+            sys.exit(1)
+        if str(path) == entry.get("path"):
+            log.error(f"  Path '{path}' already registered (GID: {entry.get('gid', 'unknown')})")
+            sys.exit(1)
+        if entry.get("name", "").lower() == name.lower():
+            log.error(f"  Project name '{name}' already exists at: {entry.get('path')} (GID: {entry.get('gid', 'unknown')})")
+            sys.exit(1)
+
+    # Also check Asana for an existing project with this name in the workspace
+    log.info(f"  Checking Asana for existing projects named '{name}'...")
+    workspace_gid = _get("/users/me", params={"opt_fields": "workspaces"})["data"]["workspaces"][0]["gid"]
+    search = _get(f"/workspaces/{workspace_gid}/projects", params={"opt_fields": "name,gid", "limit": 100})
+    for proj in search.get("data", []):
+        if proj.get("name", "").lower() == name.lower():
+            log.error(f"  Asana already has a project named '{name}' (GID: {proj['gid']})")
+            log.error(f"  URL: https://app.asana.com/0/{proj['gid']}/list")
+            log.error("  To use it, register it manually in projects.json instead of creating a new one.")
+            sys.exit(1)
+    log.info("  Pre-flight checks passed.")
+
     # 1. Duplicate template
     log.info(f"  Duplicating template {template_gid}...")
     if not dry_run:
@@ -1144,7 +1402,7 @@ def _scaffold_project_inner(name, prefix, path, template_gid, extra_members=None
         claude_dir = path / ".claude"
         claude_dir.mkdir(parents=True, exist_ok=True)
 
-        ids_file = claude_dir / "asana-ids.json"
+        ids_file = path / "asana-ids.json"
         if not ids_file.exists():
             ids_file.write_text(json.dumps({
                 "tasks": {}, "next_seq": 1,
@@ -1168,7 +1426,7 @@ def _scaffold_project_inner(name, prefix, path, template_gid, extra_members=None
         registry = load_projects_registry()
         paths_in_registry = [e["path"] for e in registry]
         if str(path) not in paths_in_registry:
-            registry.append({"path": str(path), "status": "active"})
+            registry.append({"path": str(path), "status": "active", "gid": new_gid, "prefix": prefix, "name": name})
             PROJECTS_FILE.write_text(json.dumps(registry, indent=2) + "\n")
             log.info(f"  Registered in {PROJECTS_FILE}")
     else:

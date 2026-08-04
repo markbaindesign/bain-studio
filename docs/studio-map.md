@@ -23,7 +23,7 @@ Full founding document: [[Pantheon]]
 | IV | Law of Memory | Nothing learned dies with the project. Write to Mnemosyne. |
 | V | Law of Harvest | Every closed project yields: blog post · case study · testimonial. Non-optional. |
 | VI | Law of the Signal | Notable moments go to Iris. She decides whether to broadcast. |
-| VII | Law of Margin | No proposal leaves without Plutus's blessing. Beauty without margin is charity. |
+| VII | Law of Margin | No proposal leaves without clearing a financial review. Beauty without margin is charity. |
 
 ---
 
@@ -47,7 +47,7 @@ graph TD
 
     A["🟡 ATHENA\nStrategy · Qualification · Proposals\n/athena · /commission · /review-spec"]
     A --> A1["Pallas — Researcher · /pallas"]
-    A --> A2["Nike — Proposal Writer · /nike"]
+    A --> A2["Proposal Writer · /proposal-writer"]
     A --> A3["Erichthonius — Estimator · /erichthonius\n⚠ also claimed by Hephaestus"]
 
     AP["🌸 APHRODITE\nVisual Design · Brand · Pre-QA Gate\n/aphrodite"]
@@ -66,13 +66,14 @@ graph TD
 
     I["🌈 IRIS\nSocial · Event Broadcasting\n/iris"]
     I --> I1["Arke — Event Spotter · /arke"]
-    I --> I2["Aura — Post Writer · /aura"]
+    I --> I2["Aura — Post Writer · /aura-post"]
     I --> I3["Kairos — Scheduler · /kairos"]
 
-    P["💰 PLUTUS\nFinance · Invoicing · Tax · Cashflow\n/plutus · /harvest"]
-    P --> P1["Poros — Invoicer · /poros"]
-    P --> P2["Euporia — Tax Prep · /euporia"]
-    P --> P3["Penia — Cashflow · /penia"]
+    P["💰 FINANCIAL REVIEW\nFinance · Invoicing · Tax · Cashflow\n/financial-review · /harvest"]
+    P --> P1["Raise Invoice · /raise-invoice"]
+    P --> P2["Tax Prep · /tax-prep"]
+    P --> P3["Cashflow Projection · /cashflow-projection"]
+    P --> P4["Account Forecast · /account-forecast"]
 
     UTIL["🔧 SHARED UTILITIES\nCopywriter · Mnemosyne · Memory\nWeb Researcher · Notifier"]
 
@@ -93,7 +94,7 @@ graph TD
 | Hephaestus | Build | `/hephaestus` | [[hephaestus/hephaestus]] | WP/React planning skill built |
 | Themis | QA | `/themis` · `/qa` | [[themis/themis]] | QA workflow + delivery gate built |
 | Iris | Social | `/iris` | [[iris/iris]] | Broadcast skills built |
-| Plutus | Finance | `/plutus` | [[plutus/plutus]] | Finance + harvest skills built |
+| Financial Review | Finance | `/financial-review` | [[financial-review]] | Finance + harvest skills built |
 
 ### Household members
 
@@ -102,7 +103,7 @@ graph TD
 | Autolycus | Hermes | `/triage` | ✓ Built |
 | Abderus | Hermes | `/abderus` | ✓ Built — timing sweep |
 | Pallas | Athena | `/pallas` | ✓ Built |
-| Nike | Athena | `/nike` | ✓ Built |
+| Proposal Writer | Athena | `/proposal-writer` | ✓ Built |
 | Erichthonius | Athena + Hephaestus | `/erichthonius` | ✓ Built |
 | Harmonia | Aphrodite | `/harmonia` | ✓ Built |
 | Anteros | Aphrodite | `/anteros` | ✓ Built |
@@ -112,11 +113,12 @@ graph TD
 | Dike | Themis | `/dike` | ✓ Built |
 | Eirene | Themis | `/eirene` | ✓ Built |
 | Arke | Iris | `/arke` | ✓ Built |
-| Aura | Iris | `/aura` | ✓ Built |
+| Aura | Iris | `/aura-post` | ✓ Built — `/aura` is now SEO strategy |
 | Kairos | Iris | `/kairos` | ✓ Built |
-| Poros | Plutus | `/poros` | ✓ Built |
-| Euporia | Plutus | `/euporia` | ✓ Built |
-| Penia | Plutus | `/penia` | ✓ Built |
+| Raise Invoice | Financial Review | `/raise-invoice` | ✓ Built |
+| Tax Prep | Financial Review | `/tax-prep` | ✓ Built |
+| Cashflow Projection | Financial Review | `/cashflow-projection` | ✓ Built |
+| Account Forecast | Financial Review | `/account-forecast` | ✓ Built |
 
 ### Shared utilities
 
@@ -127,6 +129,7 @@ graph TD
 | The Memory     | Auto-memory system in `~/.claude/projects/…/memory/`         | ✓ Built                          |
 | Web Researcher | `/web-researcher` skill                                      | ✓ Built                          |
 | Notifier       | `studio/notifier.py` · Slack webhook                         | ✓ Built — [[utilities/notifier]] |
+| /feature       | `.claude/skills/feature/SKILL.md` · per-project feature capture | ✓ Built                       |
 
 ---
 
@@ -139,7 +142,7 @@ See [[projects.base]] for the live project index. Individual project files in `d
 - [[projects/pipe]] — Upwork Pipeline (internal BizDev)
 - [[projects/nore]] — The Nature of Real Estate (WordPress/MemberPress)
 
-Plutus and Iris capabilities are **studio-wide** — not per-project enrollments.
+Financial Review and Iris capabilities are **studio-wide** — not per-project enrollments.
 
 ---
 
@@ -153,9 +156,9 @@ SIGNAL → QUALIFICATION → ESTIMATION → PRICING → [PROPOSAL GATE]
 
 | Gate | Held by | What triggers it |
 |------|---------|-----------------|
-| Proposal gate | Mark | Athena + Plutus complete scope + margin check |
+| Proposal gate | Mark | Athena + Financial Review complete scope + margin check |
 | Delivery gate | Mark | Themis signs off QA |
-| Financial gate | Mark | Poros raises invoice |
+| Financial gate | Mark | Raise Invoice produces the invoice |
 
 ---
 
@@ -169,11 +172,14 @@ SIGNAL → QUALIFICATION → ESTIMATION → PRICING → [PROPOSAL GATE]
 | Shared utility docs | `docs/utilities/` |
 | Sync script | `studio/sync.py` |
 | Project registry | `studio/projects.json` |
-| Asana mirror | `.claude/asana-mirror.md` |
+| Asana mirror | `asana-mirror.md` |
 | Notifier | `studio/notifier.py` |
 | Project database | `~/Dropbox/Studio/context/portfolio/project-database.csv` |
 | Studio skills | `.claude/skills/` (symlinked to `~/.claude/skills/`) |
 | Studio memory | `~/.claude/projects/-media-data-dev-bain-studio/memory/` |
+| Idea pipeline spec | `context/internal/greenhouse-feature-pipeline.md` |
+| Feature backlog (per project) | `context/pipeline/feature-backlog/{PREFIX}.md` |
+| Someday-maybe | `context/someday-maybe.md` |
 
 ---
 

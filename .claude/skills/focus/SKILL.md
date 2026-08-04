@@ -41,7 +41,7 @@ If not found, list available prefixes and abort.
 Change to the project directory and run the same steps as `/recap`:
 
 1. Git context — branch, last 3 commits, dirty flag
-2. Asana state — read `{path}/.claude/asana-mirror.md`
+2. Asana state — read `{path}/asana-mirror.md`
 3. Inbox — check `{path}/.claude/inbox/` for unread messages
 4. Open questions — read `{path}/.claude/open-questions.md`
 5. Synthesise next action

@@ -24,7 +24,7 @@ Wait for completion. If any project fails to sync, note it but continue.
 
 Read `/media/data/dev/bain-studio/studio/projects.md` for the registered project list.
 
-For each active project, read its `.claude/asana-mirror.md`. Extract:
+For each active project, read its `asana-mirror.md`. Extract:
 - Overdue tasks (due date in the past)
 - Tasks with no Progress note
 - Open questions from `.claude/open-questions.md` if it exists
@@ -55,10 +55,10 @@ If any urgent or high-priority messages are found, surface them at the top of th
 
 ### 6. Check the financial pulse
 
-Read `{CONTENT_DIR}/finance/accounts.json`. Surface:
+Read `/media/data/Dropbox/Work/Admin/Financial/Accounting/accounts.json`. Surface:
 - Current bank balance (`total_eur`)
 - Cash after 30-day obligations (`balance_after_30d`)
-- Any overdue invoices from `{CONTENT_DIR}/finance/invoices.md`
+- Any overdue invoices from `accounts.json`'s `harvest.invoices` field (sourced live from Harvest)
 
 If `balance_after_30d` is below €1,000, flag as **low cash warning**.
 

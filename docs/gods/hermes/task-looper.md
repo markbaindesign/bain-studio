@@ -2,10 +2,14 @@
 tags: [skill]
 god: hermes
 invoke: /task-looper
-description: Self-driving task queue — works BainBot-assigned tasks one at a time, driven by a stop hook, until the queue is empty
+description: DEPRECATED (ADR 009) — superseded by studio-looper; the skill now only redirects
 ---
 
 # task-looper
+
+> **DEPRECATED 2026-07-22.** Superseded by [studio-looper](../../utilities/studio-looper.md)
+> per [ADR 009](../../adr/009-studio-looper-canonical.md). The skill is a redirect stub;
+> the notes below describe the retired behaviour for historical reference only.
 
 Runs BainBot-assigned tasks autonomously, one at a time. Reads the Asana mirror, builds a prioritised queue, works the first task, outputs a completion promise, and the stop hook advances the queue automatically.
 

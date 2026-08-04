@@ -16,7 +16,7 @@ Read `CLAUDE.md` if it exists. Also check for these files:
 
 ```bash
 ls .claude/ 2>/dev/null
-cat .claude/asana-ids.json 2>/dev/null
+cat asana-ids.json 2>/dev/null
 cat .claude/open-questions.md 2>/dev/null
 ls .claude/adr/ 2>/dev/null
 ```
@@ -29,7 +29,7 @@ Determine what's already present:
 | `ASANA_TASK_PREFIX` in CLAUDE.md | yes / no |
 | `ASANA_PROJECT_NAME` in CLAUDE.md | yes / no |
 | `## Studio PM` section in CLAUDE.md | yes / no |
-| `.claude/asana-ids.json` exists | yes / no |
+| `asana-ids.json` exists | yes / no |
 | `.claude/open-questions.md` exists | yes / no |
 | `.claude/adr/` directory exists | yes / no |
 
@@ -132,7 +132,7 @@ Create any missing files:
 python3 - <<'EOF'
 import json
 from pathlib import Path
-ids_file = Path(".claude/asana-ids.json")
+ids_file = Path("asana-ids.json")
 ids_file.parent.mkdir(exist_ok=True)
 if not ids_file.exists():
     ids_file.write_text(json.dumps({
@@ -214,6 +214,6 @@ Report: tasks found, whether the mirror was written, any errors.
 Tell the user:
 
 - **What changed** (in update mode, distinguish "already present" from "added now")
-- Where the mirror lives: `.claude/asana-mirror.md`
+- Where the mirror lives: `asana-mirror.md`
 - That overnight sync runs at 2am, or they can run `/sync` any time
 - If any gaps remain (e.g. optional fields they skipped), note them briefly

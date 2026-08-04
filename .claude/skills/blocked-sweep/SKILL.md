@@ -14,7 +14,7 @@ Scan all active project mirrors for blocked or stalled tasks. Read comments to s
 
 Read `/media/data/dev/bain-studio/studio/projects.json` to get the list of active project paths.
 
-For each path, check if `{path}/.claude/asana-mirror.md` exists.
+For each path, check if `{path}/asana-mirror.md` exists.
 
 ### 2. Parse each mirror for blocked tasks
 

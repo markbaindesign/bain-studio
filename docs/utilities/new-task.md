@@ -53,7 +53,7 @@ python3 /media/data/dev/bain-studio/studio/sync.py \
 3. Moves it to the specified section
 4. Assigns the next local ID in sequence (reads/writes `asana-ids.json`)
 5. Writes the local ID back to the Asana custom field
-6. Appends a full task block to the project's `.claude/asana-mirror.md`
+6. Appends a full task block to the project's `asana-mirror.md`
 
 The task is live in Asana and visible in the mirror immediately - no sync run needed.
 

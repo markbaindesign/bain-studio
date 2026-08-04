@@ -14,7 +14,7 @@ All Asana API mutations (task create/update, project create, member management, 
 The Asana MCP plugin is disabled for this project via `disabledMcpjsonServers` in `.claude/settings.json` to prevent accidental human-token mutations.
 
 The PM workflow is:
-1. Read task state from local mirror (`.claude/asana-mirror.md`)
+1. Read task state from local mirror (`asana-mirror.md`)
 2. Edit the mirror as needed
 3. Run `python3 studio/sync.py` to push changes via bainbot
 

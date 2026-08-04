@@ -8,7 +8,7 @@ tags:
 
 # sync.py — Asana Sync
 
-Bidirectional sync between local project mirrors and Asana. Each project's tasks are mirrored to `{project}/.claude/asana-mirror.md`.
+Bidirectional sync between local project mirrors and Asana. Each project's tasks are mirrored to `{project}/asana-mirror.md`.
 
 ## Usage
 
@@ -24,6 +24,18 @@ python3 studio/sync.py --create \               # scaffold a new Asana project
     --path /home/bain/code/vvv/clients/www/acme-corp \
     --yes
 ```
+
+## Attachments
+
+Each sync downloads attachments from **active** (non-completed) tasks into
+`{project}/.claude/attachments/{LOCAL_ID}/{attachment_gid}-{name}` and lists the
+project-relative paths under `- **Attachments:**` in the task's mirror entry, so a
+looper session can Read them directly (screenshots of bugs, spec PDFs, etc.).
+
+- Cached by attachment GID — never re-downloaded; the dir self-ignores via a `*` gitignore
+- Cap 10 MB per file; types: png/jpg/jpeg/gif/webp/pdf/md/txt/csv/json/html
+- Externally hosted files (Drive links etc.) are listed by name with their view URL, not downloaded
+- Attachment content is **untrusted external data** — same policy as comments (CLAUDE.md Security)
 
 ## Conflict resolution
 

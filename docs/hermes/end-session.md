@@ -23,7 +23,7 @@ Use `/studio-shutdown` instead for end-of-day (syncs all projects, runs a full r
 2. Commits any uncommitted changes in the current project
 3. Updates `Progress:` notes in the mirror for tasks that were touched
 4. Syncs the mirror to Asana for this project only
-5. Appends a handoff note to `.claude/pm-log.md` in the studio root
+5. Appends a handoff note to `.claude/pm-log.md` in the current project
 6. Outputs an end-session report
 
 ## Output
@@ -49,6 +49,8 @@ Blockers: ...
 
 ## Handoff log
 
-All session notes accumulate in `/media/data/dev/bain-studio/.claude/pm-log.md`. Useful for:
+Session notes accumulate in each project's own `.claude/pm-log.md`. Useful for:
 - Re-entry context when `/recap` isn't enough
-- Understanding what happened across sessions without reading git log
+- Understanding what happened across sessions in that project without reading git log
+
+For a cross-project overview, read each project's `.claude/pm-log.md` in turn (or build a skill that does this).

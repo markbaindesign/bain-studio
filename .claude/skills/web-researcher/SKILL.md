@@ -53,4 +53,4 @@ Do not synthesise beyond what the sources say. Do not fill gaps with training kn
 - Technology compatibility or pricing (for Hephaestus or Erichthonius)
 - Competitor research (for Athena)
 - Plugin documentation (for Hephaestus)
-- Tax or legal reference checks (for Euporia — always recommend Mark verifies with gestora)
+- Tax or legal reference checks (for tax-prep — always recommend Mark verifies with gestora)

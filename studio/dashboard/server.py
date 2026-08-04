@@ -11,7 +11,7 @@ from flask import Flask, jsonify, send_file, request
 from dotenv import load_dotenv
 
 HERE = Path(__file__).resolve().parent
-load_dotenv(HERE / '.env')
+load_dotenv(HERE.parent / '.env')  # studio/.env — single source, no local override file
 
 sys.path.insert(0, str(HERE))
 import gnucash_parser
@@ -19,10 +19,7 @@ from harvest_client import HarvestClient
 
 app = Flask(__name__)
 
-GNUCASH_PATH = os.getenv('GNUCASH_FILE', os.getenv(
-    'GNUCASH_PATH',
-    '/media/data/Dropbox/Work/Admin/Financial/Accounting/GNUCash/accounts.gnucash',
-))
+GNUCASH_PATH = os.environ['GNUCASH_FILE']  # no hardcoded fallback — must be set in studio/.env
 HARVEST_TOKEN      = os.getenv('HARVEST_TOKEN', '')
 HARVEST_ACCOUNT_ID = os.getenv('HARVEST_ACCOUNT_ID', '')
 PIPELINE_API_URL   = os.getenv('PIPELINE_API_URL', 'http://localhost:5050')
@@ -58,7 +55,8 @@ def get_fx_rates():
         return _FX_FALLBACK, f"fallback hardcoded (live fetch failed: {e})"
 
 
-KF_SNAPSHOT = Path(__file__).resolve().parents[2] / 'context' / 'projects' / 'kf' / 'time_snapshot.json'
+_STUDIO_CONTENT_DIR = Path(os.getenv('STUDIO_CONTENT_DIR', Path(__file__).resolve().parents[2] / 'context'))
+KF_SNAPSHOT = _STUDIO_CONTENT_DIR / 'projects' / 'kf' / 'time_snapshot.json'
 
 
 @app.route('/')
@@ -116,10 +114,43 @@ def api_pipeline_connects(thread_id):
         return jsonify({'error': str(e)}), 502
 
 
+@app.route('/api/transactions')
+def api_transactions():
+    fx_rates, _ = get_fx_rates()
+    try:
+        data = gnucash_parser.parse(
+            GNUCASH_PATH,
+            usd_rate=fx_rates['USD'],
+            gbp_rate=fx_rates['GBP'],
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    rows = data.get('transactions', [])
+
+    q = request.args.get('q', '').lower()
+    type_filter = request.args.get('type', '').upper()
+    since = request.args.get('since', '')
+    until = request.args.get('until', '')
+
+    if q:
+        rows = [r for r in rows if q in r['desc'].lower() or q in r['path'].lower()]
+    if type_filter:
+        rows = [r for r in rows if r['type'] == type_filter]
+    if since:
+        rows = [r for r in rows if r['date'] >= since]
+    if until:
+        rows = [r for r in rows if r['date'] <= until]
+
+    rows = sorted(rows, key=lambda x: x['date'], reverse=True)
+    limit = int(request.args.get('limit', 200))
+    return jsonify({'count': len(rows), 'transactions': rows[:limit]})
+
+
 @app.route('/api/data')
 def api_data():
     # Reload .env on each request so credential changes take effect without restart
-    load_dotenv(Path(__file__).parent / '.env', override=True)
+    load_dotenv(Path(__file__).resolve().parent.parent / '.env', override=True)
     harvest_token      = os.getenv('HARVEST_TOKEN', '').strip()
     harvest_account_id = os.getenv('HARVEST_ACCOUNT_ID', '').strip()
 

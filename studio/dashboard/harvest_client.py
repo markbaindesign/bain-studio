@@ -46,22 +46,34 @@ class HarvestClient:
             })
         return projects
 
+    @staticmethod
+    def _parse_invoice(inv):
+        client_name = (inv.get('client') or {}).get('name', 'Unknown')
+        return {
+            'number':     inv.get('number', ''),
+            'client':     client_name,
+            'amount':     round(inv.get('amount', 0), 2),
+            'due_amount': round(inv.get('due_amount', 0), 2),
+            'due_date':   inv.get('due_date', ''),
+            'issue_date': inv.get('issue_date', ''),
+            'currency':   inv.get('currency', 'EUR'),
+            'state':      inv.get('state', ''),
+        }
+
     def get_outstanding_invoices(self):
         data = self._get('/invoices', {'state': 'open', 'per_page': 100})
-        invoices = []
-        for inv in data.get('invoices', []):
-            client_name = (inv.get('client') or {}).get('name', 'Unknown')
-            invoices.append({
-                'number':     inv.get('number', ''),
-                'client':     client_name,
-                'amount':     round(inv.get('amount', 0), 2),
-                'due_amount': round(inv.get('due_amount', 0), 2),
-                'due_date':   inv.get('due_date', ''),
-                'issue_date': inv.get('issue_date', ''),
-                'currency':   inv.get('currency', 'EUR'),
-                'state':      inv.get('state', ''),
-            })
+        invoices = [self._parse_invoice(inv) for inv in data.get('invoices', [])]
         invoices.sort(key=lambda x: x['due_date'] or '')
+        return invoices
+
+    def get_invoices_in_range(self, from_date, to_date):
+        """All invoices issued in [from_date, to_date] (YYYY-MM-DD), any state --
+        for accrual-basis tax prep (see the tax-prep skill), where a paid invoice still counts as
+        income in the quarter it was issued. Unlike get_outstanding_invoices, this
+        is not filtered to state='open'."""
+        data = self._get('/invoices', {'from': from_date, 'to': to_date, 'per_page': 100})
+        invoices = [self._parse_invoice(inv) for inv in data.get('invoices', [])]
+        invoices.sort(key=lambda x: x['issue_date'] or '')
         return invoices
 
     def get_uninvoiced_total(self, usd_rate=0.92, gbp_rate=1.17):
