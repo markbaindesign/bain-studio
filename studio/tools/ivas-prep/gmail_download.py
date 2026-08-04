@@ -53,6 +53,12 @@ QUARTER_DATES = {
 # Grace period: some invoices arrive a few days after quarter end.
 GRACE_DAYS = 7
 
+# Real addresses live in studio/.env (gitignored) — placeholders here are
+# never meant to resolve to anything; set the IVAS_* vars locally to use this.
+GESTOR_EMAIL = os.getenv("IVAS_GESTOR_EMAIL", "gestor@example.com")
+MOVISTAR_FORWARD_EMAIL = os.getenv("IVAS_MOVISTAR_FORWARD_EMAIL", "your-personal-email@example.com")
+CLOUDWAYS_BILLING_EMAIL = os.getenv("IVAS_CLOUDWAYS_BILLING_EMAIL", "your-cloudways-email@example.com")
+
 # (search_query_fragment, gmail_account, compres_subfolder, filename_template_or_None)
 # filename_template: None = use original filename; string = prefix to rename
 INVOICE_SOURCES = [
@@ -61,12 +67,12 @@ INVOICE_SOURCES = [
     ("from:customer-service@asana.com", "mark@bain.design", "Asana", None),
     ("from:payments-noreply@google.com", "mark@bain.design", "Google", None),
     ("from:mail.anthropic.com", "mark@bain.design", "Anthropic", None),
-    ("from:gestor@example.com subject:factura", "mark@bain.design", "Gestor", None),
-    # Movistar bills come to your-personal-email@example.com and are forwarded to mark@bain.design
-    ("from:your-personal-email@example.com subject:\"Tu factura Movistar\"", "mark@bain.design", "Movistar", None),
-    # --- your-cloudways-email@example.com ---
-    ("from:billing@cloudways.com subject:invoice", "your-cloudways-email@example.com", "Cloudways", None),
-    ("from:paddle.com CrashPlan", "your-cloudways-email@example.com", "Crashplan", None),
+    (f"from:{GESTOR_EMAIL} subject:factura", "mark@bain.design", "Gestor", None),
+    # Movistar bills are forwarded to mark@bain.design from the account below
+    (f"from:{MOVISTAR_FORWARD_EMAIL} subject:\"Tu factura Movistar\"", "mark@bain.design", "Movistar", None),
+    # --- Cloudways billing account ---
+    ("from:billing@cloudways.com subject:invoice", CLOUDWAYS_BILLING_EMAIL, "Cloudways", None),
+    ("from:paddle.com CrashPlan", CLOUDWAYS_BILLING_EMAIL, "Crashplan", None),
 ]
 
 
