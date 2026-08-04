@@ -870,6 +870,31 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
     try:
         _put(f"/tasks/{gid}", {"data": updates})
         log.info(f"  [{prefix}] Pushed to {lid}: {list(updates.keys())}")
+        # Reflect the just-pushed values on the in-memory task immediately —
+        # build_mirror() renders from this same `t` object later in the same
+        # run. Without this, the mirror file is written with the pre-push
+        # (stale) values for one cycle, and the *next* sync run reads that
+        # stale mirror value as authoritative, pushing it back over the
+        # correct Asana state we just set — silently reverting every push.
+        if "due_on" in updates:
+            t["due_on"] = updates["due_on"]
+        if "start_on" in updates:
+            t["start_on"] = updates["start_on"]
+        if "assignee_status" in updates:
+            t["assignee_status"] = updates["assignee_status"]
+        if "assignee" in updates:
+            if updates["assignee"]:
+                # build_mirror() needs both name and gid; pull the name back out
+                # of the mirror text we just pushed from (e.g. "Mark Bain (12345)").
+                name_match = re.match(r"^(.*?)\s*\(\d+\)\s*$", mirror_assignee)
+                t["assignee"] = {
+                    "gid": updates["assignee"],
+                    "name": name_match.group(1) if name_match else updates["assignee"],
+                }
+            else:
+                t["assignee"] = None
+        if "custom_fields" in updates and LOOPER_STATUS_FIELD_GID in updates["custom_fields"]:
+            t["_looper_status"] = mirror_looper
         return True
     except Exception as e:
         log.warning(f"  [{prefix}] Could not push fields to {lid}: {e}")

@@ -4,6 +4,9 @@ Obsidian collector — harvests tagged ideas from daily notes.
 
 Scans daily notes (YYYY-MM-DD.md) in the Obsidian vault for hashtag-prefixed lines.
 Routes items to topic files in Ideas/ and drops spec stubs for #project and #skill.
+Every tagged item found (any #tag, not just the routed ones) is also recorded to
+obsidian_tagged_items.json as structured data. Processed notes are moved into a
+processed/ subfolder of the vault so the daily-notes root stays tidy.
 
 Usage:
     python3 studio/collectors/obsidian_collector.py          # process new notes
@@ -35,10 +38,12 @@ DAILY_DIR = VAULT / _daily_subdir if _daily_subdir else VAULT
 
 CONTENT_DIR = Path(os.getenv("STUDIO_CONTENT_DIR", Path(__file__).parent.parent.parent / "context"))
 IDEAS_DIR = VAULT / "Ideas"
+ARCHIVE_DIR = DAILY_DIR / "processed"
 STATE_FILE = Path(__file__).parent / "obsidian_collector_state.json"
 SPEC_DRAFTS = CONTENT_DIR / "specs" / "drafts"
 FEATURE_BACKLOG_DIR = CONTENT_DIR / "pipeline" / "feature-backlog"
 STANDUP_SUMMARY = Path(__file__).parent / "obsidian_standup.json"
+TAGGED_ITEMS_FILE = Path(__file__).parent / "obsidian_tagged_items.json"
 
 LOG_PREFIX = f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] obsidian"
 
@@ -70,9 +75,31 @@ def save_state(state):
 
 
 def daily_notes(directory):
-    """Yield Path objects for YYYY-MM-DD.md files, sorted oldest first."""
+    """Return Path objects for YYYY-MM-DD.md files directly in directory, sorted oldest first."""
     pattern = re.compile(r"^\d{4}-\d{2}-\d{2}\.md$")
+    if not directory.exists():
+        return []
     return sorted(p for p in directory.iterdir() if p.is_file() and pattern.match(p.name))
+
+
+def all_daily_notes(include_archive):
+    """Notes in the vault root, plus archived ones too when reprocessing with --all."""
+    notes = daily_notes(DAILY_DIR)
+    if include_archive:
+        notes += daily_notes(ARCHIVE_DIR)
+    return sorted(notes, key=lambda p: p.name)
+
+
+def archive_note(path, dry_run):
+    """Move a processed daily note into ARCHIVE_DIR, tidying the vault root."""
+    if path.parent == ARCHIVE_DIR:
+        return  # already archived (reprocessed via --all)
+    ARCHIVE_DIR.mkdir(exist_ok=True)
+    dest = ARCHIVE_DIR / path.name
+    if dry_run:
+        log(f"  [dry] archive → processed/{path.name}")
+        return
+    path.rename(dest)
 
 
 def extract_tagged_items(text, source_date):
@@ -215,12 +242,40 @@ def append_to_feature_backlog(item, dry_run):
         return created, "Ideas/misc.md (no prefix)"
 
 
-def process_note(path, dry_run):
+def load_tagged_items():
+    if TAGGED_ITEMS_FILE.exists():
+        return json.loads(TAGGED_ITEMS_FILE.read_text())
+    return []
+
+
+def save_tagged_items(records):
+    TAGGED_ITEMS_FILE.write_text(json.dumps(records, indent=2))
+
+
+def record_tagged_items(items, source_name, records, dry_run):
+    """Append every extracted tag/text/date to the structured data store, regardless
+    of how (or whether) it was routed. Deduplicated on (date, tag, text)."""
+    seen = {(r["date"], r["tag"], r["text"]) for r in records}
+    added = 0
+    for item in items:
+        key = (item["date"], item["tag"], item["text"])
+        if key in seen:
+            continue
+        seen.add(key)
+        if not dry_run:
+            records.append({**item, "source": source_name})
+        added += 1
+    return added
+
+
+def process_note(path, dry_run, tagged_records):
     date_str = path.stem  # YYYY-MM-DD
     text = path.read_text()
     items = extract_tagged_items(text, date_str)
 
-    counts = {"spec_stubs": 0, "ideas": 0, "features": 0, "skipped": 0}
+    new_tagged = record_tagged_items(items, path.name, tagged_records, dry_run)
+
+    counts = {"spec_stubs": 0, "ideas": 0, "features": 0, "skipped": 0, "tagged": new_tagged}
     stub_names = []
 
     for item in items:
@@ -264,7 +319,7 @@ def main():
         state["processed"] = {name: "" for name in state["processed"]}
     processed_hashes = state["processed"]  # {filename: hash}
 
-    notes = daily_notes(DAILY_DIR)
+    notes = all_daily_notes(include_archive=args.all)
     if not args.all:
         notes = [n for n in notes if file_hash(n) != processed_hashes.get(n.name)]
 
@@ -274,30 +329,35 @@ def main():
 
     log(f"processing {len(notes)} note(s){' [dry run]' if args.dry_run else ''}")
 
-    total = {"spec_stubs": 0, "ideas": 0, "features": 0, "skipped": 0}
+    total = {"spec_stubs": 0, "ideas": 0, "features": 0, "skipped": 0, "tagged": 0}
     newly_processed = {}
     new_stub_names = []
+    tagged_records = load_tagged_items()
 
     for note in notes:
         log(f"→ {note.name}")
-        counts, stubs = process_note(note, args.dry_run)
+        counts, stubs = process_note(note, args.dry_run, tagged_records)
         for k in total:
             total[k] += counts[k]
         newly_processed[note.name] = file_hash(note)
         new_stub_names.extend(stubs)
+        archive_note(note, args.dry_run)
 
-    log(f"done — {total['spec_stubs']} spec stubs, {total['ideas']} ideas, {total['features']} features filed, {total['skipped']} duplicates skipped")
+    log(f"done — {total['spec_stubs']} spec stubs, {total['ideas']} ideas, {total['features']} features filed, "
+        f"{total['tagged']} tagged items recorded, {total['skipped']} duplicates skipped")
 
     if not args.dry_run:
         processed_hashes.update(newly_processed)
         state["processed"] = processed_hashes
         save_state(state)
+        save_tagged_items(tagged_records)
         summary = {
             "run_at": datetime.datetime.now().isoformat(),
             "notes_processed": len(newly_processed),
             "spec_stubs": total["spec_stubs"],
             "ideas": total["ideas"],
             "features": total["features"],
+            "tagged_items": total["tagged"],
             "new_stub_names": new_stub_names,
         }
         STANDUP_SUMMARY.write_text(json.dumps(summary, indent=2))

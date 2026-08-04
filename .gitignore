@@ -46,6 +46,7 @@ studio/collectors/*.log
 .claude/features/
 studio/collectors/obsidian_collector_state.json
 studio/collectors/obsidian_standup.json
+studio/collectors/obsidian_tagged_items.json
 studio/collectors/careers_watch_state/
 
 # Obsidian workspace state

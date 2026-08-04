@@ -78,8 +78,9 @@ Quick reference (paths only — see project file for full details):
 | DOM | `/media/data/dev/misc/premium_domains` |
 | NORE | `/home/bain/code/vvv/clients/www/nore` |
 | BD | `/media/data/dev/bain/www/bain.design` |
-| FOOB | `/media/data/dev/vvv/bain/www/wp-foobot-api-plugin` |
+| FOOB | `/media/data/dev/ddev/wp-foobot-api-plugin` |
 | TARA | `/media/data/dev/misc/kf-tara-web` |
+| TSTY | `/media/data/dev/ddev/techstyle` |
 
 ## Skills
 
@@ -99,6 +100,8 @@ ln -s /media/data/dev/bain-studio/.claude/skills/{name} ~/.claude/skills/{name}
 | `end-session` | project-level wrap-up: commit, sync mirror, write handoff note |
 | `ga-report` | pull GA4 data and generate a branded benchmark report for client handoff |
 | `interview-me` | real-time voice interview via OpenAI Realtime API, takes a topic arg |
+| `proposal-intake` | turns raw client input (RFP, emails, notes) into a proposal skeleton, flagging gaps |
+| `proposal-writer` | turns a completed proposal skeleton into a client-ready proposal + branded PDF |
 
 **Global-only skills** (not in this repo — live directly in `~/.claude/skills/`):
 - `grill-me` — general planning, useful everywhere

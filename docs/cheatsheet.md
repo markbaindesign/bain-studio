@@ -38,6 +38,8 @@ Invoke in Claude Code with `/skill-name [args]`.
 | `financial-review` | `/financial-review` | Margin check and tax review on any proposal |
 | `proposal-writer` | `/proposal-writer` | Write or refine a proposal or scope doc |
 | `commission` | `/commission` | Commission an approved spec — scaffold + Asana create |
+| `onboard-client` | `/onboard-client [client]` | Full WordPress client onboarding — quiz → commission → tech access → DDEV → Dropbox → manual checklist |
+| `tech-access-request` | `/tech-access-request` | Personalised tech access request doc, pre-checked, rendered to branded PDF |
 | `register-project` | `/register-project` | Add a project to projects.json + CLAUDE.md |
 | `scaffold-dir` | `/scaffold-dir` | Create project directory + git init |
 | `seed-tasks` | `/seed-tasks` | Create initial tasks in Asana via bainbot API |
