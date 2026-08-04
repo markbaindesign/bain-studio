@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [1.0.1] - 2026-08-04
+
+### Fixed
+- `ivas-prep`'s Gmail sender matching was broken by the public-repo PII scrub
+  (real gestor/Movistar/Cloudways addresses were replaced with placeholders
+  directly in the script). Real addresses now load from `studio/.env`
+  (gitignored) via `IVAS_GESTOR_EMAIL` / `IVAS_MOVISTAR_FORWARD_EMAIL` /
+  `IVAS_CLOUDWAYS_BILLING_EMAIL`, so the automation works again without any
+  real address being committed.
+
 ## [1.0.0] - 2026-08-04
 
 First tagged baseline of the studio's internal PM/ops system, built up over
