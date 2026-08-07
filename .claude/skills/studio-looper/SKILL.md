@@ -458,7 +458,7 @@ PYEOF
 ```
 **Looper Status:** Review
 **Assignee:** Mark Bain (507443625075)
-**Progress:** Ready for review {YYYY-MM-DD}. {What was done, where, what to check.} Session: {pct}% used (resets {reset_dt}).
+**Progress:** Ready for review {YYYY-MM-DD}. {What was done, where, what to check.} Use full file paths (e.g. /media/data/dev/...) when referencing files. Session: {pct}% used (resets {reset_dt}).
 ```
 
 **2. Update home project mirror** (`{PROJECT_DIR}/asana-mirror.md`):

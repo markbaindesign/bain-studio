@@ -39,7 +39,7 @@ BainBot reads the field to build the queue and writes it to advance tasks throug
 - Mark Bain (owner)
 - bainbot (must be a member for sync to work)
 
-## Artifacts
+## Artifacts & file references
 
 Any artifact (research document, analysis, code, etc.) created while working a looper task should be saved to `docs/looper/` or to the relevant project's own docs directory — **not** to `studio/looper/`. This keeps the studio docs organized by subject and makes them easier to find and reference later.
 
@@ -48,7 +48,12 @@ Examples:
 - Project-specific docs → `{PROJECT_DIR}/docs/`
 - Proposal/template docs → `docs/utilities/` (if studio-wide)
 
-Update the task's Progress note to reference the artifact with its full path (e.g., `/media/data/dev/bain-studio/docs/looper/sl-120-proposal-examples-research.md`).
+**Always use full file paths** when referencing files in progress notes and task descriptions. Examples:
+- Full: `/media/data/dev/bain-studio/docs/looper/sl-120-proposal-examples-research.md`
+- Full: `/media/data/dev/vvv/clients/www/kf-21/includes/custom-fields.php`
+- **Not** relative paths like `studio/looper/file.md` or `../docs/file.md`
+
+This makes it unambiguous where the file is located and easier for Mark (and future looper runs) to find it.
 
 ## Setup
 
