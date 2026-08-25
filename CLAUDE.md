@@ -81,6 +81,12 @@ Quick reference (paths only — see project file for full details):
 | FOOB | `/media/data/dev/ddev/wp-foobot-api-plugin` |
 | TARA | `/media/data/dev/misc/kf-tara-web` |
 | TSTY | `/media/data/dev/ddev/techstyle` |
+| SL | `/media/data/dev/bain-studio/studio/looper` |
+| SLT | `/media/data/dev/bain-studio/studio/looper-test` |
+
+SL (Studio Looper) is not a codebase — it is the cross-project queue. Tasks are multi-homed into
+it from their home projects and keep their home prefix, so a task listed there is mirrored twice
+and must be worked in the project its prefix resolves to. See `docs/projects/sl.md`.
 
 ## Skills
 
