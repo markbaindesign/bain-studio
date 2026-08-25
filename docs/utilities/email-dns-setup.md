@@ -9,6 +9,18 @@ description: How bain.design's email authentication (SPF, DMARC) is configured, 
 **Set up:** 2026-08-06
 **Related:** ADR 013
 
+> [!WARNING]
+> **Not true as of 2026-08-25.** Live DNS shows `bain.design` publishing **zero TXT records** -
+> neither record below is present. Verified against Cloudflare, Google, Quad9 and the domain's
+> own authoritative nameserver. The MX records in the same zone are intact, so this is not a zone
+> reset; the TXT rows specifically are gone or were never saved. This surfaced only when a
+> client's filter rejected Mark's mail (SL-129).
+>
+> Treat the section below as **the intended configuration, not the live one**, until re-verified
+> with the `dig` commands in "How to verify the records". Full analysis, including DKIM (also
+> absent, and never covered by this doc or ADR 013):
+> `/media/data/dev/bain-studio/docs/looper/sl-129-bain-design-email-dns-audit.md`
+
 ---
 
 ## Current records
