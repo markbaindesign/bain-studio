@@ -418,6 +418,26 @@ BASE=$(git branch --show-current)   # remember where the repo was
 git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
 ```
 
+**First decide whether the task needs a branch at all.**
+
+If the task's output is an audit, investigation, research note or analysis — anything that
+documents findings rather than changing a tool — it does **not** go in the repo and needs no
+branch and no commit. Write it straight to:
+
+```
+$STUDIO_CONTENT_DIR/research/looper/{TASK_ID}-{slug}.md
+```
+
+Then skip the branch and commit steps entirely, and name that file path in the Progress note
+instead of a branch and commit.
+
+This matters because `bain-studio` is a **public** repo of tools. Research output carries client
+names, infrastructure detail and unremediated findings, none of which should be published. Do not
+create `docs/looper/`, `docs/research/` or `docs/audits/` — they are gitignored. See "What
+belongs in this repo" in `CLAUDE.md`.
+
+Only branch when you are changing a tool, a skill, or the instructions for using one.
+
 Do the work. One commit per task on that branch:
 ```bash
 git add <specific files>

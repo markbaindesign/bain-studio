@@ -41,15 +41,37 @@ python3 studio/sync.py --create --name "Client Name" --prefix "CLN" --path /path
 - Custom project icons are **UI-only** — set manually in Asana after `--create`
 - `ASANA_USER_GID` (Mark's GID) and `ASANA_TEMPLATE_PROJECT_GID` must be set in `studio/.env`
 
+## What belongs in this repo
+
+**This repo is a collection of tools, not a research archive.** It is public. Only these belong here:
+
+- Tool and script source (`studio/`, `.claude/skills/`)
+- Instructions for using those tools (`docs/utilities/`, `docs/gods/`, `docs/projects/`)
+- Shared knowledge with lasting value: ADRs, `Pantheon.md`, `studio-map.md`, `cheatsheet.md`, `troubleshooting.md`
+- Agent instructions: `CLAUDE.md`, skill definitions, the `.base` Obsidian indexes
+
+**Audits, investigations, research and analysis do not belong here.** They are point-in-time
+output about the studio's own affairs, they carry client and infrastructure detail, and this
+repo is public. They go to `$STUDIO_CONTENT_DIR/research/` instead.
+
+The test: *would a stranger reading this repo need it to use a tool?* A guide to running
+`wp_pulse` belongs here. An audit of what `wp_pulse` found does not.
+
+Because research goes to Dropbox rather than the repo, **producing it needs no branch and no
+commit.** An agent writing an audit writes it straight to `$STUDIO_CONTENT_DIR/research/`.
+Only changes to tools or their docs need the git flow.
+
 ## Content locations
 
-Studio output (specs, finance, pipeline, portfolio, briefs) lives in Dropbox, not this repo:
+Studio output (specs, finance, pipeline, portfolio, briefs, research) lives in Dropbox, not this repo:
 
 - **Root:** `~/Dropbox/Studio/context/` (set via `STUDIO_CONTENT_DIR` in `studio/.env`)
 - Case studies: `$STUDIO_CONTENT_DIR/portfolio/{project-slug}/`
 - Internal briefs: `$STUDIO_CONTENT_DIR/internal/`
 - Specs nursery: `$STUDIO_CONTENT_DIR/specs/`
 - Finance: `$STUDIO_CONTENT_DIR/finance/`
+- Research, audits, investigations: `$STUDIO_CONTENT_DIR/research/`
+  (looper task output under `research/looper/`)
 
 Note: the canonical project database (estimation comps, all completed projects) is **not** under
 `$STUDIO_CONTENT_DIR` - it lives in a separate repo at
