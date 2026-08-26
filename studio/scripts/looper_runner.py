@@ -23,6 +23,7 @@ that exhausts quota simply ends, and the runner moves on or exits.
 
 import argparse
 import datetime
+import json
 import os
 import shutil
 import subprocess
@@ -30,7 +31,62 @@ import sys
 import time
 from pathlib import Path
 
-STUDIO = Path("/media/data/dev/bain-studio")
+from dotenv import load_dotenv
+
+def _resolve_studio() -> Path:
+    """Where the claude session runs from - always the DEV checkout.
+
+    This is deliberately NOT derived from __file__. Scheduled runs execute this
+    script from the ops worktree (see docs/utilities/ops-worktree.md), and a
+    __file__-relative path would resolve there. The ops worktree is a deployment
+    target pinned to a release tag and must never be branched in or committed to,
+    whereas a BSTD looper task legitimately needs to branch in the studio repo.
+
+    Resolution order:
+      1. STUDIO_DIR in studio/.env (or the environment) - the explicit answer.
+      2. The registry entry for the studio repo itself.
+      3. This file's own repo root, as a last resort.
+
+    Whichever wins must look like the studio repo, or we fail loudly rather than
+    launch a looper session pointed somewhere wrong.
+    """
+    here = Path(__file__).resolve()
+    repo_root = here.parents[2]
+
+    load_dotenv(repo_root / "studio" / ".env")
+
+    candidates = []
+    env_dir = os.getenv("STUDIO_DIR")
+    if env_dir:
+        candidates.append(("STUDIO_DIR", Path(env_dir).expanduser()))
+
+    registry = repo_root / "studio" / "projects.json"
+    if registry.exists():
+        try:
+            for entry in json.loads(registry.read_text()):
+                path = entry.get("path") or ""
+                # The studio repo itself, not the looper/looper-test subprojects
+                # that live inside it.
+                if path.endswith("bain-studio"):
+                    candidates.append(("registry", Path(path)))
+                    break
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            pass
+
+    candidates.append(("repo-relative", repo_root))
+
+    for source, path in candidates:
+        if (path / "studio" / "sync.py").is_file():
+            return path.resolve()
+
+    tried = ", ".join(f"{s}={p}" for s, p in candidates)
+    raise RuntimeError(
+        "Could not locate the studio repo. Set STUDIO_DIR in studio/.env. "
+        f"Tried: {tried}"
+    )
+
+
+STUDIO = _resolve_studio()
 LOG = Path.home() / "logs/studio-looper.log"
 RUN_LOG_DIR = Path.home() / "logs"
 LOCK = Path("/tmp/studio-looper/runner.lock")
