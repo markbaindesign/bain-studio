@@ -1,0 +1,67 @@
+[
+  {
+    "name": "GeneratePress",
+    "slug": "generatepress",
+    "feed": "https://generatepress.com/blog/feed/"
+  },
+  {
+    "name": "WP Tavern",
+    "slug": "wp-tavern",
+    "feed": "https://wptavern.com/feed"
+  },
+  {
+    "name": "WordPress News",
+    "slug": "wordpress-news",
+    "feed": "https://wordpress.org/news/feed/"
+  },
+  {
+    "name": "Make WordPress Core",
+    "slug": "make-wordpress-core",
+    "feed": "https://make.wordpress.org/core/feed/"
+  },
+  {
+    "name": "Make WordPress Design",
+    "slug": "make-wordpress-design",
+    "feed": "https://make.wordpress.org/design/feed/"
+  },
+  {
+    "name": "WordPress Developer Blog",
+    "slug": "wordpress-developer-blog",
+    "feed": "https://developer.wordpress.org/news/feed/"
+  },
+  {
+    "name": "Post Status",
+    "slug": "post-status",
+    "feed": "https://poststatus.com/feed/"
+  },
+  {
+    "name": "Advanced Custom Fields",
+    "slug": "advanced-custom-fields",
+    "feed": "https://www.advancedcustomfields.com/blog/feed/"
+  },
+  {
+    "name": "Elegant Themes (Divi)",
+    "slug": "elegant-themes-divi",
+    "feed": "https://www.elegantthemes.com/blog/feed"
+  },
+  {
+    "name": "Kinsta",
+    "slug": "kinsta",
+    "feed": "https://kinsta.com/blog/feed/"
+  },
+  {
+    "name": "Delicious Brains",
+    "slug": "delicious-brains",
+    "feed": "https://deliciousbrains.com/feed/"
+  },
+  {
+    "name": "WP Mayor",
+    "slug": "wp-mayor",
+    "feed": "https://wpmayor.com/feed/"
+  },
+  {
+    "name": "Smashing Magazine (WordPress)",
+    "slug": "smashing-magazine-wordpress",
+    "feed": "https://www.smashingmagazine.com/category/wordpress/feed/"
+  }
+]
