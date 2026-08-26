@@ -73,12 +73,22 @@ deleting data.
 | Job | Tree | Why |
 |---|---|---|
 | `sync.py`, `hermes`, `gmail_watch`, `gnucash_collector`, `harvest_kf_collector`, `obsidian_collector`, `careers_watch`, `wp_pulse`, `account_forecast_report` | **ops** (`main`) | Read, report, collect. No branching. |
-| `looper_runner.py` | **dev** | Deliberately excluded - see below. |
+| `looper_runner.py` | **ops** | Runs the released runner; task work still happens elsewhere - see below. |
 
-`looper_runner` stays on the dev checkout because it *creates branches and commits*. The ops
-worktree is on a detached HEAD, so committing there would strand the work on no branch at all,
-and branching there would move it off the deployed tag - destroying the invariant the whole
-arrangement exists to protect.
+`looper_runner` runs from the ops tree like everything else, and this is safe because **it runs
+no git commands at all**. It only launches a `claude` session with `cwd=STUDIO`, where `STUDIO`
+is hardcoded to the dev checkout (`studio/scripts/looper_runner.py` line 33).
+
+Branching happens *inside* that session, not in the runner. The `studio-looper` skill resolves
+each task's prefix through the registry and does `cd {PROJECT_DIR}` before creating its
+`looper/{session}` branch - so work lands in the task's **home project**, which for a `BSTD`
+task is the dev checkout at `/media/data/dev/bain-studio`. The ops worktree is never branched
+in or committed to.
+
+An earlier version of this document claimed the runner had to stay on the dev checkout because
+it "creates branches and commits". That was wrong on both counts, and it left the one
+unattended 02:00 job as the only thing still executing whatever branch happened to be checked
+out - precisely the failure this worktree exists to prevent.
 
 ## Releasing and deploying
 
