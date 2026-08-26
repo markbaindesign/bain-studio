@@ -4,7 +4,7 @@ god: periphetes
 description: Scheduled jobs ran from the dev checkout, so whatever branch was checked out silently decided what production did at 08:00. They now run from a separate git worktree pinned to a release tag, deployed deliberately via a script.
 ---
 
-# ADR 014 - Scheduled jobs run from a release-pinned ops worktree
+# ADR 014 — Scheduled jobs run from a release-pinned ops worktree
 
 **Date:** 2026-08-26
 **Status:** Accepted, implemented
