@@ -1,7 +1,7 @@
 import gzip
 import xml.etree.ElementTree as ET
 from fractions import Fraction
-from collections import defaultdict
+from collections import defaultdict, Counter
 from datetime import date, timedelta
 from pathlib import Path
 import os
@@ -301,6 +301,153 @@ def _quarter_start(d):
     return date(d.year, ((d.month - 1) // 3) * 3 + 1, 1)
 
 
+def _latest_monthly_amount(matches):
+    """Total of the most recent COMPLETE month, in EUR.
+
+    "Complete" means a month whose charge count matches the modal count across
+    history. That stops a partially-billed current month from dragging the figure
+    down -- Movistar bills twice a month, so a month showing only one charge so far
+    is not representative.
+
+    Returns (amount, basis_string).
+    """
+    totals = defaultdict(float)
+    counts = defaultdict(int)
+    for r in matches:
+        m = r['date'][:7]
+        totals[m] += r['eur']
+        counts[m] += 1
+
+    modal = Counter(counts.values()).most_common(1)[0][0]
+    complete = [m for m in sorted(totals) if counts[m] >= modal]
+    chosen = complete[-1] if complete else sorted(totals)[-1]
+    n = counts[chosen]
+    return totals[chosen], f"actual {chosen}" + (f" ({n} charges)" if n > 1 else "")
+
+
+def _latest_annual_amount(matches, month_of_year, typical_day, window_days=20):
+    """Total of the most recent occurrence near the configured annual date, in EUR.
+
+    Restricting to a window around the configured date matters when one keyword
+    matches several unrelated charges: Namecheap renews six products on four
+    different dates, and Harvest has an off-cycle add-on. Without the window the
+    figure would be a whole year of unrelated spend.
+
+    Returns (amount, basis_string).
+    """
+    import calendar
+    by_year = defaultdict(float)
+    counts = defaultdict(int)
+    for r in matches:
+        d = date.fromisoformat(r['date'])
+        for y in (d.year - 1, d.year, d.year + 1):
+            max_day = calendar.monthrange(y, month_of_year)[1]
+            anchor = date(y, month_of_year, min(typical_day, max_day))
+            if abs((d - anchor).days) <= window_days:
+                by_year[y] += r['eur']
+                counts[y] += 1
+                break
+
+    if not by_year:                       # nothing near the configured date
+        return _latest_monthly_amount(matches)
+
+    chosen = sorted(by_year)[-1]
+    n = counts[chosen]
+    return by_year[chosen], f"actual {chosen}" + (f" ({n} charges)" if n > 1 else "")
+
+
+# --- Mod 130 estimation -----------------------------------------------------
+# Mod 130 is 20% of cumulative net business profit for the year to date, less the
+# Mod 130 already paid for earlier quarters of the same year, less IRPF withheld at
+# source by Spanish clients. Estimating it from the ledger beats averaging past
+# payments, which spanned a 6x range (1,522 to 3,350) and produced a figure roughly
+# double the most recent actual.
+MOD130_RATE = 0.20
+
+# Account-path fragments excluded from the profit base. UK pension contributions are
+# personal rather than business expenses -- they may reduce the annual Renta base but
+# should not reduce quarterly business profit.
+# PENDING gestor confirmation; worth ~EUR 385 on the Q3 2026 figure. If Xavier says
+# they ARE deductible here, empty this tuple.
+MOD130_NON_DEDUCTIBLE = ('Pension',)
+
+
+def _mod130_components(rows, year, upto):
+    """Cumulative income, deductible expenses, Mod 130 already accrued, and IRPF
+    retenido for `year`, up to and including `upto` (ISO date string)."""
+    lo = f'{year}-01-01'
+    income = expenses = accrued = irpf = 0.0
+    for r in rows:
+        if not (lo <= r['date'] <= upto):
+            continue
+        path = r.get('path', '')
+        if r['type'] == 'INCOME':
+            income += -r['eur']
+        elif r['type'] == 'EXPENSE':
+            if 'Mod. 130' in path:
+                # A Mod 130 accrual dated January belongs to the PRIOR year's Q4
+                # (filed 30 Jan), so only count March onward against this year.
+                if int(r['date'][5:7]) >= 3:
+                    accrued += r['eur']
+            elif not any(frag in path for frag in MOD130_NON_DEDUCTIBLE):
+                expenses += r['eur']
+        elif 'IRPF Retenido' in path:
+            irpf += r['eur']
+    return income, expenses, accrued, irpf
+
+
+def _estimate_mod130(rows, year, upto, correction=1.0):
+    """Return (amount, detail dict). Floors at zero -- an overpaid year owes nothing."""
+    inc, exp, accrued, irpf = _mod130_components(rows, year, upto)
+    raw = max(0.0, (inc - exp) * MOD130_RATE - accrued - irpf)
+    return raw * correction, {
+        'income':        round(inc, 2),
+        'expenses':      round(exp, 2),
+        'net_profit':    round(inc - exp, 2),
+        'already_paid':  round(accrued, 2),
+        'irpf_retenido': round(irpf, 2),
+        'uncorrected':   round(raw, 2),
+        'correction':    round(correction, 4),
+    }
+
+
+def _mod130_correction(rows, confirmed_filings):
+    """confirmed / estimated, averaged over every quarter the gestor has confirmed.
+
+    Self-tightening: each quarter Mark logs in aletheia-codex.md section 8 adds a
+    data point. Q2 2026 alone gives 553.00/629.38 = 0.879, i.e. the raw calculation
+    runs ~14% high, most likely deductibility calls the ledger does not capture.
+    """
+    import calendar
+    ratios = []
+    for f in confirmed_filings:
+        conf = f.get('mod130')
+        if not conf:
+            continue
+        try:
+            q = int(f['quarter'].split()[0][1:])
+            year = int(f['quarter'].split()[1])
+        except (KeyError, ValueError, IndexError):
+            continue
+        qend = date(year, q * 3, calendar.monthrange(year, q * 3)[1])
+        est, _ = _estimate_mod130(rows, year, str(qend), 1.0)
+        if est > 0:
+            ratios.append(conf / est)
+    return sum(ratios) / len(ratios) if ratios else 1.0
+
+
+def _next_mod130_filing(today):
+    """(quarter_end, filing_date) for the next Mod 130 still to be filed."""
+    import calendar
+    for y in (today.year, today.year + 1):
+        for q in (1, 2, 3, 4):
+            fm, fd = _QUARTER_DEADLINE[q]
+            filing = date(y + (1 if q == 4 else 0), fm, fd)
+            if filing >= today:
+                return date(y, q * 3, calendar.monthrange(y, q * 3)[1]), filing
+    return None, None
+
+
 def _compute_upcoming(rows, today, owner_draw):
     upcoming = []
 
@@ -347,10 +494,15 @@ def _compute_upcoming(rows, today, owner_draw):
             continue
         last = max(matches, key=lambda x: x['date'])
         last_date = date.fromisoformat(last['date'])
-        monthly_totals = defaultdict(float)
-        for r in matches:
-            monthly_totals[r['date'][:7]] += r['eur']
-        avg_amt = sum(monthly_totals.values()) / len(monthly_totals)
+
+        # Amount: the most recent ACTUAL billing period, not a full-history average.
+        # Averaging understated everything whose price had risen -- Autonomos forecast
+        # at 380.12 against an actual 380.88, Movistar at 104.16 against 119.77.
+        if cadence == 'annual':
+            amt, amt_basis = _latest_annual_amount(
+                matches, pattern['month_of_year'], typical_day)
+        else:
+            amt, amt_basis = _latest_monthly_amount(matches)
 
         if cadence == 'annual':
             month_of_year = pattern['month_of_year']
@@ -360,13 +512,14 @@ def _compute_upcoming(rows, today, owner_draw):
                 max_day = calendar.monthrange(today.year + 1, month_of_year)[1]
                 d = date(today.year + 1, month_of_year, min(typical_day, max_day))
             upcoming.append({
-                'label':    label,
-                'date':     str(d),
-                'amount':   round(avg_amt, 2),
-                'currency': 'EUR',
-                'type':     bill_type,
-                'account':  billing_account,
-                'days':     (d - today).days,
+                'label':        label,
+                'date':         str(d),
+                'amount':       round(amt, 2),
+                'amount_basis': amt_basis,
+                'currency':     'EUR',
+                'type':         bill_type,
+                'account':      billing_account,
+                'days':         (d - today).days,
             })
             continue
 
@@ -378,13 +531,14 @@ def _compute_upcoming(rows, today, owner_draw):
             d = date(y, m, min(typical_day, max_day))
             if d > today:
                 upcoming.append({
-                    'label':    label,
-                    'date':     str(d),
-                    'amount':   round(avg_amt, 2),
-                    'currency': 'EUR',
-                    'type':     bill_type,
-                    'account':  billing_account,
-                    'days':     (d - today).days,
+                    'label':        label,
+                    'date':         str(d),
+                    'amount':       round(amt, 2),
+                    'amount_basis': amt_basis,
+                    'currency':     'EUR',
+                    'type':         bill_type,
+                    'account':      billing_account,
+                    'days':         (d - today).days,
                 })
                 break
 
@@ -426,6 +580,29 @@ def _compute_upcoming(rows, today, owner_draw):
                 'source':   'confirmed (gestor)',
             })
             confirmed_labels_added.add(label)
+
+    # Mod 130: estimate from actual income and expenses rather than averaging past
+    # payments. Only when the gestor has not already confirmed the upcoming quarter.
+    if 'Mod 130 (Income Tax)' not in confirmed_labels_added:
+        q_end, filing_date = _next_mod130_filing(today)
+        if q_end is not None:
+            correction = _mod130_correction(rows, confirmed_filings)
+            upto = min(str(q_end), str(today))
+            amt130, detail = _estimate_mod130(rows, q_end.year, upto, correction)
+            partial = upto < str(q_end)
+            upcoming.append({
+                'label':    'Mod 130 (Income Tax)',
+                'date':     str(filing_date),
+                'amount':   round(amt130, 2),
+                'currency': 'EUR',
+                'type':     'tax',
+                'account':  QUARTERLY_ACCOUNT,
+                'days':     (filing_date - today).days,
+                'source':   'estimated from ledger'
+                            + (' (quarter incomplete)' if partial else ''),
+                'mod130_detail': detail,
+            })
+            confirmed_labels_added.add('Mod 130 (Income Tax)')
 
     for keyword, label, bill_type in quarterly:
         if label in confirmed_labels_added:
