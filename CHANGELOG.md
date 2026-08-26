@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-26
+
+### Added
+- `studio/scripts/ops-deploy.sh` - deploys a release tag to the ops worktree that cron
+  runs from. Fetches, verifies the tag, refuses to run over local modifications rather
+  than discarding them, checks out detached, re-runs the link script, and prints the
+  rollback command. `--check` reports what would change in either direction, so a
+  rollback lists what it removes instead of an empty forward range.
+- `STUDIO_DIR` in `studio/.env`, naming where the studio repo lives.
+
+### Changed
+- **The ops worktree now sits on a detached HEAD at a release tag, not on `main`.**
+  Pinning it to `main` broke git flow entirely: `git flow release finish` runs
+  `git checkout main || die`, and a branch can only be checked out in one worktree at a
+  time. Detaching frees `main` and pins cron to an explicit named version, making
+  rollback a one-liner.
+- **All 10 scheduled jobs now run from the ops worktree.** `looper_runner` was previously
+  excluded on the mistaken grounds that it creates branches and commits; it does neither.
+  It only launches a claude session, and branching happens inside that session in each
+  task's own home project. The exclusion had left the one unattended 02:00 job as the
+  only thing still executing whatever branch happened to be checked out.
+- `looper_runner` derives the studio path instead of hardcoding it: `STUDIO_DIR`, then the
+  registry, then its own repo root, with each candidate validated. A stale or mistyped
+  value falls through rather than being trusted, and total failure raises with the paths
+  tried instead of pointing a looper session somewhere wrong.
+
 ## [1.2.0] - 2026-08-26
 
 ### Added
@@ -111,7 +137,8 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.2.0...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.3.0...develop
+[1.3.0]: https://github.com/markbaindesign/bain-studio/compare/1.2.0...1.3.0
 [1.2.0]: https://github.com/markbaindesign/bain-studio/compare/1.1.0...1.2.0
 [1.1.0]: https://github.com/markbaindesign/bain-studio/compare/1.0.1...1.1.0
 [1.0.1]: https://github.com/markbaindesign/bain-studio/compare/1.0.0...1.0.1
