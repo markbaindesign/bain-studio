@@ -662,9 +662,89 @@ def test_sync_project_no_push_when_asana_newer(proj, sample_task, monkeypatch):
 
         sync_project(proj, dry_run=False)
 
-        # Only the Last Synced stamp PUT should have fired — no field pushes
+        # No PUT at all should have fired: no field pushes because Asana is
+        # newer, and no Last Synced stamp because the task is neither new nor
+        # written to. Idle tasks are left completely untouched so they stop
+        # accreting one Asana activity story per sync run.
         put_paths = [call[0][0] for call in mock_put.call_args_list]
-        assert all("last_synced" not in p and "/tasks/" in p for p in put_paths)
+        assert put_paths == []
         # No section move POST should have fired
         post_paths = [call[0][0] for call in mock_post.call_args_list]
         assert not any("addTask" in p for p in post_paths)
+
+
+# ---------------------------------------------------------------------------
+# Story paging and comment dedupe
+# ---------------------------------------------------------------------------
+
+def _story(subtype, gid, name, text, created="2026-08-24T09:00:00.000Z"):
+    return {
+        "resource_subtype": subtype,
+        "created_by": {"gid": gid, "name": name},
+        "text": text,
+        "created_at": created,
+    }
+
+
+def test_fetch_stories_pages_past_the_first_page(monkeypatch):
+    """Asana serves stories oldest-first with no reverse ordering, so a human
+    comment on a busy task lands on a later page. Reading only page 1 made
+    sync.py miss re-queue instructions entirely (PIPE-028, 2026-08)."""
+    page1 = {
+        "data": [_story("text_custom_field_changed", "bot_gid", "BainBot", "")
+                 for _ in range(sync.COMMENT_PAGE_LIMIT)],
+        "next_page": {"offset": "page2"},
+    }
+    page2 = {
+        "data": [_story("comment_added", "human_gid", "Mark Bain", "merge branch")],
+        "next_page": None,
+    }
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append((params or {}).get("offset"))
+        return page1 if len(calls) == 1 else page2
+
+    monkeypatch.setattr(sync, "_get", fake_get)
+
+    stories = sync.fetch_stories("111")
+    assert calls == [None, "page2"]
+    assert len(stories) == sync.COMMENT_PAGE_LIMIT + 1
+
+    comments = sync.human_comments(stories)
+    assert [c["text"] for c in comments] == ["merge branch"]
+
+
+def test_fetch_stories_stops_at_page_cap(monkeypatch):
+    """A task whose stories never stop paging must not spin forever."""
+    monkeypatch.setattr(
+        sync, "_get",
+        lambda path, params=None: {"data": [], "next_page": {"offset": "more"}},
+    )
+    with patch.object(sync, "COMMENT_MAX_PAGES", 3):
+        sync.fetch_stories("111")
+
+
+def test_human_comments_keeps_only_the_most_recent(monkeypatch):
+    stories = [
+        _story("comment_added", "human_gid", "Mark Bain", f"note {i}")
+        for i in range(sync.COMMENT_KEEP + 5)
+    ]
+    texts = [c["text"] for c in sync.human_comments(stories)]
+    assert len(texts) == sync.COMMENT_KEEP
+    assert texts[-1] == f"note {sync.COMMENT_KEEP + 4}"
+
+
+def test_bot_comment_texts_separates_bot_from_human(monkeypatch):
+    """The bot's own comments are excluded from the mirror but collected for
+    dedupe: a task multi-homed into its home board and Studio Looper is synced
+    once per project, each with its own posted_progress state, so only Asana's
+    story list can tell the second sync the comment already exists."""
+    monkeypatch.setattr(sync, "BAINBOT_GID", "bot_gid")
+    stories = [
+        _story("comment_added", "bot_gid", "BainBot", "Blocked 2026-08-25. Research findings missing."),
+        _story("comment_added", "human_gid", "Mark Bain", "where is it?"),
+        _story("assigned", "bot_gid", "BainBot", "assigned to Mark"),
+    ]
+    assert sync.bot_comment_texts(stories) == {"Blocked 2026-08-25. Research findings missing."}
+    assert [c["text"] for c in sync.human_comments(stories)] == ["where is it?"]

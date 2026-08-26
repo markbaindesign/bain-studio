@@ -190,7 +190,99 @@ def check_js_dependency(url):
     return {"url": url, "error": None, "text_length": len(text), "spa_markers": markers}
 
 
-def render_report(base_url, pages, robots_ai, llms, structured_data, js_checks, meta_note):
+def analyze_content_skills(html):
+    """Extract text, analyze topics/skills, and identify content type."""
+    if not html:
+        return {"topics": [], "content_type": "unknown", "word_count": 0, "reading_time_min": 0}
+
+    text = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<h[1-6][^>]*>([^<]+)</h[1-6]>", r" HEADING: \1 ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    words = text.split()
+    word_count = len(words)
+    reading_time = max(1, word_count // 200)
+
+    text_lower = text.lower()
+
+    topics = []
+    skill_keywords = {
+        "WordPress": ["wordpress", "wp-", "woocommerce", "acf", "custom post type"],
+        "Web Design": ["design", "ux", "ui", "figma", "mockup", "branding"],
+        "PHP/Backend": ["php", "laravel", "symfony", "api", "backend"],
+        "JavaScript/Frontend": ["javascript", "react", "vue", "angular", "next.js"],
+        "CSS/Styling": ["css", "sass", "tailwind", "styling", "responsive"],
+        "E-Commerce": ["woocommerce", "shopify", "cart", "payment", "e-commerce"],
+        "SEO": ["seo", "search engine", "google", "ranking", "metadata"],
+        "Performance": ["performance", "speed", "optimization", "caching", "cdn"],
+        "Accessibility": ["wcag", "accessibility", "a11y", "screen reader"],
+        "Testing": ["test", "qa", "quality assurance", "automation"],
+        "DevOps/Infrastructure": ["docker", "kubernetes", "aws", "deployment", "devops"],
+        "Database": ["database", "sql", "mongodb", "postgres"],
+        "Security": ["security", "encryption", "https", "authentication"],
+    }
+
+    for skill, keywords in skill_keywords.items():
+        if any(kw in text_lower for kw in keywords):
+            topics.append(skill)
+
+    content_types = []
+    ct_keywords = {
+        "Case Study": ["case study", "project", "portfolio", "before and after"],
+        "Guide/Tutorial": ["guide", "tutorial", "how to", "step by step"],
+        "Blog": ["blog", "article", "post", "news"],
+        "Documentation": ["documentation", "docs", "reference", "api"],
+        "Service Description": ["service", "offer", "offering", "capability"],
+    }
+
+    for ctype, keywords in ct_keywords.items():
+        if any(kw in text_lower for kw in keywords):
+            content_types.append(ctype)
+
+    content_type = content_types[0] if content_types else "General Content"
+
+    return {
+        "topics": list(set(topics)),
+        "content_type": content_type,
+        "word_count": word_count,
+        "reading_time_min": reading_time,
+    }
+
+
+def check_site_skills(base_url, pages):
+    """Analyze content across pages to identify site-wide expertise areas."""
+    status(f"Analyzing site skills and expertise...")
+    all_topics = {}
+    total_words = 0
+    content_types = {}
+
+    for page_url in pages:
+        html, code, error = fetch(page_url)
+        if error or not html:
+            continue
+
+        skills = analyze_content_skills(html)
+        total_words += skills["word_count"]
+
+        for topic in skills["topics"]:
+            all_topics[topic] = all_topics.get(topic, 0) + 1
+
+        ct = skills["content_type"]
+        content_types[ct] = content_types.get(ct, 0) + 1
+
+    top_topics = sorted(all_topics.items(), key=lambda x: x[1], reverse=True)[:8]
+    top_topics = [t[0] for t in top_topics]
+
+    return {
+        "topics": top_topics,
+        "total_words": total_words,
+        "avg_reading_time": max(1, total_words // (200 * len(pages))) if pages else 0,
+        "content_types": content_types,
+    }
+
+
+def render_report(base_url, pages, robots_ai, llms, structured_data, js_checks, site_skills, meta_note):
     lines = []
     today = date.today().isoformat()
 
@@ -199,6 +291,24 @@ def render_report(base_url, pages, robots_ai, llms, structured_data, js_checks, 
         f"**Date:** {today}  ",
         f"**Pages audited:** {len(pages)}  ",
         "",
+        "---",
+        "",
+        "## Skills & Expertise Detected",
+        "",
+    ]
+
+    if site_skills["topics"]:
+        lines += [
+            f"This site demonstrates expertise in: **{', '.join(site_skills['topics'])}**",
+            "",
+            f"- Total content: ~{site_skills['total_words']} words ({site_skills['avg_reading_time']} min avg. read time per page)",
+            f"- Content types: {', '.join(site_skills['content_types'].keys()) if site_skills['content_types'] else 'General'}",
+            "",
+        ]
+    else:
+        lines += ["No significant topics detected in site content.", ""]
+
+    lines += [
         "---",
         "",
         "## AI Bot Crawl Access (robots.txt)",
@@ -318,9 +428,10 @@ def main():
     llms = check_llms_txt(base_url)
     structured_data = [check_structured_data(url) for url in pages]
     js_checks = [check_js_dependency(url) for url in pages]
+    site_skills = check_site_skills(base_url, pages)
 
     status("Rendering report...")
-    report = render_report(base_url, pages, robots_ai, llms, structured_data, js_checks, meta_note=None)
+    report = render_report(base_url, pages, robots_ai, llms, structured_data, js_checks, site_skills, meta_note=None)
 
     if args.output:
         import os

@@ -371,8 +371,12 @@ Read `{PROJECT_DIR}/CLAUDE.md` for the project's tech stack and build instructio
 
 **Duplicate-work guard.** Before doing anything, check the task's Progress history and comments.
 If the task was already completed ("Ready for review {date}" or equivalent) and has been
-re-queued with **no new instructions** (Notes unchanged, no new comment explaining what more is
-wanted), do NOT redo the work. Move it back to Review with a note: "Previously completed {date}
+re-queued with **no new instructions**, do NOT redo the work. "No new instructions" means:
+Notes unchanged, **and** the mirror's `- **Comments:**` block contains no entry dated on or after
+the completion date. Compare the dates — do not just check whether comments exist at all. Every
+comment the task has ever collected is listed, so a task re-queued months later still shows its
+original kickoff comment; treating that as "there is a comment, so there are instructions" is the
+opposite failure and re-runs finished work. Move it back to Review with a note: "Previously completed {date}
 ({commit/branch}); re-queued without new instructions — tell me what needs to change." Working a
 task twice within minutes/days because its status bounced is wasted quota and creates duplicate
 commits.
