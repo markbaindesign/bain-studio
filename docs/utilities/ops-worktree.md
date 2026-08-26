@@ -6,13 +6,24 @@ description: Dedicated git worktree pinned to main that all scheduled jobs run f
 
 # Ops worktree
 
-All scheduled studio jobs run from a **separate git worktree pinned to `main`**, not from the
-dev checkout.
+All scheduled studio jobs run from a **separate git worktree pinned to a release tag**, not from
+the dev checkout.
 
 ```
 /media/data/dev/bain-studio    <- dev checkout, whatever branch you are working on
-/home/bain/ops/bain-studio     <- ops worktree, always main, cron runs here
+/home/bain/ops/bain-studio     <- ops worktree, detached at a release tag, cron runs here
 ```
+
+The ops worktree sits on a **detached HEAD at a release tag**, not on the `main` branch. That
+detail matters for two reasons, and the first was learned the hard way:
+
+1. **git flow needs `main` free.** `git flow release finish` runs
+   `git checkout main || die "Could not check out branch 'main'."` (see
+   `/usr/lib/git-core/git-flow-release`). A branch can only be checked out in one worktree at
+   a time, so pinning ops to `main` breaks every git flow release command. Detaching leaves
+   `main` available in the dev checkout.
+2. **A tag is a stronger promise than a branch.** Cron runs an explicit, named version rather
+   than "whatever `main` points at right now", and rollback is just deploying the previous tag.
 
 ## Why
 
@@ -34,9 +45,11 @@ change must be merged to `main` before a scheduled job will run it.
 ## Setup
 
 ```bash
-git -C /media/data/dev/bain-studio worktree add /home/bain/ops/bain-studio main
+git -C /media/data/dev/bain-studio worktree add --detach /home/bain/ops/bain-studio 1.2.0
 studio/scripts/ops-worktree-link.sh
 ```
+
+Note `--detach` and a **tag**, not `main` - see above for why.
 
 A worktree checks out **tracked files only**. Everything gitignored - `studio/.env`,
 `projects.json`, collector state, Asana mirrors, logs - is absent in a fresh worktree.
@@ -60,27 +73,77 @@ deleting data.
 | Job | Tree | Why |
 |---|---|---|
 | `sync.py`, `hermes`, `gmail_watch`, `gnucash_collector`, `harvest_kf_collector`, `obsidian_collector`, `careers_watch`, `wp_pulse`, `account_forecast_report` | **ops** (`main`) | Read, report, collect. No branching. |
-| `looper_runner.py` | **dev** | Deliberately excluded - see below. |
+| `looper_runner.py` | **ops** | Runs the released runner; task work still happens elsewhere - see below. |
 
-`looper_runner` stays on the dev checkout because it *creates branches and commits*. Running it
-from a worktree pinned to `main` would either move that worktree off `main` - destroying the
-invariant the whole arrangement exists to protect - or commit directly to `main`, which the git
-flow forbids.
+`looper_runner` runs from the ops tree like everything else, and this is safe because **it runs
+no git commands at all**. It only launches a `claude` session with `cwd=STUDIO`, where `STUDIO`
+is hardcoded to the dev checkout (`studio/scripts/looper_runner.py` line 33).
+
+Branching happens *inside* that session, not in the runner. The `studio-looper` skill resolves
+each task's prefix through the registry and does `cd {PROJECT_DIR}` before creating its
+`looper/{session}` branch - so work lands in the task's **home project**, which for a `BSTD`
+task is the dev checkout at `/media/data/dev/bain-studio`. The ops worktree is never branched
+in or committed to.
+
+An earlier version of this document claimed the runner had to stay on the dev checkout because
+it "creates branches and commits". That was wrong on both counts, and it left the one
+unattended 02:00 job as the only thing still executing whatever branch happened to be checked
+out - precisely the failure this worktree exists to prevent.
+
+## Releasing and deploying
+
+Releasing and deploying are **two separate steps**. Cutting a release does not change what cron
+runs; deploying does. That separation is the point of the arrangement.
+
+### 1. Cut the release (normal git flow, in the dev checkout)
+
+```bash
+git flow release start 1.3.0
+# update CHANGELOG.md and VERSION on the release branch, commit
+git flow release finish 1.3.0        # merges to main, tags, merges back to develop
+git push origin main develop
+git push origin 1.3.0
+```
+
+`git flow release finish` opens an editor for the merge and tag messages. To run it
+non-interactively, set `GIT_MERGE_AUTOEDIT=no` and pass `-m`:
+
+```bash
+GIT_MERGE_AUTOEDIT=no git flow release finish -m "1.3.0" 1.3.0
+```
+
+Do this in the **dev checkout**. It will fail if any worktree holds `main` - which is exactly
+why the ops tree stays detached.
+
+### 2. Deploy to the ops worktree
+
+```bash
+studio/scripts/ops-deploy.sh --check     # what would change, in either direction
+studio/scripts/ops-deploy.sh             # deploy the latest tag
+studio/scripts/ops-deploy.sh 1.2.0       # deploy a specific tag - this is also the rollback
+```
+
+The script fetches tags, checks out the target tag detached, re-runs `ops-worktree-link.sh`
+(a new release may add runtime paths, and a checkout can leave a tracked file where a symlink
+belongs), and prints the exact command to roll back to where you just came from.
+
+It refuses to run if the ops worktree has uncommitted changes to tracked files - that means
+something wrote into a tree nobody should be editing by hand, and discarding it silently would
+be wrong.
+
+**Until you deploy, cron keeps running the previous release.** That is the intended behaviour,
+not a bug: `git flow release finish` alone changes nothing about what executes at 08:00.
 
 ## Rules
 
-- **Never check out another branch in the ops worktree.** It exists to be `main`. Git enforces
-  the converse for you: a branch checked out in one worktree cannot be checked out in another,
-  so the ops tree "owns" `main` and you inspect it from the dev tree with `git log main`.
-- After merging to `main`, the ops worktree needs updating - it does not follow the branch
-  automatically:
-  ```bash
-  git -C /home/bain/ops/bain-studio pull --ff-only
-  ```
+- **Never check out a branch in the ops worktree.** It stays detached at a release tag. Use
+  `ops-deploy.sh` to move it; do not `git checkout` there by hand.
+- **Never edit files in the ops worktree.** It is a deployment target. `ops-deploy.sh` will
+  refuse to deploy over local modifications rather than discard them.
 - Removing it: `git worktree remove /home/bain/ops/bain-studio`. Deleting the directory by hand
   leaves a stale registration until `git worktree prune`.
 - Re-run `ops-worktree-link.sh` after recreating the worktree, or after adding any new
-  gitignored runtime file that a scheduled job needs.
+  gitignored runtime file that a scheduled job needs. `ops-deploy.sh` does this for you.
 
 ## Verifying
 
