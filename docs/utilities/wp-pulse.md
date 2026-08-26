@@ -42,6 +42,23 @@ Twice weekly, Monday and Thursday at 08:25 (after the other morning collectors):
 25 8 * * 1,4 cd /media/data/dev/bain-studio && python3 studio/collectors/wp_pulse.py >> studio/collectors/wp_pulse.log 2>&1
 ```
 
+## Verifying under cron
+
+Hand-running proves the code works; it does **not** prove the job works under cron. Cron uses a minimal environment - no profile is sourced, and `PATH` is whatever the crontab sets. Any collector that shells out to `claude` is exposed to this.
+
+Reproduce cron's environment before trusting a new schedule:
+
+```bash
+env -i HOME="$HOME" PATH=/home/bain/.local/bin:/home/bain/.nvm/versions/node/v22.23.1/bin:/usr/local/bin:/usr/bin:/bin \
+  bash -c 'cd /media/data/dev/bain-studio && python3 studio/collectors/wp_pulse.py --dry-run'
+```
+
+This is a one-time check per scheduled job, not per code change.
+
+The crontab sets `PATH` explicitly because cron's default (`/usr/bin:/bin`) contains neither `claude` (`~/.local/bin`) nor `node` (nvm). Before that line was added on 2026-08-26, `gmail_watch` had failed on every run since 2026-05-26 - 90 consecutive `FileNotFoundError: 'claude'` crashes, invisible because the failure only ever reached a log file.
+
+Note the node entry is nvm-version-pinned (`v22.23.1`) and will need updating when node is upgraded. Without it `claude` still runs, but its `SessionEnd` hook fails noisily.
+
 ## Default sources
 
 Seeded on first run, all verified as serving valid RSS/Atom:
