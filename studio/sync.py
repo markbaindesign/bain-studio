@@ -81,6 +81,11 @@ def _get_looper_status_option_gid(name: str):
 
 JUNK_PATTERNS  = re.compile(r"^- |😍|📰|\[Product Update\]", re.IGNORECASE)
 PLAIN_CHECK    = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
+# "none" is written into the mirror by the --create-task path and by older
+# mirror revisions. It means "no progress recorded", not a progress note, but
+# it is not empty and does not match PLAIN_CHECK, so without this it counts as
+# real text and every task carrying it looks like a duplicate to the guard below.
+NO_PROGRESS    = re.compile(r"^\s*none\s*$", re.IGNORECASE)
 GID_IN_PARENS  = re.compile(r'\((\d+)\)')
 FIELD_RE       = re.compile(r"- \*\*(.+?):\*\* (.+)")
 
@@ -417,17 +422,67 @@ def fetch_sections(proj: ProjectConfig) -> dict:
     return {s["name"]: s["gid"] for s in data}
 
 
-def fetch_comments(task_gid: str) -> list:
-    """Return human-written comments on a task, excluding bainbot's own progress notes."""
-    try:
-        data = _get(f"/tasks/{task_gid}/stories", {
+COMMENT_PAGE_LIMIT = 100   # stories per page
+COMMENT_MAX_PAGES  = 25    # safety cap (2500 stories)
+COMMENT_KEEP       = 10    # most recent human comments kept in the mirror
+
+
+def fetch_stories(task_gid: str) -> list:
+    """Return every story on a task, paging to the end.
+
+    Asana returns stories oldest-first and offers no reverse ordering, so a single
+    page only ever shows the *oldest* stories. Long-lived tasks accumulate bot
+    activity stories that push recent human comments off page 1 entirely — the
+    mirror then shows months-old comments and the looper's duplicate-work guard
+    concludes a re-queued task has "no new instructions".
+    """
+    data, offset, pages = [], None, 0
+    while pages < COMMENT_MAX_PAGES:
+        params = {
             "opt_fields": "created_at,created_by.gid,created_by.name,text,resource_subtype",
-            "limit": 50,
-        })["data"]
-    except Exception:
-        return []
+            "limit": COMMENT_PAGE_LIMIT,
+        }
+        if offset:
+            params["offset"] = offset
+        try:
+            page = _get(f"/tasks/{task_gid}/stories", params)
+        except Exception:
+            break
+        data.extend(page.get("data") or [])
+        pages += 1
+        offset = (page.get("next_page") or {}).get("offset")
+        if not offset:
+            break
+    return data
+
+
+def bot_comment_texts(stories: list) -> set:
+    """Exact texts of bainbot's own comments already on the task.
+
+    Used to suppress duplicate progress comments. The per-project
+    `posted_progress` map cannot do this alone: a task multi-homed into two
+    projects (its home board and Studio Looper) is synced once per project, each
+    with its own state file, so the second sync has no record of the first
+    having commented and posts the identical text again minutes later.
+    Asana's own story list is the one record both syncs share.
+    """
+    return {
+        (s.get("text") or "").strip()
+        for s in stories
+        if s.get("resource_subtype") == "comment_added"
+        and (s.get("created_by") or {}).get("gid") == BAINBOT_GID
+        and (s.get("text") or "").strip()
+    }
+
+
+def human_comments(stories: list) -> list:
+    """Human-written comments, excluding bainbot's own progress notes.
+
+    Keeps the most recent COMMENT_KEEP. See fetch_stories for why the full story
+    list has to be paged through to find them.
+    """
     comments = []
-    for s in data:
+    for s in stories:
         if s.get("resource_subtype") != "comment_added":
             continue
         creator = s.get("created_by") or {}
@@ -439,7 +494,12 @@ def fetch_comments(task_gid: str) -> list:
         created = (s.get("created_at") or "")[:10]
         author = creator.get("name", "Unknown")
         comments.append({"author": author, "text": text, "created_at": created})
-    return comments
+    return comments[-COMMENT_KEEP:]
+
+
+def fetch_comments(task_gid: str) -> list:
+    """Convenience wrapper: fetch a task's stories and return its human comments."""
+    return human_comments(fetch_stories(task_gid))
 
 
 # ---------------------------------------------------------------------------
@@ -651,7 +711,7 @@ def parse_existing_mirror(proj: ProjectConfig) -> dict:
             "dependencies":    fields.get("dependencies", "none"),
             "dependents":      fields.get("dependents", "none"),
             "blockers":        fields.get("blockers", "None identified."),
-            "progress":        fields.get("progress", ""),
+            "progress":        NO_PROGRESS.sub("", fields.get("progress", "")),
             "modified":        fields.get("modified", ""),
         }
     return carried
@@ -977,7 +1037,9 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         tasks = fetch_tasks(proj, field_gid)
         log.info(f"  {len(tasks)} task(s) in project.")
         for t in tasks:
-            t["_comments"] = fetch_comments(t["gid"])
+            stories = fetch_stories(t["gid"])
+            t["_comments"] = human_comments(stories)
+            t["_bot_comments"] = bot_comment_texts(stories)
 
         prev_gids    = parse_existing_task_gids(proj)
         curr_gids    = {t["gid"] for t in tasks}
@@ -990,7 +1052,8 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
         state      = assign_ids(proj, tasks, state, field_gid, dry_run)
         gid_to_lid = state.get("tasks", {})
-        stamp_last_synced(proj, tasks, last_synced_gid, dry_run)
+        # Last Synced is stamped near the end of the run, and only on tasks we
+        # actually wrote to — see the stamping block after the comment loop.
 
         # --- Attachments (active tasks only — DONE tasks are not workable) ---
         if not dry_run:
@@ -1085,6 +1148,15 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                 if progress_counts[curr_p] > 2:
                     log.warning(f"  [{proj.prefix}] Skipping comment for {local_id} — same progress text on {progress_counts[curr_p]} tasks (mirror edit bug?)")
                     continue
+                # Asana-side dedupe. posted_progress is per-project state, so for
+                # a task multi-homed into two boards (its home project and Studio
+                # Looper) the second project's sync has no record of the first
+                # having already posted this exact text, and duplicates it.
+                if curr_p.strip() in (t.get("_bot_comments") or set()):
+                    log.info(f"  [{proj.prefix}] Skipping comment for {local_id} — identical bainbot comment already on the task")
+                    if not dry_run:
+                        posted_progress[gid] = curr_p
+                    continue
                 try:
                     log.info(f"  [{proj.prefix}] Posting progress comment for {local_id}...")
                     leave_comment(gid, curr_p, dry_run)
@@ -1097,17 +1169,37 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
         state["posted_progress"] = posted_progress
 
-        # Re-stamp tasks WE wrote to (pushes + comments) with a post-write
-        # timestamp. Our own writes bump each task's modified_at to AFTER the
-        # sync-start now_utc stamp, so the next run's "Asana is newer" gate saw
-        # every bot-touched task as externally modified and silently skipped
-        # pushing its mirror changes — the cause of the Review-push drops and
-        # the resulting duplicate-work cycles of 2026-07-18/19. A 60s margin
-        # absorbs clock skew vs Asana's servers; genuine human edits after this
-        # sync still register as newer and win, as intended.
-        if touched_gids and not dry_run:
+        # Stamp Last Synced on tasks we actually wrote to this run (pushes +
+        # comments), plus tasks seen for the first time so the field is never
+        # blank. It used to be stamped on EVERY task on EVERY run, which made
+        # Asana emit a text_custom_field_changed story per task per day. On a
+        # long-lived task those stories crowd out the human comments: Asana
+        # serves stories oldest-first, so real instructions fell off the page
+        # fetch_comments could see and the looper's duplicate-work guard read a
+        # re-queued task as having no new instructions (PIPE-028, 2026-08).
+        # Nothing reads the field's value — conflict resolution uses
+        # last_sync_times below — so stamping idle tasks bought only noise.
+        stamp_gids = touched_gids | new_gids
+        if stamp_gids and not dry_run:
+            stamp_last_synced(
+                proj,
+                [t for t in tasks if t["gid"] in stamp_gids],
+                last_synced_gid,
+                dry_run,
+            )
+
+        # Re-stamp tasks WE wrote to with a post-write timestamp. Our own writes
+        # bump each task's modified_at to AFTER the sync-start now_utc stamp, so
+        # the next run's "Asana is newer" gate saw every bot-touched task as
+        # externally modified and silently skipped pushing its mirror changes —
+        # the cause of the Review-push drops and the resulting duplicate-work
+        # cycles of 2026-07-18/19. A 60s margin absorbs clock skew vs Asana's
+        # servers; genuine human edits after this sync still register as newer
+        # and win, as intended. This must cover every task stamped above, or the
+        # stamp PUT itself would trip that same gate on the next run.
+        if stamp_gids and not dry_run:
             post_write = (datetime.utcnow() + timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%S")
-            for gid in touched_gids:
+            for gid in stamp_gids:
                 last_sync_times[gid] = post_write
             state["last_sync_times"] = last_sync_times
 
@@ -1270,7 +1362,7 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
         f"- **Dependents:** none",
         f"- **Notes:** {notes if notes else 'none'}",
         f"- **Blockers:** None identified.",
-        f"- **Progress:** none",
+        f"- **Progress:** Checked {TODAY}.",
         f"- **Comments:** none",
         f"- **Modified:** {now}",
         f"- **URL:** {permalink}",

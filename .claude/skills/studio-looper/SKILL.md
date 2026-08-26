@@ -371,8 +371,12 @@ Read `{PROJECT_DIR}/CLAUDE.md` for the project's tech stack and build instructio
 
 **Duplicate-work guard.** Before doing anything, check the task's Progress history and comments.
 If the task was already completed ("Ready for review {date}" or equivalent) and has been
-re-queued with **no new instructions** (Notes unchanged, no new comment explaining what more is
-wanted), do NOT redo the work. Move it back to Review with a note: "Previously completed {date}
+re-queued with **no new instructions**, do NOT redo the work. "No new instructions" means:
+Notes unchanged, **and** the mirror's `- **Comments:**` block contains no entry dated on or after
+the completion date. Compare the dates — do not just check whether comments exist at all. Every
+comment the task has ever collected is listed, so a task re-queued months later still shows its
+original kickoff comment; treating that as "there is a comment, so there are instructions" is the
+opposite failure and re-runs finished work. Move it back to Review with a note: "Previously completed {date}
 ({commit/branch}); re-queued without new instructions — tell me what needs to change." Working a
 task twice within minutes/days because its status bounced is wasted quota and creates duplicate
 commits.
@@ -413,6 +417,26 @@ BRANCH="looper/${LOOPER_RUN_ID:-{SESSION_ID_SHORT}}"
 BASE=$(git branch --show-current)   # remember where the repo was
 git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
 ```
+
+**First decide whether the task needs a branch at all.**
+
+If the task's output is an audit, investigation, research note or analysis — anything that
+documents findings rather than changing a tool — it does **not** go in the repo and needs no
+branch and no commit. Write it straight to:
+
+```
+$STUDIO_CONTENT_DIR/research/looper/{TASK_ID}-{slug}.md
+```
+
+Then skip the branch and commit steps entirely, and name that file path in the Progress note
+instead of a branch and commit.
+
+This matters because `bain-studio` is a **public** repo of tools. Research output carries client
+names, infrastructure detail and unremediated findings, none of which should be published. Do not
+create `docs/looper/`, `docs/research/` or `docs/audits/` — they are gitignored. See "What
+belongs in this repo" in `CLAUDE.md`.
+
+Only branch when you are changing a tool, a skill, or the instructions for using one.
 
 Do the work. One commit per task on that branch:
 ```bash
@@ -458,7 +482,7 @@ PYEOF
 ```
 **Looper Status:** Review
 **Assignee:** Mark Bain (507443625075)
-**Progress:** Ready for review {YYYY-MM-DD}. {What was done, where, what to check.} Session: {pct}% used (resets {reset_dt}).
+**Progress:** Ready for review {YYYY-MM-DD}. {What was done, where, what to check.} Use full file paths (e.g. /media/data/dev/...) when referencing files. Session: {pct}% used (resets {reset_dt}).
 ```
 
 **2. Update home project mirror** (`{PROJECT_DIR}/asana-mirror.md`):

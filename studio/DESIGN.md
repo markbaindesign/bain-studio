@@ -103,7 +103,7 @@ Config lives in CLAUDE.md rather than a separate config file so there's one cano
 Two operating modes:
 
 - `--setup` — one-time per project. Creates and attaches the "Local ID" and "Last Synced" custom fields in Asana, writes their GIDs to `asana-ids.json`. Never needed again.
-- Normal run — fetches tasks, assigns IDs, builds mirror, stamps Last Synced, posts progress comments, syncs section moves.
+- Normal run — fetches tasks, assigns IDs, builds mirror, posts progress comments, syncs section moves, then stamps Last Synced on the tasks it actually wrote to (plus first-seen tasks). Idle tasks are deliberately left alone: every field write makes Asana emit an activity story, and stamping all tasks daily buried the human comments that `fetch_comments` can reach.
 
 ## What the sync does not do
 

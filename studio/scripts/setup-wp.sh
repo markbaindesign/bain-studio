@@ -339,6 +339,7 @@ VVV_SHARED_DIR="/srv/www/'"$SLUG"'"
 # Cloudways staging
 REMOTE_USER="FIXME_SSH_USER"
 REMOTE_HOST="FIXME_SSH_HOST"
+REMOTE_SSH_PORT="22"  # change if the host uses a non-standard port
 REMOTE_WP_CONTENT="FIXME_REMOTE_WP_CONTENT"
 REMOTE_WP_ROOT="${REMOTE_WP_CONTENT%/wp-content}"
 STAGING_URL="FIXME_STAGING_URL"
@@ -347,6 +348,7 @@ LOCAL_URL="'"$SLUG"'.test"
 # Production
 PROD_USER="FIXME_SSH_USER"
 PROD_HOST="FIXME_SSH_HOST"
+PROD_SSH_PORT="22"  # change if the host uses a non-standard port
 PROD_WP_CONTENT="FIXME_PROD_WP_CONTENT"
 PROD_WP_ROOT="${PROD_WP_CONTENT%/wp-content}"
 PROD_URL="FIXME_PROD_DOMAIN"
@@ -361,6 +363,187 @@ RSYNC_EXCLUDES=(
     --exclude='"'"'debug.log'"'"'
 )
 '
+}
+
+# ── ACF Local JSON sync ────────────────────────────────────────────────────────
+#
+# ACF Pro's "Local JSON" does NOT make a field group's JSON file automatically
+# take priority over its stored database copy on every request. The DB copy is
+# only bypassed once ACF has already resolved that group by its string key
+# earlier in the same request; on a fresh request it falls back to the DB. A
+# fix shipped only in acf-json/*.json can sit broken in the DB indefinitely
+# after deploy. See acf-sync.php's own header comment for the full trace
+# through ACF's source, and ~/dev/CLAUDE.md's "WordPress / ACF Pro" section.
+setup_acf_sync() {
+    local php_target="$PROJECT_ROOT/scripts/acf-sync.php"
+    local sh_target="$PROJECT_ROOT/scripts/acf-sync.sh"
+
+    if [[ -f "$php_target" ]]; then
+        ok "scripts/acf-sync.php"
+    else
+        local php_content
+        php_content=$(cat <<'PHPEOF'
+<?php
+/**
+ * Syncs ACF Local JSON field groups (and post types/taxonomies, if any) into
+ * the database - the same operation as clicking "Sync" in
+ * Custom Fields > Field Groups > Sync available, just non-interactive.
+ *
+ * WHY THIS IS NEEDED: ACF's Local JSON does NOT make JSON take priority over
+ * the DB automatically. A field group's location rules (and everything else)
+ * are only actually read from JSON once ACF has, at some point in the same
+ * request, resolved that group by its string key - which establishes an
+ * alias from the DB's numeric post ID to the JSON version. On a fresh
+ * request that alias doesn't exist yet, so ACF falls back to whatever is
+ * still in the DB. A bug fixed only in the JSON file (e.g. a location rule
+ * missing its "value") can sit broken in the DB indefinitely unless synced.
+ * See scripts/acf-sync.sh.
+ *
+ * Deliberately does NOT replicate admin-internal-post-type-list.php's
+ * setup_sync() timestamp check ("json modified newer than DB modified").
+ * That comparison uses the "modified" field stored INSIDE the JSON file's
+ * own content, which only gets bumped when ACF itself saves the file via
+ * its export/save mechanism - not when the JSON is hand-edited with a text
+ * editor (as a git commit normally would). A hand-edited JSON file can
+ * easily have an older internal "modified" stamp than a DB copy that was
+ * touched more recently by something else entirely, which would make the
+ * timestamp check silently skip a real, needed fix. For a deploy script we
+ * always want the DB to end up matching whatever JSON git just shipped, so
+ * this imports every JSON-sourced group unconditionally instead.
+ *
+ * Usage: wp eval-file scripts/acf-sync.php
+ */
+
+if (!function_exists('acf_get_internal_post_type_posts')) {
+    WP_CLI::error('ACF Pro is not active.');
+}
+
+$post_types = ['acf-field-group', 'acf-post-type', 'acf-taxonomy'];
+$total_synced = 0;
+
+foreach ($post_types as $post_type) {
+    $files = acf_get_local_json_files($post_type);
+    if (!$files) {
+        continue;
+    }
+
+    $all_posts = acf_get_internal_post_type_posts($post_type);
+    $to_sync = [];
+
+    foreach ($all_posts as $post) {
+        $local = $post['local'] ?? null;
+        $private = $post['private'] ?? false;
+
+        if ($private || $local !== 'json') {
+            continue;
+        }
+
+        $to_sync[$post['key']] = $post;
+    }
+
+    if (!$to_sync) {
+        WP_CLI::log("{$post_type}: nothing to sync.");
+        continue;
+    }
+
+    // Prevent the JSON file from being rewritten as a side effect of import
+    // (we're importing FROM json TO db, not exporting).
+    acf_update_setting('json', false);
+
+    foreach ($to_sync as $key => $post) {
+        if (!isset($files[$key])) {
+            WP_CLI::warning("{$post_type} {$key}: sync needed but no JSON file found, skipping.");
+            continue;
+        }
+
+        $local_post = json_decode(file_get_contents($files[$key]), true);
+        $local_post['ID'] = $post['ID']; // 0 if new, or the existing DB post ID to update.
+
+        $result = acf_import_internal_post_type($local_post, $post_type);
+
+        WP_CLI::success("{$post_type} synced: {$result['title']} (key: {$key}, ID: {$result['ID']})");
+        $total_synced++;
+    }
+
+    acf_update_setting('json', true);
+}
+
+WP_CLI::log($total_synced ? "Done. {$total_synced} item(s) synced." : 'Done. Nothing needed syncing.');
+PHPEOF
+)
+        write_file "$php_target" "$php_content"$'\n'
+    fi
+
+    if [[ -f "$sh_target" ]]; then
+        ok "scripts/acf-sync.sh"
+    else
+        local sh_content
+        sh_content=$(cat <<'SHEOF'
+#!/usr/bin/env bash
+#
+# acf-sync.sh — Import ACF Local JSON field groups into the DB for one environment
+#
+# WHY: ACF's Local JSON does NOT make a field group's JSON file automatically
+# take priority over its stored database copy on every request (see
+# acf-sync.php's own header for the full explanation). A JSON-only fix can
+# sit broken in the DB indefinitely after deploying the file. Run this after
+# every deploy to the target environment.
+#
+# Usage:
+#   scripts/acf-sync.sh local
+#   scripts/acf-sync.sh staging
+#   scripts/acf-sync.sh prod
+#
+# Reads target-environment values from scripts/deploy.config.sh (copy
+# deploy.config.example.sh to deploy.config.sh and fill in the FIXME values
+# first - deploy.config.sh is gitignored, project-specific).
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV="${1:-}"
+
+if [[ -z "$ENV" || ! "$ENV" =~ ^(local|staging|prod)$ ]]; then
+    echo "Usage: $0 {local|staging|prod}"
+    exit 1
+fi
+
+CONFIG="$SCRIPT_DIR/deploy.config.sh"
+if [[ ! -f "$CONFIG" ]]; then
+    echo "Error: $CONFIG not found."
+    echo "Copy deploy.config.example.sh to deploy.config.sh and fill in the FIXME values first."
+    exit 1
+fi
+# shellcheck source=/dev/null
+source "$CONFIG"
+
+PHP_FILE="$SCRIPT_DIR/acf-sync.php"
+
+case "$ENV" in
+    local)
+        cd "$VVV_DIR"
+        vagrant ssh -- "wp --path=$VVV_WP_PATH eval-file $VVV_SHARED_DIR/scripts/acf-sync.php"
+        ;;
+    staging)
+        REMOTE_WP_ROOT="${REMOTE_WP_CONTENT%/wp-content}"
+        REMOTE_SSH_PORT="${REMOTE_SSH_PORT:-22}"
+        TMP_REMOTE="/tmp/acf-sync-$(date +%s).php"
+        scp -P "$REMOTE_SSH_PORT" "$PHP_FILE" "$REMOTE_USER@$REMOTE_HOST:$TMP_REMOTE"
+        ssh -p "$REMOTE_SSH_PORT" "$REMOTE_USER@$REMOTE_HOST" "wp --path=$REMOTE_WP_ROOT eval-file $TMP_REMOTE; rm $TMP_REMOTE"
+        ;;
+    prod)
+        PROD_WP_ROOT="${PROD_WP_CONTENT%/wp-content}"
+        PROD_SSH_PORT="${PROD_SSH_PORT:-22}"
+        TMP_REMOTE="/tmp/acf-sync-$(date +%s).php"
+        scp -P "$PROD_SSH_PORT" "$PHP_FILE" "$PROD_USER@$PROD_HOST:$TMP_REMOTE"
+        ssh -p "$PROD_SSH_PORT" "$PROD_USER@$PROD_HOST" "wp --path=$PROD_WP_ROOT eval-file $TMP_REMOTE; rm $TMP_REMOTE"
+        ;;
+esac
+SHEOF
+)
+        write_file "$sh_target" "$sh_content"$'\n'
+        chmod +x "$sh_target" 2>/dev/null || true
+    fi
 }
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -391,6 +574,10 @@ setup_wpcli
 echo ""
 echo "── scripts & dirs ─"
 setup_scripts
+
+echo ""
+echo "── ACF sync ─"
+setup_acf_sync
 
 echo ""
 echo "Done."

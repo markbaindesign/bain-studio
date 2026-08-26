@@ -35,8 +35,6 @@ asana-ids.json
 
 # Exception: the SLT sandbox fixture is intentionally committed (reproducible test data
 # for the studio-looper evals/health-check) — same reasoning as commit 9442374.
-!studio/looper-test/asana-mirror.md
-!studio/looper-test/asana-ids.json
 
 # Collector logs and runtime state
 studio/collectors/*.log
@@ -48,6 +46,13 @@ studio/collectors/obsidian_collector_state.json
 studio/collectors/obsidian_standup.json
 studio/collectors/obsidian_tagged_items.json
 studio/collectors/careers_watch_state/
+studio/collectors/wp_pulse_state/
+
+# Research, audits and investigations belong in $STUDIO_CONTENT_DIR/research/,
+# not in this public tools repo. See "What belongs in this repo" in CLAUDE.md.
+docs/looper/
+docs/research/
+docs/audits/
 
 # Obsidian workspace state
 docs/.obsidian/workspace.json
