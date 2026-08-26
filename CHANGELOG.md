@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-26
+
+### Added
+- **Ops worktree.** Scheduled jobs now run from a separate git worktree pinned to `main`
+  (`/home/bain/ops/bain-studio`) rather than from the dev checkout. A cron entry names a
+  path, not a ref, so with one checkout cron ran whatever branch happened to be checked
+  out - meaning dev branch state silently decided what production ops did. Code now
+  reaches cron by being merged, which is deliberate. See `docs/utilities/ops-worktree.md`.
+- `studio/scripts/ops-worktree-link.sh` symlinks the 27 gitignored runtime paths (secrets,
+  collector state, Asana mirrors, inbox, logs) from the ops worktree back to the dev
+  checkout, so there is exactly one copy of each. Sharing state is a correctness
+  requirement: duplicated state would make `wp_pulse` re-summarise posts it had already
+  digested and `gmail_watch` reprocess threads.
+
+### Fixed
+- **Recurring bills are forecast from the most recent actual billing period, not a
+  full-history average.** Averaging understated every cost whose price had risen, and the
+  shortfall warnings built on those figures inherited the error - Autonomos forecast at
+  380.12 against an actual 380.88, Movistar at 104.16 against 119.77. Forecast entries now
+  carry an `amount_basis` field showing what the figure was derived from.
+- Adds Mod 130 estimation: 20% of cumulative net business profit for the year to date, less
+  Mod 130 already paid.
+
 ## [1.1.0] - 2026-08-26
 
 ### Added
@@ -88,7 +111,8 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.1.0...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.2.0...develop
+[1.2.0]: https://github.com/markbaindesign/bain-studio/compare/1.1.0...1.2.0
 [1.1.0]: https://github.com/markbaindesign/bain-studio/compare/1.0.1...1.1.0
 [1.0.1]: https://github.com/markbaindesign/bain-studio/compare/1.0.0...1.0.1
 [1.0.0]: https://github.com/markbaindesign/bain-studio/releases/tag/1.0.0
