@@ -498,8 +498,11 @@ python3 /media/data/dev/bain-studio/studio/sync.py --project {PREFIX}
 ```
 
 **4. Log and notify:**
+
+Count items remaining in the queue by reading the state file:
 ```bash
-echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{TARGET_PREFIX}/{PREFIX}] {TASK_ID} complete — moved to Review" >> ~/logs/task-looper.log
+REMAINING=$(tail -n +2 /tmp/studio-looper/studio-looper.{SESSION_ID}.local.md | grep -c '^[A-Z]')
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{TARGET_PREFIX}/{PREFIX}] {TASK_ID} complete — moved to Review ({REMAINING} items remaining)" >> ~/logs/task-looper.log
 python3 /media/data/dev/bain-studio/studio/notifier.py \
   "{TASK_ID} ready for review: {task name}." \
   --priority normal --sender studio-task-looper --project {TARGET_PREFIX} --channel looper
@@ -531,7 +534,8 @@ python3 /media/data/dev/bain-studio/studio/notifier.py \
 ```bash
 python3 /media/data/dev/bain-studio/studio/sync.py --project {TARGET_PREFIX}
 python3 /media/data/dev/bain-studio/studio/sync.py --project {PREFIX}
-echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{TARGET_PREFIX}/{PREFIX}] {TASK_ID} blocked: {reason}" >> ~/logs/task-looper.log
+REMAINING=$(tail -n +2 /tmp/studio-looper/studio-looper.{SESSION_ID}.local.md | grep -c '^[A-Z]')
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{TARGET_PREFIX}/{PREFIX}] {TASK_ID} blocked: {reason} ({REMAINING} items remaining)" >> ~/logs/task-looper.log
 python3 /media/data/dev/bain-studio/studio/notifier.py \
   "{TASK_ID} blocked: {task name}. {reason}." \
   --priority high --sender studio-task-looper --project {TARGET_PREFIX} --channel looper

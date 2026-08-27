@@ -4,7 +4,7 @@ status: accepted
 tags: [adr]
 ---
 
-# ADR 010 - Three-Tier Idea Pipeline
+# ADR 010 — Three-Tier Idea Pipeline
 
 ## Context
 
