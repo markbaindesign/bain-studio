@@ -51,16 +51,17 @@ def load_checkpoint() -> Dict[str, float]:
         print(f"WARNING: Could not read checkpoint: {e}", file=sys.stderr)
         return {}
 
-def save_checkpoint(balances: Dict[str, Tuple[float, str]]) -> None:
+def save_checkpoint(balances: Dict[str, Tuple[Dict, float, str]]) -> None:
     """Save current balances as the new checkpoint.
 
-    Format: {"balance_id": amount}  # timestamp is implicit (now)
+    Takes fetch_balances() output, {balance_id: (balance_obj, amount, currency)}.
+    Format written: {"balance_id": amount}  # timestamp is implicit (now)
     """
     path = get_checkpoint_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 
     checkpoint_data = {}
-    for bid, (amount, _) in balances.items():
+    for bid, (_, amount, _currency) in balances.items():
         checkpoint_data[bid] = amount
 
     path.write_text(json.dumps(checkpoint_data, indent=2))
