@@ -12,6 +12,12 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 
+# studio/ — derived, not hardcoded, so this runs from the release-pinned ops
+# worktree that cron uses as well as from the dev checkout (ADR 014).
+STUDIO_DIR = Path(__file__).resolve().parents[3] / "studio"
+sys.path.insert(0, str(STUDIO_DIR))
+from notifier import notify
+
 # Account configuration — hardcoded based on verified setup
 ACCOUNTS = [
     {"profile": 55828700, "type": "Business", "name": "Bain Design", "balances": [
@@ -144,21 +150,13 @@ def notify_slack(changes: List[Dict]) -> bool:
                 f"{prev:.2f} → {curr:.2f} ({sign}{delta:.2f})"
             )
 
-        message = f"Wise balance changes detected:\n" + "\n".join(lines) + \
-                  "\n\nPlease review and book in GnuCash."
-
-        # Use the notify skill if available, fallback to direct notification
-        result = subprocess.run(
-            [sys.executable, "-c",
-             f"import subprocess; "
-             f"subprocess.run(['python3', 'studio/notifier.py', {repr(message)}, "
-             f"'--priority', 'normal', '--sender', 'wise-pulse', '--channel', 'finance'])",
-            ],
-            cwd="/media/data/dev/bain-studio",
-            capture_output=True,
-            timeout=10
+        return notify(
+            f"Wise balance changes detected ({len(changes)}) — review and book in GnuCash.",
+            subject="Wise balance changes",
+            priority="normal",
+            sender="financial-review",
+            details="\n".join(lines),
         )
-        return result.returncode == 0
     except Exception as e:
         print(f"WARNING: Slack notification failed: {e}", file=sys.stderr)
         return False
