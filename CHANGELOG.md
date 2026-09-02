@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-09-02
+
+### Fixed
+- **wise-pulse crashed writing its baseline checkpoint**, so the file never existed and
+  every run was a first run - no change was ever detected. `save_checkpoint` unpacked
+  `fetch_balances`' `(balance_obj, amount, currency)` triples as pairs.
+
+### Added
+- `studio/tests/test_wise_pulse.py` - covers the checkpoint round-trip and the seam
+  between `fetch_balances`' output shape and everything downstream. Three bugs shipped
+  in this script because nothing exercised its non-network half.
+
 ## [1.5.0] - 2026-09-02
 
 ### Fixed
@@ -171,7 +183,8 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.5.0...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.5.1...develop
+[1.5.1]: https://github.com/markbaindesign/bain-studio/compare/1.5.0...1.5.1
 [1.5.0]: https://github.com/markbaindesign/bain-studio/compare/1.4.0...1.5.0
 [1.4.0]: https://github.com/markbaindesign/bain-studio/compare/1.3.0...1.4.0
 [1.3.0]: https://github.com/markbaindesign/bain-studio/compare/1.2.0...1.3.0
