@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-09-02
+
+### Fixed
+- **The daily payment forecast attributed nothing billed to Wise Business (EUR).**
+  `ACCOUNT_LABEL_MAP` in `account_forecast_report.py` covered BBVA and the Wise USD/GBP
+  balances but not the EUR one, so every transaction naming that account in
+  `recurring-transactions.yaml` - Asana and Claude among them - fell through to the
+  report's unassigned list each morning instead of being forecast against a balance.
+- **wise-pulse could not have notified from cron.** Its Slack call shelled out to a
+  nested subprocess with `cwd` hardcoded to the dev checkout, which the release-pinned
+  ops worktree is not. It also passed `--channel finance`, absent from `notifier.py`'s
+  `choices`: argparse would have exited non-zero, the notify call would have reported
+  failure, and the checkpoint would never have advanced past the first change - the same
+  delta re-reported every morning indefinitely. Now imports `notify` in-process against
+  a derived studio path.
+
+### Changed
+- The forecast report's unassigned section reads "no matching account balance" rather
+  than "no account attributed". The transactions did carry an account; what was missing
+  was a balance to match it against.
+
+### Added
+- `docs/utilities/wise-pulse.md`, missing since the skill shipped in 1.4.0.
+
+## [1.4.0] - 2026-08-27
+
+### Added
+- `wise-pulse` skill - polls the six tracked Wise balances daily, detects movement, and
+  Slacks the deltas for manual booking in GnuCash. Interim measure until Wise banking
+  transaction feeds are enabled (BSTD-775).
+- `algolia-pulse` skill - keeps free-tier Algolia indices alive (BSTD-781).
+- Queue count in studio-looper's completion and blocking logs (BSTD-047).
+- ADR 014 - scheduled jobs run from a release-pinned ops worktree.
+
 ## [1.3.0] - 2026-08-26
 
 ### Added
@@ -137,7 +171,9 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.3.0...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.5.0...develop
+[1.5.0]: https://github.com/markbaindesign/bain-studio/compare/1.4.0...1.5.0
+[1.4.0]: https://github.com/markbaindesign/bain-studio/compare/1.3.0...1.4.0
 [1.3.0]: https://github.com/markbaindesign/bain-studio/compare/1.2.0...1.3.0
 [1.2.0]: https://github.com/markbaindesign/bain-studio/compare/1.1.0...1.2.0
 [1.1.0]: https://github.com/markbaindesign/bain-studio/compare/1.0.1...1.1.0

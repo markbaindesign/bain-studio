@@ -35,10 +35,14 @@ ACCOUNTS_FILE = FINANCE_DATA_DIR / "accounts.json"
 WINDOW_DAYS = 21
 
 # upcoming_all `account` labels -> matching bank_balances name (substring match)
+# Every billing_account value used in FINANCE_CONFIG_DIR/recurring-transactions.yaml
+# must have an entry here, or its transactions fall through to "Unassigned (no account
+# attributed)" in the Slack report instead of being forecast against a balance.
 ACCOUNT_LABEL_MAP = {
     "BBVA EUR": "BBVA",
     "Wise Business (USD)": "Wise (Business):Wise Business (USD)",
     "Wise Business (GBP)": "Wise (Business):Wise Business (GBP)",
+    "Wise Business (EUR)": "Wise (Business):Wise Business (EUR)",
     "Wise Main (USD)": "Wise (Personal):Wise Main (USD)",
     "Wise Main (GBP)": "Wise (Personal):Wise Main (GBP)",
 }
@@ -228,7 +232,7 @@ def main():
             if datetime.strptime(t["date"], "%Y-%m-%d").date() <= window_end
         ]
         if unassigned_in_window:
-            details += "\n\nUnassigned (no account attributed):\n"
+            details += "\n\nUnassigned (no matching account balance):\n"
             details += "\n".join(f"{t['date']}  {t['label']}  €{t['amount']:,.2f}" for t in unassigned_in_window)
 
     notify(
