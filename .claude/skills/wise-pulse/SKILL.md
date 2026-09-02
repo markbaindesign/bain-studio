@@ -84,17 +84,15 @@ Please review and book in GnuCash.
 
 ## Scheduling
 
-Run daily via cron or the `/schedule` skill:
+Run daily from crontab, against the release-pinned ops worktree (ADR 014) — the
+script is deterministic, so there is no reason to spend a Claude invocation on it:
 
 ```bash
-# Daily at 09:30
-/schedule --cron "30 9 * * *" --command "/wise-pulse"
+30 8 * * * cd /home/bain/ops/bain-studio && python3 .claude/skills/wise-pulse/wise_pulse.py >> studio/collectors/wise_pulse.log 2>&1
 ```
 
-Or add to crontab:
-```bash
-30 9 * * * python3 -c "import subprocess; subprocess.run(['claude', '--dangerously-skip-permissions', '-p', '/wise-pulse'], cwd='/media/data/dev/bain-studio')"
-```
+It must be deployed there first (`studio/scripts/ops-deploy.sh`) — cron runs the
+ops worktree, not this checkout.
 
 ---
 
