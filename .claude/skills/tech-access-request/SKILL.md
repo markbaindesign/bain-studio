@@ -57,12 +57,21 @@ future run reads from.
    write a temporary copy where checkbox markers are swapped for glyphs:
    - `- [x]` → `- ☑`
    - `- [ ]` → `- ☐`
+   - `💡 ` → `**Note:** ` — the emoji has no glyph in brand-doc's fonts and
+     renders as a tofu box on the client's copy.
+
+   **Name the temp file for the document, not the transform.** `brand-doc`
+   takes the PDF's cover title from the input filename, so a temp called
+   `glyphs.md` ships a client-facing PDF titled "Glyphs". Name it
+   `Tech Access Request - {Client}.md`.
 
    Then run:
 
    ```bash
-   brand-doc /path/to/temp-with-glyphs.md "/path/to/Tech Access Request - {Client}.pdf"
+   brand-doc "/tmp/.../Tech Access Request - {Client}.md" "/path/to/Tech Access Request - {Client}.pdf"
    ```
+
+   Check the rendered cover page before sending.
 
    Delete the temporary glyph file afterwards — the checkbox-syntax `.md` from
    step 4 is the one that stays on disk (it's the readable/editable record).
