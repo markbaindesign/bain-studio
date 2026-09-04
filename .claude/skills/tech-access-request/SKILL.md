@@ -41,10 +41,18 @@ future run reads from.
    quick way to ask: "Which of these do you already have for this client?
    WordPress admin / SFTP / SSH / Database / cPanel / Repo access — or none?"
 
-3. **Determine the output location.** Default to a `Tech Access Request -
-   {Client}.md` file in the current project directory (the project the user
-   is working in when they invoke this skill). If there's no obvious project
-   context, ask where to save it.
+3. **Determine the output location.** Default to the client's Dropbox folder:
+   `/media/data/Dropbox/Work/Projects/Client/{Client}/Dev Ops/tech-access-request.md`
+   (and the matching `.pdf`). `Dev Ops/` is where the hosting, DNS and access
+   notes this request produces already live.
+
+   This is a client-facing document, so it does **not** go in the codebase —
+   a project repo should point at the Dropbox path from its `CLAUDE.md`, never
+   hold its own copy, or the two drift.
+
+   Create the directory with `mkdir -p` if it doesn't exist yet. If the client
+   has no Dropbox project folder and it isn't obvious which client this is for,
+   ask where to save it rather than guessing.
 
 4. **Build the personalised Markdown.** Read the master template, then:
    - Replace `{{CLIENT_NAME}}` with the client's name.

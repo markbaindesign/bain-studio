@@ -92,8 +92,19 @@ Invoke `/tech-access-request` with the contact name from Step 1. Ask Mark
 which items (if any) he already has for this client, same as that skill
 normally does.
 
-Save the output alongside the codebase, not in the shared template folder:
-`/media/data/dev/ddev/{slug}/tech-access-request.md` and `.pdf`.
+Save the output into the client's Dropbox folder, not the codebase and not the
+shared template folder:
+`/media/data/Dropbox/Work/Projects/Client/{Client Name}/Dev Ops/tech-access-request.md`
+and `.pdf`.
+
+It goes under `Dev Ops/` because that is where the hosting, DNS and access
+notes it produces already live. It stays out of the repo because it is a
+client-facing document, not code — the repo's `CLAUDE.md` points at it rather
+than holding a copy, so there is only ever one version.
+
+This step runs before Step 5 creates the folder structure, so create the
+directory first (`mkdir -p`) rather than assuming it exists. Step 5 fills in
+the rest of the tree around it.
 
 If **project type = existing site**: note explicitly that DDEV in Step 4 will
 be an empty shell until this request is answered. Add "pull existing site
@@ -152,6 +163,9 @@ Docs/
 ```
 
 (No `Showcase/` — dropped from the older template intentionally.)
+
+`Dev Ops/` will already exist and hold the tech access request from Step 3 —
+create the rest around it, don't overwrite it.
 
 Populate:
 
