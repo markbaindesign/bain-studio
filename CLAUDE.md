@@ -103,6 +103,7 @@ Quick reference (paths only — see project file for full details):
 | FOOB | `/media/data/dev/ddev/wp-foobot-api-plugin` |
 | TARA | `/media/data/dev/misc/kf-tara-web` |
 | TSTY | `/media/data/dev/ddev/techstyle` |
+| EBIZG | `/media/data/dev/ddev/ebiz-global` |
 | SL | `/media/data/dev/bain-studio/studio/looper` |
 | SLT | `/media/data/dev/bain-studio/studio/looper-test` |
 
