@@ -88,9 +88,18 @@ description) when it asks. This gives you:
 
 ## Step 3 — Tech access request
 
-Invoke `/tech-access-request` with the contact name from Step 1. Ask Mark
-which items (if any) he already has for this client, same as that skill
-normally does.
+Invoke `/tech-access-request` with the contact name from Step 1 and the Asana
+project GID captured in Step 2 (`--project-gid`). Ask Mark which items (if any)
+he already has for this client, same as that skill normally does.
+
+That skill produces three things, not one: the client-facing request
+(`.md` + `.pdf`), **one Asana task per access item** plus a "Tech access
+complete" sign-off task, and `access-record.md` — the internal record of what
+access actually exists, filled in as items land. Pass the GID or the tasks
+land nowhere, and Asana is where Mark monitors this.
+
+Do not duplicate those access tasks in the Step 6 checklist. They already
+exist on the board by the time Step 6 runs.
 
 Save the output into the client's Dropbox folder, not the codebase and not the
 shared template folder:
@@ -115,12 +124,46 @@ run once credentials land (see Step 4).
 
 ## Step 4 — DDEV codebase
 
-Inside `/media/data/dev/ddev/{slug}` (created in Step 2):
+Inside `/media/data/dev/ddev/{slug}` (created in Step 2).
 
-1. `ddev config` — project type `wordpress`, docroot as appropriate, PHP
+**WordPress always lives in `public_html/`, never at the repo root.** This is
+the studio standard, set by the VVV-era projects (`nore`, `buddhist-film-
+foundation`) and carried forward to DDEV. A project with `wp-admin/` sitting
+next to `CLAUDE.md` is wrong and has to be restructured later, so get it right
+on the first pass.
+
+The full directory standard:
+
+```
+{slug}/
+├── public_html/     ← WordPress core + wp-content. The docroot.
+├── scripts/         ← deploy.sh, sync helpers, one-off migration scripts
+├── import/          ← DB dumps coming IN (from the client's host)
+├── export/          ← artefacts going OUT
+├── backups/         ← local safety copies before destructive work
+├── docs/            ← project docs, ADRs
+├── qa/              ← QA inbox, per the /qa skill
+├── .ddev/config.yaml
+├── wp-cli.yml
+├── .gitignore
+└── README.md
+```
+
+`provision/` and `log/` are deliberately absent — they are VVV artefacts
+(`vvv-init.sh`, nginx logs) and DDEV covers both.
+
+1. `ddev config` — project type `wordpress`, **`docroot: public_html`**, PHP
    version per current studio default, database matching Periphetes'
    convention (`bd324_` prefix on the DB name).
-2. `ddev start`
+2. Create the directory tree above. `wp-cli.yml` gets `path: public_html` and
+   no SSH aliases — DDEV routes via `ddev wp`.
+3. `ddev start`
+
+> Once `/media/data/dev/wp-scaffold/new-project.sh` exists, steps 1–2 collapse
+> into a single call to it and this skill should just invoke it. Until then,
+> create the structure by hand and match the tree above exactly. See
+> `wp-scaffold/PLAN.md` for the theme and plugin boilerplate that script will
+> also generate.
 
 Then branch on project type from Step 1:
 
@@ -137,9 +180,10 @@ Then branch on project type from Step 1:
   Step 6 checklist:
   ```
   Once tech access arrives:
-    - Pull files: rsync/SFTP the wp-content (and full docroot if needed)
-      into /media/data/dev/ddev/{slug}
-    - Pull DB: export from the client's host, `ddev import-db --file=...`
+    - Pull files: rsync/SFTP the client's docroot into
+      /media/data/dev/ddev/{slug}/public_html/
+      (NOT the repo root — that produces the wrong structure)
+    - Pull DB: dump into import/, then `ddev import-db --file=import/...`
     - `ddev wp search-replace 'https://livesite.com' 'https://{slug}.ddev.site'`
   ```
   This is a "come back once you have access" item, not something this skill
@@ -228,6 +272,13 @@ are now the actual source of truth for follow-up.
 
 - **Don't guess project type, prefix, or client name** — always ask in
   Step 1.
+- **Never install WordPress at the repo root.** Docroot is `public_html/`,
+  always. `ebiz-global` and `techstyle` predate this rule and are both wrong;
+  don't copy their layout when looking for a reference. Use `nore` or
+  `buddhist-film-foundation` instead.
+- **Don't let the tech access step run without a project GID** — the Asana
+  tasks are how Mark tracks access, and a run that skips them looks finished
+  while leaving nothing to monitor.
 - **Watch commission's output for the ownership warning** — `sync.py` uses
   `ASANA_USER_PAT` (`bain-studio/studio/.env`) automatically when present, so
   projects are owned by Mark today. If that ever changes, name/icon become
