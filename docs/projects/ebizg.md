@@ -24,7 +24,10 @@ access; local dev at `https://ebiz-global.ddev.site` once the site is pulled.
 
 ## Key contacts
 
-- **Andrew Till** — client contact, addressee of the tech access request.
+- **Andrew Till** — client contact, addressee of the tech access request. Also the
+  client contact on [[tsty]] (Techstyle). Same person, different sites: Techstyle's
+  access does not carry over to ebiz-global.com unless the two share hosting, which
+  is an open question on this project.
 
 ## Notes
 
