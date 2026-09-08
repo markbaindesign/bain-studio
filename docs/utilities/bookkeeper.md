@@ -122,11 +122,16 @@ BBVA and nothing else. Card spending never belongs in it, in any currency.
 
 Personal spending on a business card is a debt back to the business and books to
 `Assets:Future Assets:Money Owed To BD:Personal Debt`, whose per-currency leaf the resolver
-picks. Spending on Alba's US trip (from 2026-07-21) has its own account, `Alba USA`, and is
-matched by date- and currency-scoped rules sitting above the general ones.
+picks. A specific, bounded debt gets its own sub-account so the balance owed for that one
+thing stays legible — Alba's 2026 US trip books to `Alba USA`, matched by date- and
+currency-scoped rules sitting above the general ones (window `2026-07-21` to `2026-09-08`,
+now closed).
 
-Set a `to:` date on those rules once the trip ends, or the open window will keep claiming
-later US spending as hers.
+Close a named debt's window when the event ends, or later spending of the same shape gets
+misattributed to it.
+
+The Aletheia Codex, section 2 ("Personal Spending on Business Accounts"), is authoritative
+for this treatment; the rules file just implements it.
 
 Known gap: `Income:Other Income` exists in EUR only, so USD/GBP cashback is held until the
 leaves are created in GnuCash.
