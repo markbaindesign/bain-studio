@@ -79,6 +79,26 @@ Sources: `wise` (API), `wise-csv`, `bbva`, `upwork`, `stripe`.
 - Amounts are exact fractions. If you reach for a float to settle a rounding
   complaint, something else is wrong.
 
+## Amending something already booked
+
+`studio.bookkeeper.amend` corrects splits that are already in the book. It is narrow on
+purpose: transaction and split are named by GUID, nothing is searched for, and it will
+not add or remove a transaction.
+
+**Before repointing or restating any split, list every other split on that account
+around the same date.** Entries are often booked as a *pass-through pair* — money routed
+through Funds Upwork or a suspense account and straight out again — and the two halves
+net to zero. Changing one half in isolation breaks the pair silently: the transaction
+still balances, so nothing errors, but an account is left holding a residue and the
+expense gets counted twice. This happened on 2025-10-20 and was caught only because a
+platform balance came out negative, which is impossible.
+
+Sanity-check the resulting balances against reality, not just against zero: an asset
+account that cannot go negative, a suspense account that should sit at zero between
+uses, a liability that should clear each month.
+
+Always run it against a copy of the book first.
+
 ## Known gaps
 
 - `Income:Other Income` is EUR-only, so USD/GBP cashback is held until those leaves
