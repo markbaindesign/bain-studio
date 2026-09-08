@@ -148,8 +148,14 @@ fallbacks:
     confident: true        # omit and it still classifies, but asks first
 ```
 
-`when:` also accepts `max_amount:`. This one entry replaced 25 merchant rules and
-produces byte-identical output.
+`when:` also accepts `max_amount:`, which is how the review threshold is set. Personal
+spending from the personal Wise account books itself below 50 and is classified-but-flagged
+above it — two fallbacks, the bounded one first.
+
+The threshold exists because the risk is asymmetric. Personal spending mis-booked as a
+business expense overstates the Modelo 303 deduction, which is the direction with
+consequences; a business expense mis-booked as Personal Debt merely understates it. The
+fallback errs the safe way, and real suppliers recur often enough to earn a named rule.
 
 ### Adding a rule
 
