@@ -574,3 +574,84 @@ def test_leaf_lookup_survives_inconsistent_capitalisation(book):
     """
     assert book.account("expenses:bank fees:BANK FEES (usd)") is not None
     assert book.account("Expenses:Bank Fees:Bank Fees (USD)") is not None
+
+
+# ------------------------------------------------------------- amendments
+
+def _booked(book_path, book, rules):
+    """Put one transaction in the book and return its guids."""
+    commit(book_path, run([_anthropic("-20.00")], book, rules).ready, book)
+    import gzip, re
+    with gzip.open(book_path, "rt", encoding="utf-8") as fh:
+        content = fh.read()
+    txn = re.search(r"<gnc:transaction.*?</gnc:transaction>", content, re.S).group(0)
+    txn_guid = re.search(r'<trn:id type="guid">(\w+)</trn:id>', txn).group(1)
+    splits = re.findall(r'<split:id type="guid">(\w+)</split:id>', txn)
+    return txn_guid, splits
+
+
+def test_amend_changes_both_legs_and_verifies(book_path, book, rules):
+    from studio.bookkeeper.amend import Correction, SplitFix, apply
+    txn_guid, splits = _booked(book_path, book, rules)
+    fresh = Book(book_path)
+
+    report = apply(book_path, [Correction(txn_guid, "test", [
+        SplitFix(splits[0], "restate", value="-25.00", quantity="-25.00"),
+        SplitFix(splits[1], "restate", value="25.00", quantity="25.00"),
+    ])], fresh, dry_run=False)
+
+    assert report["written"]
+    after = Book(book_path)
+    assert after.balance("Assets:Wise Business (USD)") == Fraction(-2500, 100)
+    assert after.txn_count == fresh.txn_count      # never adds or removes one
+
+
+def test_amend_dry_run_writes_nothing(book_path, book, rules):
+    from studio.bookkeeper.amend import Correction, SplitFix, apply
+    txn_guid, splits = _booked(book_path, book, rules)
+    before = open(book_path, "rb").read()
+    fresh = Book(book_path)
+
+    report = apply(book_path, [Correction(txn_guid, "test", [
+        SplitFix(splits[0], "restate", value="-25.00", quantity="-25.00"),
+        SplitFix(splits[1], "restate", value="25.00", quantity="25.00"),
+    ])], fresh, dry_run=True)
+
+    assert not report["written"]
+    assert open(book_path, "rb").read() == before
+
+
+def test_amend_refuses_to_unbalance_a_transaction(book_path, book, rules):
+    """Changing one leg without the other must be caught, not written."""
+    from studio.bookkeeper.amend import Correction, SplitFix, apply
+    txn_guid, splits = _booked(book_path, book, rules)
+    before = open(book_path, "rb").read()
+    fresh = Book(book_path)
+
+    with pytest.raises(WriteRefused):
+        apply(book_path, [Correction(txn_guid, "test", [
+            SplitFix(splits[0], "only one side", value="-25.00", quantity="-25.00"),
+        ])], fresh, dry_run=False)
+    assert open(book_path, "rb").read() == before
+
+
+def test_amend_refuses_an_unknown_split(book_path, book, rules):
+    from studio.bookkeeper.amend import Correction, SplitFix, apply
+    txn_guid, _ = _booked(book_path, book, rules)
+    fresh = Book(book_path)
+    with pytest.raises(WriteRefused):
+        apply(book_path, [Correction(txn_guid, "test", [
+            SplitFix("0" * 32, "not on this transaction", value="1.00"),
+        ])], fresh, dry_run=True)
+
+
+def test_amend_refuses_while_gnucash_holds_the_book(book_path, book, rules):
+    from studio.bookkeeper.amend import Correction, SplitFix, apply
+    txn_guid, splits = _booked(book_path, book, rules)
+    fresh = Book(book_path)
+    open(book_path + ".LCK", "w").close()
+    with pytest.raises(WriteRefused):
+        apply(book_path, [Correction(txn_guid, "test", [
+            SplitFix(splits[0], "x", value="-25.00", quantity="-25.00"),
+            SplitFix(splits[1], "x", value="25.00", quantity="25.00"),
+        ])], fresh, dry_run=False)
