@@ -91,6 +91,8 @@ def main(argv=None):
     parser.add_argument("--direction", choices=["in", "out"],
                         help="add-rule: restrict to money in or out")
     parser.add_argument("--currency", help="add-rule: restrict to one currency")
+    parser.add_argument("--account-contains", dest="account_contains",
+                        help="add-rule: restrict to bank accounts whose path contains this")
     parser.add_argument("--date-tolerance", type=int, default=3,
                         help="days either side to treat a same-amount entry as a "
                              "possible duplicate (0 disables)")
@@ -117,7 +119,7 @@ def main(argv=None):
             added = append_rule(
                 rules.path, args.match, args.account, currency=args.currency,
                 direction=args.direction, date_from=args.start, date_to=args.end,
-                note=args.note,
+                note=args.note, account_contains=args.account_contains,
             )
         except RuleExists as exc:
             print("  %s" % exc, file=sys.stderr)

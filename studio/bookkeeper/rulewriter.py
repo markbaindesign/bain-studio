@@ -30,7 +30,8 @@ def _next_top_level_key(lines, start: int) -> int:
 
 def append_rule(path: str, match: str, account: str, currency: Optional[str] = None,
                 direction: Optional[str] = None, date_from: Optional[str] = None,
-                date_to: Optional[str] = None, note: Optional[str] = None) -> str:
+                date_to: Optional[str] = None, note: Optional[str] = None,
+                account_contains: Optional[str] = None) -> str:
     """Add a rule to the end of the `rules:` block. Returns the text added."""
     with open(path, "r", encoding="utf-8") as fh:
         content = fh.read()
@@ -72,6 +73,8 @@ def append_rule(path: str, match: str, account: str, currency: Optional[str] = N
         block.append("    from: %s\n" % date_from)
     if date_to:
         block.append("    to: %s\n" % date_to)
+    if account_contains:
+        block.append('    account_contains: "%s"\n' % account_contains)
 
     lines[insert_at:insert_at] = block
     new_content = "".join(lines)
