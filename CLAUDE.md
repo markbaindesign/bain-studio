@@ -131,6 +131,7 @@ ln -s /media/data/dev/bain-studio/.claude/skills/{name} ~/.claude/skills/{name}
 | `interview-me` | real-time voice interview via OpenAI Realtime API, takes a topic arg |
 | `proposal-intake` | turns raw client input (RFP, emails, notes) into a proposal skeleton, flagging gaps |
 | `proposal-writer` | turns a completed proposal skeleton into a client-ready proposal + branded PDF |
+| `bookkeeper` | catches the GnuCash books up from bank feeds (Wise API + CSV imports) |
 
 **Global-only skills** (not in this repo — live directly in `~/.claude/skills/`):
 - `grill-me` — general planning, useful everywhere
