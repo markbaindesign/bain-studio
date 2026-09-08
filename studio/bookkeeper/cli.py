@@ -15,7 +15,7 @@ from datetime import date, timedelta
 from .book import Book, default_book_path
 from .categorise import Rules
 from .pipeline import review_sheet, run, summarise
-from .sources import csv_source, wise
+from .sources import csv_source, harvest, wise
 from .rulewriter import RuleExists, append_rule
 from .writer import WriteRefused, commit
 
@@ -49,6 +49,11 @@ def gather(args, rules) -> list:
                 txns += wise.from_api(profile, currency, start, end, accounts)
         return txns
 
+    if args.source == "harvest":
+        start = args.start or (date.today() - timedelta(days=120)).isoformat()
+        end = args.end or date.today().isoformat()
+        return harvest.invoices(start, end)
+
     if args.source == "wise-csv":
         if not args.file:
             raise SystemExit("--file is required for wise-csv")
@@ -76,7 +81,7 @@ def main(argv=None):
                         help="pull = fetch from an API; import = read a file; "
                              "add-rule = record a confirmed classification")
     parser.add_argument("--source", default="wise",
-                        help="wise, wise-csv, bbva, upwork, stripe")
+                        help="wise, wise-csv, harvest, bbva, upwork, stripe")
     parser.add_argument("--file", help="path to a CSV export")
     parser.add_argument("--from", dest="start", help="start date (YYYY-MM-DD)")
     parser.add_argument("--to", dest="end", help="end date (YYYY-MM-DD)")

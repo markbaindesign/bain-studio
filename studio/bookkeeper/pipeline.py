@@ -35,6 +35,32 @@ def run(txns: List[Txn], book: Book, rules: Rules, date_tolerance: int = 3) -> R
     claimed = set()
 
     for txn in sorted(txns, key=lambda t: (t.date, t.description)):
+        # Resolve every leg, the first included, BEFORE checking for a
+        # duplicate. Bank adapters name a concrete account so this is a no-op
+        # for them, but a source whose leading leg is a family template — the
+        # Harvest one leads with Accounts Receivable — would otherwise carry an
+        # unresolved path into the signature and never match what is already
+        # booked.
+        unresolved = []
+        for leg in txn.legs:
+            existing = book.account(leg.account)
+            if existing is not None and existing.currency == leg.currency \
+                    and not existing.has_children:
+                continue
+            resolved = resolve_account(book, leg.account, leg.currency)
+            if resolved:
+                leg.account = resolved
+            elif existing is None:
+                unresolved.append("%s (%s)" % (leg.account, leg.currency))
+
+        if unresolved:
+            txn.needs_review = True
+            txn.review_reason = (
+                "No account for %s — create it in GnuCash first" % ", ".join(unresolved)
+            )
+            result.review.append(txn)
+            continue
+
         if book.contains(txn):
             result.duplicates.append(txn)
             continue
@@ -51,31 +77,6 @@ def run(txns: List[Txn], book: Book, rules: Rules, date_tolerance: int = 3) -> R
                 % (near, (near - txn.date).days)
             )
             result.possible_duplicates.append(txn)
-            continue
-
-        # Adapters name account families ("Expenses:Bank Fees"); the book keeps
-        # per-currency leaves. Resolve those before the contra leg is sized.
-        # A family name can itself exist as a placeholder parent in another
-        # currency, so an existing path is not on its own proof of a fit —
-        # check the currency too, or a USD fee posts to the EUR parent.
-        unresolved = []
-        for leg in txn.legs[1:]:
-            existing = book.account(leg.account)
-            if existing is not None and existing.currency == leg.currency:
-                continue
-            resolved = resolve_account(book, leg.account, leg.currency)
-            if resolved:
-                leg.account = resolved
-            else:
-                unresolved.append("%s (%s)" % (leg.account, leg.currency))
-
-        if unresolved:
-            txn.needs_review = True
-            txn.review_reason = (
-                "No account for %s — create it in GnuCash first"
-                % ", ".join(unresolved)
-            )
-            result.review.append(txn)
             continue
 
         categorise(txn, rules, book)

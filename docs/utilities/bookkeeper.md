@@ -28,7 +28,7 @@ python3 -m studio.bookkeeper pull   --source wise --from 2026-08-05 --commit
 
 | Flag | Meaning |
 |---|---|
-| `--source` | `wise` (API), `wise-csv`, `bbva`, `upwork`, `stripe` |
+| `--source` | `wise` (API), `wise-csv`, `harvest` (API), `bbva`, `upwork`, `stripe` |
 | `--file` | CSV to import (required for every source but `wise`) |
 | `--from` / `--to` | Date range for an API pull |
 | `--profile` | `business` or `personal`; both if omitted |
@@ -167,10 +167,36 @@ save a file it cannot parse back.
 | Source | Column map | Notes |
 |---|---|---|
 | Wise API | n/a | Uses `~/.config/wise/wise_client.py`, shared with wise-pulse |
+| Harvest API | n/a | Invoices, via the dashboard's `harvest_client.py` |
 | Wise CSV | VERIFIED | Checked against real business and personal exports |
-| BBVA | PROVISIONAL | Not yet seen a real export — verify before `--commit` |
-| Upwork | PROVISIONAL | " |
-| Stripe | PROVISIONAL | " |
+| BBVA | VERIFIED | .xlsx, sheet "Informe BBVA", headers row 5, dates dd/mm/yyyy from `Fecha` |
+| Upwork | VERIFIED | Drops scheduled rows — future-dated, no running balance |
+| Stripe | PROVISIONAL | Not yet seen a real export — verify before `--commit` |
+
+## Invoices, and why they need their own source
+
+Every other source reads a bank feed: money that has already moved. `harvest` reads
+invoices, which is when income is *recognised*, and that happens first:
+
+```
+issue    DR Accounts Receivable (CCY)   CR Income:Client Income (CCY)
+payment  DR Bank                        CR Accounts Receivable (CCY)
+```
+
+The bank adapters only ever book the second line. **A client payment arriving must clear a
+receivable, never create income** — mapping one to Client Income counts the same revenue
+twice and inflates the Modelo 303 base.
+
+Both halves have to run, or Accounts Receivable drifts. A missing invoice drives it
+negative, which is the signal to look: on 2026-09-08 it read −1,000.00, and Harvest showed
+two invoices issued 2026-08-31 that had never been booked.
+
+State is ignored deliberately — an invoice is income in the quarter it was *issued*,
+whether or not it has been paid. That is the accrual basis the tax-prep skill works on.
+
+```bash
+python3 -m studio.bookkeeper pull --source harvest --from 2026-07-01 --to 2026-09-30
+```
 
 ## The personal-to-business transition
 

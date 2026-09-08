@@ -1,3 +1,3 @@
 """Source adapters: each turns one provider's export into normalised Txns."""
 
-from . import csv_source, wise  # noqa: F401
+from . import csv_source, harvest, wise  # noqa: F401

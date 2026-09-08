@@ -32,6 +32,9 @@ from studio.bookkeeper.writer import WriteRefused, commit, expand_legs
 ACCOUNTS = [
     ("root", "Root Account", "ROOT", "", None),
     ("assets", "Assets", "ASSET", "EUR", "root"),
+    ("fa", "Future Assets", "ASSET", "EUR", "assets"),
+    ("ar", "Accounts Receivable", "ASSET", "EUR", "fa"),
+    ("arusd", "Accounts Receivable (USD)", "ASSET", "USD", "ar"),
     ("wbusd", "Wise Business (USD)", "BANK", "USD", "assets"),
     ("wbeur", "Wise Business (EUR)", "BANK", "EUR", "assets"),
     ("expenses", "Expenses", "EXPENSE", "EUR", "root"),
@@ -735,3 +738,46 @@ def test_amend_refuses_an_addition_that_unbalances(book_path, book, rules):
             NewSplit("Expenses:Bank Fees:Bank Fees (USD)", "0.55", "0.55", "unmatched"),
         ])], fresh, dry_run=False)
     assert open(book_path, "rb").read() == before
+
+
+# ------------------------------------------------------------- harvest
+
+def _invoice(number, amount, day, currency="USD"):
+    from studio.bookkeeper.sources.harvest import INCOME, RECEIVABLE
+    txn = Txn(date=day, description="Invoice %s - Client" % number,
+              source="harvest", source_id=number, counterparty="Client")
+    txn.legs.append(Leg(RECEIVABLE, to_fraction(amount), currency))
+    txn.legs.append(Leg(INCOME, -to_fraction(amount), currency))
+    txn.balanced_by_construction = True
+    return txn
+
+
+def test_invoice_recognises_income_against_the_receivable(book, book_path, rules):
+    """An invoice is income when issued, sitting in AR until it is paid."""
+    result = run([_invoice("888", "1000.00", date(2026, 8, 31))], book, rules)
+    assert result.counts["ready"] == 1
+
+    commit(book_path, result.ready, book)
+    after = Book(book_path)
+    assert after.balance("Assets:Future Assets:Accounts Receivable:Accounts Receivable (USD)") \
+        == Fraction(100000, 100)
+    assert after.balance("Income:Client Income:Client Income (USD)") == Fraction(-100000, 100)
+
+
+def test_family_template_on_the_leading_leg_still_dedupes(book, book_path, rules):
+    """Harvest leads with a family name, not a resolved per-currency leaf.
+
+    Resolution has to happen before the duplicate check or the signature never
+    matches what is already booked, and every invoice is written twice.
+    """
+    commit(book_path, run([_invoice("888", "1000.00", date(2026, 8, 31))], book, rules).ready, book)
+    again = run([_invoice("888", "1000.00", date(2026, 8, 31))], Book(book_path), rules)
+    assert again.counts["ready"] == 0
+    assert again.counts["duplicates"] == 1
+
+
+def test_a_paid_invoice_is_still_income_in_its_own_quarter(book, rules):
+    """State is ignored on purpose — recognition follows the issue date."""
+    result = run([_invoice("887", "1000.00", date(2026, 7, 31))], book, rules)
+    assert result.counts["ready"] == 1
+    assert result.ready[0].date == date(2026, 7, 31)
