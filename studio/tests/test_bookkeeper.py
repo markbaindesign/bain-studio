@@ -655,3 +655,83 @@ def test_amend_refuses_while_gnucash_holds_the_book(book_path, book, rules):
             SplitFix(splits[0], "x", value="-25.00", quantity="-25.00"),
             SplitFix(splits[1], "x", value="25.00", quantity="25.00"),
         ])], fresh, dry_run=False)
+
+
+# ---------------------------------------------------------------- refunds
+
+def test_reversed_outgoing_is_not_booked():
+    """Wise marks a reversal by restating the ORIGINAL row as REFUNDED.
+
+    It never left the balance, so booking it invents an expense — a duplicated
+    Uber charge, a $1 card verification, a payment retried two days later.
+    """
+    txns = wise.parse_rows([_row(
+        Status="REFUNDED", Direction="OUT",
+        **{"Target name": "Just Eat", "Source amount (after fees)": "146.69",
+           "Source currency": "GBP"}
+    )], WISE_ACCOUNTS, "business")
+    assert txns == []
+
+
+def test_completed_row_of_the_same_shape_is_still_booked():
+    txns = wise.parse_rows([_row(
+        Status="COMPLETED", Direction="OUT",
+        **{"Target name": "Just Eat", "Source amount (after fees)": "146.69"}
+    )], WISE_ACCOUNTS, "business")
+    assert len(txns) == 1
+
+
+def test_inbound_refund_is_imported_but_flagged():
+    txns = wise.parse_rows([_row(
+        Status="REFUNDED", Direction="IN",
+        **{"Source name": "Artlist.io", "Target amount (after fees)": "19.99"}
+    )], WISE_ACCOUNTS, "business")
+    assert len(txns) == 1
+    assert txns[0].needs_review
+    assert "REFUNDED" in txns[0].review_reason
+
+
+def test_amend_can_repoint_a_split_to_another_account(book_path, book, rules):
+    """Clearing an Imbalance plug means moving the amount, not just restating it."""
+    from studio.bookkeeper.amend import Correction, SplitFix, apply
+    txn_guid, splits = _booked(book_path, book, rules)
+    fresh = Book(book_path)
+    before_software = fresh.balance("Expenses:Software:Software (USD)")
+
+    apply(book_path, [Correction(txn_guid, "repoint", [
+        SplitFix(splits[1], "move it", account="Expenses:Bank Fees:Bank Fees (USD)"),
+    ])], fresh, dry_run=False)
+
+    after = Book(book_path)
+    assert after.balance("Expenses:Software:Software (USD)") == before_software - Fraction(2000, 100)
+    assert after.balance("Expenses:Bank Fees:Bank Fees (USD)") == Fraction(2000, 100)
+
+
+def test_amend_can_add_a_missing_split(book_path, book, rules):
+    """A fee omitted from the original entry has to be added, not restated."""
+    from studio.bookkeeper.amend import Correction, NewSplit, SplitFix, apply
+    txn_guid, splits = _booked(book_path, book, rules)
+    fresh = Book(book_path)
+
+    apply(book_path, [Correction(txn_guid, "add fee", fixes=[
+        SplitFix(splits[1], "net of fee", value="19.45", quantity="19.45"),
+    ], additions=[
+        NewSplit("Expenses:Bank Fees:Bank Fees (USD)", "0.55", "0.55", "fee"),
+    ])], fresh, dry_run=False)
+
+    after = Book(book_path)
+    assert after.balance("Expenses:Bank Fees:Bank Fees (USD)") == Fraction(55, 100)
+    assert after.balance("Expenses:Software:Software (USD)") == Fraction(1945, 100)
+    assert after.txn_count == fresh.txn_count
+
+
+def test_amend_refuses_an_addition_that_unbalances(book_path, book, rules):
+    from studio.bookkeeper.amend import Correction, NewSplit, apply
+    txn_guid, _ = _booked(book_path, book, rules)
+    before = open(book_path, "rb").read()
+    fresh = Book(book_path)
+    with pytest.raises(WriteRefused):
+        apply(book_path, [Correction(txn_guid, "bad add", additions=[
+            NewSplit("Expenses:Bank Fees:Bank Fees (USD)", "0.55", "0.55", "unmatched"),
+        ])], fresh, dry_run=False)
+    assert open(book_path, "rb").read() == before

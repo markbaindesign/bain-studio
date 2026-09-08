@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Dict, List, Optional
 
+import uuid
+
 from .book import Book
 from .model import as_gnc_numeric, to_fraction
 from .writer import WriteRefused, backup, _lock_present
@@ -30,13 +32,29 @@ from .writer import WriteRefused, backup, _lock_present
 
 @dataclass
 class SplitFix:
-    """One split to change, or to delete."""
+    """One split to change, to repoint at another account, or to delete."""
 
     split_guid: str
     reason: str
     value: Optional[str] = None      # new value, in the transaction's currency
     quantity: Optional[str] = None   # new quantity, in the account's currency
+    account: Optional[str] = None    # repoint at this account path
     delete: bool = False
+
+
+@dataclass
+class NewSplit:
+    """A split to add to an existing transaction.
+
+    Needed when the original entry omitted a leg entirely — a bank fee that was
+    never recorded, most often, leaving the rest of the transaction plugged to
+    an Imbalance account.
+    """
+
+    account: str
+    value: str
+    quantity: str
+    reason: str
 
 
 @dataclass
@@ -46,6 +64,7 @@ class Correction:
     txn_guid: str
     description: str
     fixes: List[SplitFix] = field(default_factory=list)
+    additions: List[NewSplit] = field(default_factory=list)
 
 
 SPLIT_RE = re.compile(r"<trn:split>.*?</trn:split>", re.S)
@@ -101,7 +120,20 @@ def plan(content: str, corrections: List[Correction], book: Book) -> Dict:
             new_qty = Fraction(0) if fix.delete else (
                 to_fraction(fix.quantity) if fix.quantity is not None else old_qty
             )
-            deltas[path] = deltas.get(path, Fraction(0)) + (new_qty - old_qty)
+            if fix.account and not fix.delete:
+                # Repointing moves the whole amount off one account and onto
+                # another, so both sides have to appear in the prediction.
+                target = book.resolve(fix.account)
+                target_path = re.sub(r"^Root Account:", "", target.path)
+                deltas[path] = deltas.get(path, Fraction(0)) - old_qty
+                deltas[target_path] = deltas.get(target_path, Fraction(0)) + new_qty
+            else:
+                deltas[path] = deltas.get(path, Fraction(0)) + (new_qty - old_qty)
+
+        for addition in correction.additions:
+            acc = book.resolve(addition.account)
+            path = re.sub(r"^Root Account:", "", acc.path)
+            deltas[path] = deltas.get(path, Fraction(0)) + to_fraction(addition.quantity)
 
     return deltas
 
@@ -158,10 +190,37 @@ def apply(book_path: str, corrections: List[Correction], book: Book,
                     % as_gnc_numeric(to_fraction(fix.quantity)),
                     updated, count=1,
                 )
+            if fix.account is not None:
+                updated = re.sub(
+                    r'<split:account type="guid">\w+</split:account>',
+                    '<split:account type="guid">%s</split:account>'
+                    % book.resolve(fix.account).guid,
+                    updated, count=1,
+                )
             new_txn = new_txn.replace(block, updated, 1)
             changes.append("%s: split %s -> value %s qty %s (%s)"
                            % (correction.description, fix.split_guid[:8],
                               fix.value, fix.quantity, fix.reason))
+
+        for addition in correction.additions:
+            acc = book.resolve(addition.account)
+            block = (
+                "    <trn:split>\n"
+                '      <split:id type="guid">%s</split:id>\n'
+                "      <split:reconciled-state>n</split:reconciled-state>\n"
+                "      <split:value>%s</split:value>\n"
+                "      <split:quantity>%s</split:quantity>\n"
+                '      <split:account type="guid">%s</split:account>\n'
+                "    </trn:split>\n"
+                % (uuid.uuid4().hex, as_gnc_numeric(to_fraction(addition.value)),
+                   as_gnc_numeric(to_fraction(addition.quantity)), acc.guid)
+            )
+            if "</trn:splits>" not in new_txn:
+                raise WriteRefused("No </trn:splits> in %s" % correction.description)
+            new_txn = new_txn.replace("</trn:splits>", block + "  </trn:splits>", 1)
+            changes.append("%s: added split %s %s (%s)"
+                           % (correction.description, addition.account,
+                              addition.quantity, addition.reason))
 
         # The transaction must still balance in its own currency before it goes back.
         total = sum(_values(b)[0] for b in SPLIT_RE.findall(new_txn))

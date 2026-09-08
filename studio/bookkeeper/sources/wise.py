@@ -87,14 +87,26 @@ def parse_rows(
 
     for row in rows:
         status = (row.get("Status") or "").upper()
+        direction = (row.get("Direction") or "").upper()
         if status not in ("COMPLETED", "REFUNDED"):
+            continue
+
+        # Wise marks a reversed payment by setting the ORIGINAL row's status to
+        # REFUNDED rather than adding a credit row. So an outgoing marked
+        # REFUNDED never left the balance, and booking it invents an expense
+        # that never happened — a duplicated Uber charge, a $1 card
+        # verification, a failed payment that was retried two days later.
+        #
+        # Verified by reconciliation: skipping these lands all six Wise balances
+        # on the cent against the live figures; booking them is out by exactly
+        # the refunded amounts.
+        if status == "REFUNDED" and direction == "OUT":
             continue
 
         day = _date(row)
         if day is None:
             continue
 
-        direction = (row.get("Direction") or "").upper()
         src_ccy = (row.get("Source currency") or "").strip()
         tgt_ccy = (row.get("Target currency") or "").strip() or src_ccy
         src_amt = to_fraction(row.get("Source amount (after fees)"))
@@ -155,6 +167,16 @@ def parse_rows(
             # excludes the fee (playbook section 3).
             txn.legs.append(Leg(tgt_account, tgt_amt, tgt_ccy, value=src_amt))
             txn.balanced_by_construction = True
+
+        if status == "REFUNDED" and direction == "IN":
+            # A refund arriving is real money, but no inbound REFUNDED row fell
+            # inside the window the balance reconciliation covered, so this
+            # direction is unproven. Import it, but never silently.
+            txn.needs_review = True
+            txn.review_reason = (
+                "Inbound row marked REFUNDED — confirm this is a refund received "
+                "rather than an incoming payment that was reversed"
+            )
 
         if txn.legs:
             out.append(txn)
