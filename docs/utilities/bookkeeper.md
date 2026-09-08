@@ -22,6 +22,7 @@ Playbook** (sections 3 and 4) for the accounting treatment it implements.
 python3 -m studio.bookkeeper accounts                              # what's in the book
 python3 -m studio.bookkeeper pull   --source wise --from 2026-08-05
 python3 -m studio.bookkeeper import --source wise-csv --file x.csv --profile business
+python3 -m studio.bookkeeper add-rule --match "strand book" --account "Expenses:Books"
 python3 -m studio.bookkeeper pull   --source wise --from 2026-08-05 --commit
 ```
 
@@ -37,6 +38,32 @@ python3 -m studio.bookkeeper pull   --source wise --from 2026-08-05 --commit
 | `--out` | Write the review sheet to a file instead of stdout |
 | `--date-tolerance` | Days either side to treat a same-amount entry as a possible duplicate (default 3; 0 = exact dates only) |
 | `--commit` | Actually write. **Dry run is the default.** |
+
+## Where rules stop and judgement starts
+
+Measured over 377 real transactions across both Wise profiles:
+
+| | merchants | share of volume |
+|---|---|---|
+| Seen 3+ times | 32 | **74.8%** |
+| Seen twice | 12 | 6.4% |
+| Seen once | 71 | **18.8%** |
+
+Three quarters of volume is a few dozen recurring suppliers whose treatment never
+changes. Rules own that outright: zero marginal cost, and the same merchant classifies
+identically every quarter, which is what makes a re-run reproducible and a filing
+defensible.
+
+The long tail is different. Naming 71 one-off merchants in a rules file is the
+brittleness the file should avoid, so it isn't done. Two mechanisms cover it instead:
+
+- **`fallbacks:`** — conditional defaults scoped by currency, direction, date window,
+  source account or amount, never by merchant. One entry replaces an enumeration.
+- **the skill** — decides genuinely novel cases, then records the answer with
+  `add-rule` so that merchant is settled from then on.
+
+The rules file is therefore a **cache of decisions**, not a hand-maintained document.
+Nobody writes rules by hand; the skill promotes them as they are confirmed.
 
 ## How it works
 
@@ -101,9 +128,39 @@ rules:
 ```
 
 Also accepts `regex: true`, `from:`/`to:` (date window), `currency:`, `account_contains:`
-(scope to one bank account), a
-`csv_profiles:` block overriding a provisional column map, and `wise_accounts:` for renamed
-accounts.
+(scope to one bank account), a `csv_profiles:` block overriding a provisional column map,
+and `wise_accounts:` for renamed accounts.
+
+### Fallbacks
+
+Tried in order, only when no named rule matches:
+
+```yaml
+fallbacks:
+  - when:
+      currency: USD
+      direction: out
+      from: 2026-07-21
+      to: 2026-09-08
+      account_contains: "Wise Business"
+    account: "Assets:Future Assets:Money Owed To BD:Personal Debt:Alba USA"
+    reason: "USD card spend on the business account during Alba's US trip"
+    confident: true        # omit and it still classifies, but asks first
+```
+
+`when:` also accepts `max_amount:`. This one entry replaced 25 merchant rules and
+produces byte-identical output.
+
+### Adding a rule
+
+```bash
+python3 -m studio.bookkeeper add-rule --match "strand book" --account "Expenses:Books" \
+    [--currency USD] [--direction out] [--from 2026-07-21] [--to 2026-09-08] [--note "why"]
+```
+
+Appends to the `rules:` block by text insertion, so the file's comments survive — a YAML
+round-trip would strip them. Refuses a merchant that already has a rule, and refuses to
+save a file it cannot parse back.
 
 ## Status
 

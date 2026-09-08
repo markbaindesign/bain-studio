@@ -89,6 +89,11 @@ class Txn:
     # two of your own balances, say — so the categoriser leaves it alone.
     balanced_by_construction: bool = False
 
+    # Set when a conditional fallback classified this rather than a named rule,
+    # so the review sheet can say which transactions were covered by a category
+    # default rather than an explicit decision about this merchant.
+    matched_fallback: str = ""
+
     @property
     def primary(self) -> Optional[Leg]:
         """The bank-account leg — the one whose account is already known."""

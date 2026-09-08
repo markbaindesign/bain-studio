@@ -409,3 +409,97 @@ def test_currency_scoped_rule_ignores_other_currencies(book):
     gbp.legs.append(Leg("Assets:Wise Business (EUR)", to_fraction("-10.00"), "GBP"))
     assert scoped.match(usd) is not None
     assert scoped.match(gbp) is None
+
+
+# ----------------------------------------------------- conditional fallbacks
+
+FALLBACK_RULES = {
+    "rules": [{"match": "anthropic", "account": "Expenses:Software"}],
+    "fallbacks": [
+        {"when": {"currency": "USD", "direction": "out",
+                  "from": "2026-07-21", "to": "2026-09-08"},
+         "account": "Income:Client Income", "reason": "trip window",
+         "confident": True},
+    ],
+}
+
+
+def _usd_out(day, amount="-9.74", desc="Strand Book Store"):
+    txn = Txn(date=day, description=desc, counterparty=desc)
+    txn.legs.append(Leg("Assets:Wise Business (USD)", to_fraction(amount), "USD"))
+    return txn
+
+
+def test_fallback_catches_a_merchant_with_no_rule(book):
+    """One fallback replaces an enumeration of one-off shops."""
+    rules = Rules(FALLBACK_RULES)
+    txn = _usd_out(date(2026, 8, 30))
+    categorise(txn, rules, book)
+    assert not txn.needs_review
+    assert txn.legs[1].account == "Income:Client Income:Client Income (USD)"
+    assert txn.matched_fallback == "trip window"
+
+
+def test_fallback_respects_its_date_window(book):
+    rules = Rules(FALLBACK_RULES)
+    txn = _usd_out(date(2026, 9, 20))       # after the window closed
+    categorise(txn, rules, book)
+    assert txn.needs_review
+    assert len(txn.legs) == 1
+
+
+def test_fallback_respects_direction(book):
+    rules = Rules(FALLBACK_RULES)
+    txn = _usd_out(date(2026, 8, 30), amount="9.74")   # inbound
+    categorise(txn, rules, book)
+    assert txn.needs_review
+
+
+def test_named_rule_wins_over_a_fallback(book):
+    rules = Rules(FALLBACK_RULES)
+    txn = _usd_out(date(2026, 8, 30), amount="-20.00", desc="Anthropic")
+    categorise(txn, rules, book)
+    assert txn.legs[1].account == "Expenses:Software:Software (USD)"
+    assert not txn.matched_fallback
+
+
+def test_unconfident_fallback_classifies_but_still_asks(book):
+    spec = dict(FALLBACK_RULES)
+    spec["fallbacks"] = [dict(FALLBACK_RULES["fallbacks"][0])]
+    del spec["fallbacks"][0]["confident"]
+    txn = _usd_out(date(2026, 8, 30))
+    categorise(txn, Rules(spec), book)
+    assert len(txn.legs) == 2        # classified
+    assert txn.needs_review          # but flagged
+
+
+# --------------------------------------------------------------- rulewriter
+
+def test_add_rule_appends_and_keeps_comments(tmp_path):
+    from studio.bookkeeper.rulewriter import RuleExists, append_rule
+    path = str(tmp_path / "rules.yaml")
+    open(path, "w").write(
+        '# leading comment\nrules:\n  - match: "anthropic"\n'
+        '    account: "Expenses:Software"\n\n'
+        '# trailing section comment\nfallbacks: []\n'
+    )
+    append_rule(path, "strand book store", "Expenses:Books", currency="USD")
+    text = open(path).read()
+
+    import yaml
+    parsed = yaml.safe_load(text)
+    assert len(parsed["rules"]) == 2
+    assert parsed["rules"][1]["match"] == "strand book store"
+    assert parsed["rules"][1]["currency"] == "USD"
+    # comments survive, and the new rule did not split the trailing comment
+    assert "# leading comment" in text
+    assert "# trailing section comment" in text
+    assert text.index("strand book store") < text.index("# trailing section comment")
+
+
+def test_add_rule_refuses_a_duplicate_merchant(tmp_path):
+    from studio.bookkeeper.rulewriter import RuleExists, append_rule
+    path = str(tmp_path / "rules.yaml")
+    open(path, "w").write('rules:\n  - match: "anthropic"\n    account: "Expenses:Software"\n')
+    with pytest.raises(RuleExists):
+        append_rule(path, "Anthropic", "Expenses:Computer")

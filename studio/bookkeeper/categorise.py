@@ -85,7 +85,11 @@ class Rules:
     def __init__(self, spec: Dict):
         self.spec = spec or {}
         self.rules: List[Dict] = self.spec.get("rules", []) or []
-        self.fallbacks: Dict[str, str] = self.spec.get("fallbacks", {}) or {}
+        # Conditional defaults, tried only when no named rule matches. These
+        # exist so a single concept ("USD card spending during the trip") is one
+        # entry rather than an enumeration of every shop visited once.
+        self.fallbacks: List[Dict] = self.spec.get("fallbacks", []) or []
+        self.defaults: Dict[str, str] = self.spec.get("defaults", {}) or {}
         self.path = ""
 
     @classmethod
@@ -138,6 +142,36 @@ class Rules:
             return rule
         return None
 
+    def fallback(self, txn: Txn) -> Optional[Dict]:
+        """Conditional default for a transaction no named rule claimed.
+
+        Scoped by currency, direction and date window rather than by merchant,
+        so one entry covers a whole category of one-off spending. A fallback
+        marked `confident` is applied as-is; anything else is applied but
+        flagged, because a guess that reaches the books unremarked is worse than
+        a slow one.
+        """
+        for spec in self.fallbacks:
+            when = spec.get("when", {}) or {}
+            leg = txn.primary
+            if "currency" in when and leg.currency != when["currency"]:
+                continue
+            if "direction" in when:
+                inbound = leg.amount > 0
+                if when["direction"] not in ("in" if inbound else "out"):
+                    continue
+            if "from" in when and str(txn.date) < str(when["from"]):
+                continue
+            if "to" in when and str(txn.date) > str(when["to"]):
+                continue
+            if "account_contains" in when:
+                if str(when["account_contains"]).lower() not in leg.account.lower():
+                    continue
+            if "max_amount" in when and abs(leg.amount) > when["max_amount"]:
+                continue
+            return spec
+        return None
+
 
 def categorise(txn: Txn, rules: Rules, book) -> Txn:
     """Attach the contra leg to a Txn, or flag it for review.
@@ -154,6 +188,9 @@ def categorise(txn: Txn, rules: Rules, book) -> Txn:
     bank = txn.primary
     outstanding = sum(leg.amount for leg in txn.legs)
     rule = rules.match(txn)
+
+    if rule is None:
+        rule = rules.fallback(txn)
 
     if rule is None:
         txn.needs_review = True
@@ -179,8 +216,15 @@ def categorise(txn: Txn, rules: Rules, book) -> Txn:
 
     txn.legs.append(Leg(account=account, amount=-outstanding, currency=bank.currency))
 
-    if rule.get("review"):
-        # Used for merchants that are usually, but not always, one thing.
+    if rule.get("review") or ("when" in rule and not rule.get("confident")):
+        # Either a merchant that is usually, but not always, one thing — or a
+        # fallback that has not been declared settled.
         txn.needs_review = True
-        txn.review_reason = rule.get("review_reason", "Rule requests confirmation")
+        txn.review_reason = rule.get(
+            "review_reason",
+            "Matched the %r fallback, not a named rule — confirm"
+            % rule.get("reason", "default"),
+        )
+    elif "when" in rule:
+        txn.matched_fallback = rule.get("reason", "fallback")
     return txn

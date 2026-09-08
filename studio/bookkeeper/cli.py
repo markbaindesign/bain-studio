@@ -16,6 +16,7 @@ from .book import Book, default_book_path
 from .categorise import Rules
 from .pipeline import review_sheet, run, summarise
 from .sources import csv_source, wise
+from .rulewriter import RuleExists, append_rule
 from .writer import WriteRefused, commit
 
 
@@ -70,8 +71,10 @@ def gather(args, rules) -> list:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="bookkeeper")
-    parser.add_argument("command", choices=["pull", "import", "accounts"],
-                        help="pull = fetch from an API; import = read a file")
+    parser.add_argument("command",
+                        choices=["pull", "import", "accounts", "add-rule"],
+                        help="pull = fetch from an API; import = read a file; "
+                             "add-rule = record a confirmed classification")
     parser.add_argument("--source", default="wise",
                         help="wise, wise-csv, bbva, upwork, stripe")
     parser.add_argument("--file", help="path to a CSV export")
@@ -83,6 +86,11 @@ def main(argv=None):
     parser.add_argument("--book", help="path to the .gnucash book")
     parser.add_argument("--rules", help="path to the rules YAML")
     parser.add_argument("--out", help="write the review sheet to this path")
+    parser.add_argument("--match", help="add-rule: merchant substring to match")
+    parser.add_argument("--note", help="add-rule: comment to record above the rule")
+    parser.add_argument("--direction", choices=["in", "out"],
+                        help="add-rule: restrict to money in or out")
+    parser.add_argument("--currency", help="add-rule: restrict to one currency")
     parser.add_argument("--date-tolerance", type=int, default=3,
                         help="days either side to treat a same-amount entry as a "
                              "possible duplicate (0 disables)")
@@ -100,6 +108,21 @@ def main(argv=None):
             acc = book.by_path[path]
             if acc.type in ("BANK", "CASH", "CREDIT", "ASSET", "LIABILITY"):
                 print("%-10s %-4s %s" % (acc.type, acc.currency, path))
+        return 0
+
+    if args.command == "add-rule":
+        if not args.match or not args.account:
+            raise SystemExit("add-rule needs --match and --account")
+        try:
+            added = append_rule(
+                rules.path, args.match, args.account, currency=args.currency,
+                direction=args.direction, date_from=args.start, date_to=args.end,
+                note=args.note,
+            )
+        except RuleExists as exc:
+            print("  %s" % exc, file=sys.stderr)
+            return 1
+        print("  added to %s:\n%s" % (rules.path, added.rstrip()))
         return 0
 
     txns = gather(args, rules)

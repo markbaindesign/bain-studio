@@ -46,6 +46,32 @@ Anything the rules file cannot classify is **held back**, not guessed. A transac
 to the wrong expense account still balances, so it produces no error - it just quietly
 distorts the deduction claimed on the next Modelo 303. Absent is recoverable; wrong is not.
 
+## Amendment, 2026-09-08 — where rules stop
+
+The first cut classified everything by named merchant rules, and Mark pushed back that
+this would be too brittle and belonged in a skill. Measuring 377 real transactions
+settled it: 32 merchants account for 74.8% of volume, while 71 merchants appear exactly
+once and account for 18.8%. The initial rules file was 60 rules, 25 of which were a
+single concept ("USD spending during Alba's trip") enumerated shop by shop.
+
+Both halves are real, so the boundary moved rather than the mechanism:
+
+- **Recurring merchants stay rules.** Determinism is the point. The same merchant must
+  classify identically every quarter, or a re-run of a filed quarter stops reproducing
+  and the filing stops being defensible. An LLM re-deciding "Cloudways is hosting" every
+  month adds variance where variance is least acceptable.
+- **The long tail moves to the skill**, backed by `fallbacks:` — conditional defaults
+  scoped by currency, direction, date window, account or amount, never by merchant. The
+  25 Alba rules became one fallback with identical output.
+- **The skill's decisions are written back as rules** via `add-rule`. The rules file is
+  a cache of decisions, not a hand-maintained document, so the review queue shrinks with
+  every run and nothing is decided twice.
+
+The arithmetic layer was never in question and does not move. Fee restoration, dedupe,
+trading legs and balance verification stay deterministic; both real errors caught during
+development (a netted-out fee, seven date-drift duplicates) came from that layer, and
+neither was visible by eye.
+
 ## Consequences
 
 - The book is no longer only ever written by GnuCash, so a corrupt write is now a way the
