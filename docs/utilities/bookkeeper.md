@@ -35,6 +35,7 @@ python3 -m studio.bookkeeper pull   --source wise --from 2026-08-05 --commit
 | `--rules` | Rules file (defaults to `FINANCE_CONFIG_DIR/bookkeeper-rules.yaml`) |
 | `--book` | Book path (defaults to `GNUCASH_FILE`) |
 | `--out` | Write the review sheet to a file instead of stdout |
+| `--date-tolerance` | Days either side to treat a same-amount entry as a possible duplicate (default 3; 0 = exact dates only) |
 | `--commit` | Actually write. **Dry run is the default.** |
 
 ## How it works
@@ -48,7 +49,11 @@ source adapter -> normalise -> dedupe -> resolve accounts -> categorise -> verif
   generic `csv_source` driven by a `ColumnMap`, so a new bank is a dozen lines, not a
   module.
 - **Dedupe** matches on date, account, amount and currency — deliberately not description,
-  because banks reword the same transaction between exports.
+  because banks reword the same transaction between exports. A same-amount entry within
+  `--date-tolerance` days (default 3) is reported as a **possible duplicate** and held, not
+  written: hand entries are routinely dated the day they were typed rather than the day the
+  bank settled, and exact-date matching sails straight past those. Matching is one-to-one,
+  so three identical fares in the book absorb at most three incoming rows.
 - **Fees.** Providers report the amount *net* of their charge; the real movement is that
   figure plus the fee. A $1,000 inbound transfer with a $6.11 fee appears as $993.89 and is
   written as bank +993.89, charges +6.11, income −1,000.00.
@@ -85,13 +90,18 @@ rules:
   - match: "khyentse foundation"
     account: "Income:Client Income"
     direction: in                            # only when money comes in
+  - match: "trader joe"                      # date- and currency-scoped
+    account: "Assets:Future Assets:Money Owed To BD:Personal Debt:Alba USA"
+    from: 2026-07-21
+    currency: USD
   - match: "amazon"
-    account: "Equity (\"Capital\"):Owner's Draw"
+    account: "Expenses:Computer"
     review: true                             # post, but always ask
     review_reason: "confirm business or personal"
 ```
 
-Also accepts `regex: true`, `account_contains:` (scope to one bank account), a
+Also accepts `regex: true`, `from:`/`to:` (date window), `currency:`, `account_contains:`
+(scope to one bank account), a
 `csv_profiles:` block overriding a provisional column map, and `wise_accounts:` for renamed
 accounts.
 
@@ -105,5 +115,18 @@ accounts.
 | Upwork | PROVISIONAL | " |
 | Stripe | PROVISIONAL | " |
 
-Known gaps: `Owner's Draw` and `Income:Other Income` exist in EUR only, so USD/GBP lines
-matching those rules are held until the accounts are created in GnuCash.
+## Personal spending
+
+`Equity ("Capital"):Owner's Draw` is **EUR only, by design** — it takes the monthly draw from
+BBVA and nothing else. Card spending never belongs in it, in any currency.
+
+Personal spending on a business card is a debt back to the business and books to
+`Assets:Future Assets:Money Owed To BD:Personal Debt`, whose per-currency leaf the resolver
+picks. Spending on Alba's US trip (from 2026-07-21) has its own account, `Alba USA`, and is
+matched by date- and currency-scoped rules sitting above the general ones.
+
+Set a `to:` date on those rules once the trip ends, or the open window will keep claiming
+later US spending as hers.
+
+Known gap: `Income:Other Income` exists in EUR only, so USD/GBP cashback is held until the
+leaves are created in GnuCash.

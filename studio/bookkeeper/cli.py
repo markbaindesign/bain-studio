@@ -83,6 +83,9 @@ def main(argv=None):
     parser.add_argument("--book", help="path to the .gnucash book")
     parser.add_argument("--rules", help="path to the rules YAML")
     parser.add_argument("--out", help="write the review sheet to this path")
+    parser.add_argument("--date-tolerance", type=int, default=3,
+                        help="days either side to treat a same-amount entry as a "
+                             "possible duplicate (0 disables)")
     parser.add_argument("--commit", action="store_true",
                         help="actually write to the book (default is a dry run)")
     args = parser.parse_args(argv)
@@ -102,9 +105,10 @@ def main(argv=None):
     txns = gather(args, rules)
     print("  %d transactions read from %s" % (len(txns), args.source))
 
-    result = run(txns, book, rules)
+    result = run(txns, book, rules, args.date_tolerance)
     counts = result.counts
     print("  ready: %(ready)d | needs review: %(review)d | "
+          "possible duplicates: %(possible_duplicates)d | "
           "already in book: %(duplicates)d | unbalanced: %(unbalanced)d" % counts)
 
     sheet = review_sheet(result)

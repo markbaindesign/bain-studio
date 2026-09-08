@@ -16,6 +16,7 @@ class Result:
     review: List[Txn] = field(default_factory=list)
     duplicates: List[Txn] = field(default_factory=list)
     unbalanced: List[Txn] = field(default_factory=list)
+    possible_duplicates: List[Txn] = field(default_factory=list)
 
     @property
     def counts(self) -> Dict[str, int]:
@@ -24,16 +25,32 @@ class Result:
             "review": len(self.review),
             "duplicates": len(self.duplicates),
             "unbalanced": len(self.unbalanced),
+            "possible_duplicates": len(self.possible_duplicates),
         }
 
 
-def run(txns: List[Txn], book: Book, rules: Rules) -> Result:
+def run(txns: List[Txn], book: Book, rules: Rules, date_tolerance: int = 3) -> Result:
     """Sort incoming transactions into ready / review / duplicate / unbalanced."""
     result = Result()
+    claimed = set()
 
     for txn in sorted(txns, key=lambda t: (t.date, t.description)):
         if book.contains(txn):
             result.duplicates.append(txn)
+            continue
+
+        # Same amount, same account, a day or two apart. Almost always the same
+        # transaction hand-entered on a different date — but N identical small
+        # fares are genuinely ambiguous, so this is surfaced for a human rather
+        # than silently written or silently dropped.
+        near = book.near_duplicate(txn, date_tolerance, claimed)
+        if near is not None:
+            txn.needs_review = True
+            txn.review_reason = (
+                "Possible duplicate: same amount already in the book on %s (%+d days)"
+                % (near, (near - txn.date).days)
+            )
+            result.possible_duplicates.append(txn)
             continue
 
         # Adapters name account families ("Expenses:Bank Fees"); the book keeps
@@ -94,10 +111,30 @@ def review_sheet(result: Result) -> str:
     lines = ["# Bookkeeper review", ""]
     counts = result.counts
     lines.append(
-        "ready: %d | needs review: %d | already in book: %d | unbalanced: %d"
-        % (counts["ready"], counts["review"], counts["duplicates"], counts["unbalanced"])
+        "ready: %d | needs review: %d | possible duplicates: %d | "
+        "already in book: %d | unbalanced: %d"
+        % (counts["ready"], counts["review"], counts["possible_duplicates"],
+           counts["duplicates"], counts["unbalanced"])
     )
     lines.append("")
+
+    if result.possible_duplicates:
+        lines += ["## Possible duplicates — held back", "",
+                  "Same amount and account already in the book a few days either side. "
+                  "Usually the same transaction entered by hand on a different date. "
+                  "Confirm each one, then re-run with `--date-tolerance 0` to write any "
+                  "that are genuinely new.", "",
+                  "| Date | Description | Amount | Already in book |",
+                  "|---|---|---|---|"]
+        for txn in result.possible_duplicates:
+            leg = txn.primary
+            already = txn.review_reason.replace("Possible duplicate: same amount already in the book on ", "")
+            lines.append(
+                "| %s | %s | %.2f %s | %s |"
+                % (txn.date, txn.description.replace("|", "/"), float(leg.amount),
+                   leg.currency, already)
+            )
+        lines.append("")
 
     if result.review:
         lines += ["## Needs a rule", "",

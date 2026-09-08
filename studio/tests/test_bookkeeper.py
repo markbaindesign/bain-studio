@@ -334,3 +334,78 @@ def test_nothing_is_written_when_a_transaction_is_bad(book_path, book):
     with pytest.raises(WriteRefused):
         commit(book_path, [bad], book)
     assert open(book_path, "rb").read() == before
+
+
+# ------------------------------------------------- near-duplicate detection
+
+def _spend(day, amount="-3.00", desc="MTA NYCT Paygo"):
+    txn = Txn(date=day, description=desc, counterparty=desc)
+    txn.legs.append(Leg("Assets:Wise Business (USD)", to_fraction(amount), "USD"))
+    return txn
+
+
+def test_same_amount_a_day_apart_is_held_not_written(book_path, book, rules):
+    """A hand entry dated the day after the bank settled is still a duplicate."""
+    commit(book_path, run([_anthropic("-20.00")], book, rules).ready, book)
+
+    later = _anthropic("-20.00")
+    later.date = date(2026, 9, 2)          # same amount, one day later
+    result = run([later], Book(book_path), rules)
+
+    assert result.counts["ready"] == 0
+    assert result.counts["possible_duplicates"] == 1
+    assert "Possible duplicate" in result.possible_duplicates[0].review_reason
+
+
+def test_date_tolerance_zero_restores_exact_matching(book_path, book, rules):
+    commit(book_path, run([_anthropic("-20.00")], book, rules).ready, book)
+    later = _anthropic("-20.00")
+    later.date = date(2026, 9, 2)
+    result = run([later], Book(book_path), rules, date_tolerance=0)
+    assert result.counts["ready"] == 1
+    assert result.counts["possible_duplicates"] == 0
+
+
+def test_identical_amounts_are_matched_one_to_one(book_path, book, rules):
+    """One booked fare must not suppress three incoming ones."""
+    rules.rules.insert(0, {"match": "mta", "account": "Expenses:Software"})
+    commit(book_path, run([_spend(date(2026, 9, 1))], book, rules).ready, book)
+
+    incoming = [_spend(date(2026, 9, 2)) for _ in range(3)]
+    result = run(incoming, Book(book_path), rules)
+
+    # Exactly one is absorbed by the booked fare; the other two are genuinely new.
+    assert result.counts["possible_duplicates"] == 1
+    assert result.counts["ready"] == 2
+
+
+def test_far_apart_same_amount_is_not_a_duplicate(book_path, book, rules):
+    commit(book_path, run([_anthropic("-20.00")], book, rules).ready, book)
+    later = _anthropic("-20.00")
+    later.date = date(2026, 10, 15)
+    result = run([later], Book(book_path), rules)
+    assert result.counts["ready"] == 1
+
+
+# ------------------------------------------------------ rule scoping
+
+def test_date_scoped_rule_only_applies_inside_its_window(book):
+    scoped = Rules({"rules": [
+        {"match": "target", "account": "Income:Client Income",
+         "from": "2026-07-21", "currency": "USD"},
+    ]})
+    inside = _spend(date(2026, 8, 1), "-10.00", "Target")
+    outside = _spend(date(2026, 7, 1), "-10.00", "Target")
+    assert scoped.match(inside) is not None
+    assert scoped.match(outside) is None
+
+
+def test_currency_scoped_rule_ignores_other_currencies(book):
+    scoped = Rules({"rules": [
+        {"match": "target", "account": "Income:Client Income", "currency": "USD"},
+    ]})
+    usd = _spend(date(2026, 8, 1), "-10.00", "Target")
+    gbp = Txn(date=date(2026, 8, 1), description="Target", counterparty="Target")
+    gbp.legs.append(Leg("Assets:Wise Business (EUR)", to_fraction("-10.00"), "GBP"))
+    assert scoped.match(usd) is not None
+    assert scoped.match(gbp) is None

@@ -126,6 +126,15 @@ class Rules:
             if "account_contains" in rule:
                 if str(rule["account_contains"]).lower() not in txn.primary.account.lower():
                     continue
+            # Date-scoped rules: the same merchant means different things in
+            # different periods. US spending during a family trip is money owed
+            # back to the business, not the studio's own expense.
+            if "from" in rule and str(txn.date) < str(rule["from"]):
+                continue
+            if "to" in rule and str(txn.date) > str(rule["to"]):
+                continue
+            if "currency" in rule and txn.primary.currency != rule["currency"]:
+                continue
             return rule
         return None
 

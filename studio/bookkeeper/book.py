@@ -44,6 +44,11 @@ class Book:
         self.accounts: Dict[str, Account] = {}
         self.by_path: Dict[str, Account] = {}
         self.signatures: Set[Tuple] = set()
+        # (account, amount, currency) -> [dates]. Lets us spot a transaction
+        # that is already in the book under a slightly different date: a hand
+        # entry is often dated the day it was typed, not the day the bank
+        # settled it, and exact-date matching would re-post all of those.
+        self.by_amount: Dict[Tuple, List] = {}
         self.txn_count = 0
         self._load()
 
@@ -90,9 +95,11 @@ class Book:
                 if acc is None or acc.type not in BANKISH:
                     continue
                 qty = Fraction(split.find("split:quantity", NS).text)
-                self.signatures.add(
-                    (day, re.sub(r"^Root Account:", "", acc.path), qty, acc.currency)
-                )
+                visible = re.sub(r"^Root Account:", "", acc.path)
+                self.signatures.add((day, visible, qty, acc.currency))
+                self.by_amount.setdefault(
+                    (visible, qty, acc.currency), []
+                ).append(day)
 
     def _path_of(self, guid: str, depth: int = 0) -> str:
         acc = self.accounts[guid]
@@ -135,6 +142,33 @@ class Book:
     def contains(self, txn) -> bool:
         """True if a transaction with this signature is already in the book."""
         return txn.signature() in self.signatures
+
+    def near_duplicate(self, txn, days: int = 3, claimed=None):
+        """Find a book entry with the same amount within `days` of this one.
+
+        Hand-entered transactions are frequently dated a day or two off what the
+        bank reports — the day they were typed rather than the day they settled.
+        Those are real duplicates and exact-date matching sails straight past
+        them, so they get surfaced rather than written.
+
+        `claimed` is a set of (key, date) already attributed to another incoming
+        transaction, so N identical amounts in the book can absorb at most N
+        incoming rows rather than suppressing every one of them.
+        """
+        leg = txn.primary
+        if leg is None:
+            return None
+        key = (leg.account, leg.amount, leg.currency)
+        claimed = claimed if claimed is not None else set()
+        candidates = [
+            d for d in self.by_amount.get(key, [])
+            if (key, d) not in claimed and 0 < abs((d - txn.date).days) <= days
+        ]
+        if not candidates:
+            return None
+        best = min(candidates, key=lambda d: abs((d - txn.date).days))
+        claimed.add((key, best))
+        return best
 
 
 def default_book_path() -> str:
