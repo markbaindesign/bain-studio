@@ -172,6 +172,24 @@ save a file it cannot parse back.
 | Upwork | PROVISIONAL | " |
 | Stripe | PROVISIONAL | " |
 
+## The personal-to-business transition
+
+Business spending is moving from the personal Wise account to the business one, starting
+**2026-03-05** (first transaction on the business profile). During the overlap the same
+merchant appears on both, which needs no special handling: both accounts are in the book,
+so a business expense books as an expense whichever account paid it, via its named rule.
+
+What differs is the leftovers. Personal spending out of an account that also holds business
+money is a debt back to the business, so `Wise Main` has a fallback routing unmatched
+outgoings to `Money Owed To BD:Personal Debt`. It is deliberately **not** `confident`:
+while the transition runs, an unmatched merchant on that account is as likely to be a new
+supplier as a shop, so it is classified and flagged rather than assumed. Promote the real
+suppliers to named rules with `add-rule` as they appear.
+
+The statement's profile is whatever `--profile` says, and that is trusted outright — a
+transfer between the two profiles carries both names on the same row, so inferring from
+either one books the money against the wrong account.
+
 ## Personal spending
 
 `Equity ("Capital"):Owner's Draw` is **EUR only, by design** — it takes the monthly draw from

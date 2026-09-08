@@ -52,7 +52,7 @@ def gather(args, rules) -> list:
     if args.source == "wise-csv":
         if not args.file:
             raise SystemExit("--file is required for wise-csv")
-        return wise.from_csv(args.file, accounts, args.profile or "personal")
+        return wise.from_csv(args.file, accounts, args.profile or "")
 
     spec = csv_source.profile(args.source, rules)
     if not args.file:

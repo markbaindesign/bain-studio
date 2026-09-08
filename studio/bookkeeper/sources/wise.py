@@ -55,20 +55,31 @@ def _date(row: Dict) -> Optional[datetime.date]:
 
 
 def _profile_of(row: Dict, default: str) -> str:
-    """Infer which Wise profile a CSV row belongs to.
+    """Which Wise profile's balance actually moved.
 
-    The business profile is named for the studio; anything else is personal.
+    A statement belongs to exactly one profile, so `default` — the profile the
+    caller asked for — is the answer, and is trusted outright.
+
+    Only when the caller did not say do we infer, and then from the *holder*
+    side of the row rather than from either name appearing anywhere: on a
+    payment out the holder is the source, on one in it is the target. Matching
+    on either name is wrong for a transfer between the two profiles, where both
+    names are present on every such row — it sent money leaving the personal
+    account into the business account instead.
     """
-    names = (row.get("Source name") or "") + (row.get("Target name") or "")
-    if "bain design" in names.lower():
-        return "business"
-    return default
+    if default:
+        return default
+    holder = (
+        row.get("Source name") if (row.get("Direction") or "").upper() != "IN"
+        else row.get("Target name")
+    ) or ""
+    return "business" if "bain design" in holder.lower() else "personal"
 
 
 def parse_rows(
     rows: Iterable[Dict],
     accounts: Dict,
-    default_profile: str = "personal",
+    default_profile: str = "",
     skip_zero: bool = True,
 ) -> List[Txn]:
     """Convert Wise statement rows into normalised transactions."""
@@ -151,7 +162,7 @@ def parse_rows(
     return out
 
 
-def from_csv(path: str, accounts: Dict, default_profile: str = "personal") -> List[Txn]:
+def from_csv(path: str, accounts: Dict, default_profile: str = "") -> List[Txn]:
     with open(path, "r", encoding="utf-8-sig") as fh:
         return parse_rows(list(csv.DictReader(fh)), accounts, default_profile)
 

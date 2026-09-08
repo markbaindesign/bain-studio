@@ -503,3 +503,50 @@ def test_add_rule_refuses_a_duplicate_merchant(tmp_path):
     open(path, "w").write('rules:\n  - match: "anthropic"\n    account: "Expenses:Software"\n')
     with pytest.raises(RuleExists):
         append_rule(path, "Anthropic", "Expenses:Computer")
+
+
+# ------------------------------------------------------- profile attribution
+
+INTER_PROFILE = {
+    "ID": "TRANSFER-9", "Status": "COMPLETED", "Direction": "OUT",
+    "Created on": "2026-04-03 09:00:00", "Finished on": "2026-04-03 09:00:00",
+    "Source fee amount": "", "Source fee currency": "",
+    "Source name": "Mark Crawford Bain", "Source amount (after fees)": "500.00",
+    "Source currency": "USD", "Target name": "Bain Design",
+    "Target amount (after fees)": "500.00", "Target currency": "USD",
+    "Reference": "",
+}
+
+
+def test_transfer_between_profiles_stays_on_the_stated_profile():
+    """Money leaving the personal account must not be booked against business.
+
+    Both profile names appear on every inter-profile transfer, so matching on
+    either one sent this to the wrong bank account — and because the account was
+    wrong, dedupe then failed to recognise it as already booked.
+    """
+    txns = wise.parse_rows([dict(INTER_PROFILE)], WISE_ACCOUNTS, "personal")
+    assert txns == []   # no personal account in this fixture's map...
+
+    accounts = dict(WISE_ACCOUNTS)
+    accounts[("personal", "USD")] = "Assets:Wise Personal (USD)"
+    txns = wise.parse_rows([dict(INTER_PROFILE)], accounts, "personal")
+    assert txns[0].legs[0].account == "Assets:Wise Personal (USD)"
+
+
+def test_stated_profile_wins_over_the_names_in_the_row():
+    txns = wise.parse_rows([dict(INTER_PROFILE)], WISE_ACCOUNTS, "business")
+    assert txns[0].legs[0].account == "Assets:Wise Business (USD)"
+
+
+def test_profile_is_inferred_from_the_holder_side_when_unstated():
+    accounts = dict(WISE_ACCOUNTS)
+    accounts[("personal", "USD")] = "Assets:Wise Personal (USD)"
+    # OUT: the holder is the source, so this is the personal account's statement.
+    out = wise.parse_rows([dict(INTER_PROFILE)], accounts, "")
+    assert out[0].legs[0].account == "Assets:Wise Personal (USD)"
+
+    # IN: the holder is the target, so the same pair of names means business.
+    inbound = dict(INTER_PROFILE, Direction="IN")
+    got = wise.parse_rows([inbound], accounts, "")
+    assert got[0].legs[0].account == "Assets:Wise Business (USD)"
