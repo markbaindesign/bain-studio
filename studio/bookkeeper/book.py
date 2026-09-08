@@ -34,6 +34,7 @@ class Account:
     currency: str
     parent: Optional[str]
     path: str = ""
+    has_children: bool = False
 
 
 class Book:
@@ -43,6 +44,7 @@ class Book:
         self.path = path
         self.accounts: Dict[str, Account] = {}
         self.by_path: Dict[str, Account] = {}
+        self.by_path_lower: Dict[str, Account] = {}
         self.signatures: Set[Tuple] = set()
         # (account, amount, currency) -> [dates]. Lets us spot a transaction
         # that is already in the book under a slightly different date: a hand
@@ -77,11 +79,22 @@ class Book:
             )
             self.accounts[acc.guid] = acc
 
+        parents = set()
+        for acc in self.accounts.values():
+            if acc.parent:
+                parents.add(acc.parent)
+
         for acc in self.accounts.values():
             acc.path = self._path_of(acc.guid)
             # Strip the synthetic root so callers use "Assets:Current Assets:..."
             visible = re.sub(r"^Root Account:", "", acc.path)
+            acc.has_children = acc.guid in parents
             self.by_path[visible] = acc
+            # Leaf names drift in case between currencies — this book has both
+            # "BD Owes Family (USD)" and "BD owes Family (EUR)" — so a lookup
+            # that is case-sensitive silently falls through to the placeholder
+            # parent instead of the leaf.
+            self.by_path_lower[visible.lower()] = acc
 
         for txn in root.iter("{%s}transaction" % NS["gnc"]):
             self.txn_count += 1
@@ -110,8 +123,15 @@ class Book:
     # --------------------------------------------------------------- queries
 
     def account(self, path: str) -> Optional[Account]:
-        """Look up an account by its visible path (root stripped)."""
-        return self.by_path.get(path)
+        """Look up an account by its visible path (root stripped).
+
+        Falls back to a case-insensitive match, because leaf names in this book
+        are not consistently capitalised between currencies.
+        """
+        acc = self.by_path.get(path)
+        if acc is None:
+            acc = self.by_path_lower.get(path.lower())
+        return acc
 
     def resolve(self, path: str) -> Account:
         acc = self.account(path)

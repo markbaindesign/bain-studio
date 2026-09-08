@@ -52,7 +52,12 @@ def resolve_account(book, template: str, currency: str) -> Optional[str]:
             continue
         if acc.type in ("ROOT", "TRADING"):
             continue
-        return path
+        # An account with children is a placeholder. Posting to it balances and
+        # raises no error, but the amount then sits outside every per-currency
+        # leaf that the reports and the tax figures are built from.
+        if acc.has_children:
+            continue
+        return re.sub(r"^Root Account:", "", acc.path)
     return None
 
 

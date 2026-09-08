@@ -550,3 +550,27 @@ def test_profile_is_inferred_from_the_holder_side_when_unstated():
     inbound = dict(INTER_PROFILE, Direction="IN")
     got = wise.parse_rows([inbound], accounts, "")
     assert got[0].legs[0].account == "Assets:Wise Business (USD)"
+
+
+# --------------------------------------------- placeholders and leaf casing
+
+def test_resolver_never_posts_to_a_parent_with_children(book):
+    """`Expenses:Bank Fees` has children, so it is a placeholder.
+
+    Posting to it balances and raises no error, but the amount then sits outside
+    every per-currency leaf the reports and tax figures are built from.
+    """
+    assert book.account("Expenses:Bank Fees").has_children
+    assert resolve_account(book, "Expenses:Bank Fees", "GBP") is None   # no GBP leaf
+    assert resolve_account(book, "Expenses:Bank Fees", "USD") == \
+        "Expenses:Bank Fees:Bank Fees (USD)"
+
+
+def test_leaf_lookup_survives_inconsistent_capitalisation(book):
+    """The real book has "BD Owes Family (USD)" beside "BD owes Family (EUR)".
+
+    A case-sensitive lookup misses the odd one out and falls through to the
+    placeholder parent.
+    """
+    assert book.account("expenses:bank fees:BANK FEES (usd)") is not None
+    assert book.account("Expenses:Bank Fees:Bank Fees (USD)") is not None
