@@ -214,22 +214,27 @@ def from_api(
     )
     if result.returncode != 0:
         stderr = result.stderr.strip()
-        # Statement endpoints need SCA; balances do not. A 403 that survives the
-        # signing retry means Wise is not accepting the signature — almost
-        # always because the public key was generated but never registered,
-        # which stays invisible for as long as only `balances` is called.
+        # Statement endpoints are NOT AVAILABLE on a personal token in the
+        # EU/UK. Balances work; statements return 403 with
+        # x-2fa-approval-result: REJECTED, and it is a PSD2 policy restriction,
+        # not a signature problem.
+        #
+        # Investigated exhaustively under BSTD-775 and marked "do not revisit":
+        # three signature formats (PKCS#1 v1.5, PSS, raw-digest), both header
+        # cases, both profiles, and the key confirmed registered — Wise displays
+        # it. Do not spend time on the signature; it is not the cause.
         if "403" in stderr:
             raise SystemExit(
-                "Wise refused the statement for %s %s (HTTP 403 after signing).\n"
-                "  Statement endpoints require SCA, and the signature was "
-                "rejected.\n"
-                "  Register the public key at https://wise.com/settings/public-keys:\n"
-                "      %s\n"
-                "  `balances` works without SCA, so wise-pulse will keep running "
-                "either way.\n"
-                "  Until then, download the CSV and use --source wise-csv."
-                % (profile, currency, os.path.expanduser(
-                    "~/.config/wise/wise_api_public.pem"))
+                "Wise will not serve statements for %s %s (HTTP 403).\n"
+                "  Balance statements are unsupported on a personal API token "
+                "in the EU/UK under PSD2.\n"
+                "  This is settled — see BSTD-775, 'RULED OUT (do not "
+                "revisit)'. It is NOT a signature or key-registration problem; "
+                "both were eliminated.\n"
+                "  Use a downloaded export instead: --source wise-csv\n"
+                "  The long-term route is Enable Banking (BSTD-775), not this "
+                "endpoint."
+                % (profile, currency)
             )
         raise SystemExit(
             "Wise API call failed for %s %s: %s" % (profile, currency, stderr)

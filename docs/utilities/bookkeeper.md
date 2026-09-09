@@ -23,6 +23,9 @@ python3 -m studio.bookkeeper accounts                              # what's in t
 python3 -m studio.bookkeeper pull   --source wise --from 2026-08-05
 python3 -m studio.bookkeeper import --source wise-csv --file x.csv --profile business
 python3 -m studio.bookkeeper add-rule --match "strand book" --account "Expenses:Books"
+python3 -m studio.bookkeeper journal --date 2026-08-31 --description "Salary August 2026" \\
+    --leg "Equity (\"Capital\"):Owner's Draw|2566.67|EUR" \\
+    --leg "Liabilities:BD Owes Family|-2566.67|EUR"
 python3 -m studio.bookkeeper pull   --source wise --from 2026-08-05 --commit
 ```
 
@@ -157,6 +160,25 @@ business expense overstates the Modelo 303 deduction, which is the direction wit
 consequences; a business expense mis-booked as Personal Debt merely understates it. The
 fallback errs the safe way, and real suppliers recur often enough to earn a named rule.
 
+### Journal entries
+
+Not everything has a bank line. The monthly owner's-draw accrual is the standing example:
+it creates the liability that a later payment settles, and `Owner's Draw` is never touched
+by a bank transaction at all (Codex §2).
+
+```bash
+python3 -m studio.bookkeeper journal --date 2026-08-31 --description "Salary August 2026" \\
+    --leg "Equity (\"Capital\"):Owner's Draw|2566.67|EUR" \\
+    --leg "Liabilities:BD Owes Family|-2566.67|EUR"
+```
+
+Legs are `Account path|amount|CCY` and must net to zero per currency; account paths resolve
+to per-currency leaves like anywhere else. It runs through the same pipeline as an import,
+so it inherits dedupe, verification and the backup.
+
+A missing accrual shows up as `BD Owes Family` failing to return to zero after a settlement
+— that is the check worth running each month.
+
 ### Adding a rule
 
 ```bash
@@ -172,27 +194,29 @@ save a file it cannot parse back.
 
 | Source | Column map | Notes |
 |---|---|---|
-| Wise API | n/a | **Blocked**: statement endpoints need SCA and the public key is not registered — see below. Use `wise-csv` meanwhile |
+| Wise API | n/a | Balances only. Statements are **unavailable** on a personal token in the EU (BSTD-775, ruled out). Use `wise-csv` |
 | Harvest API | n/a | Invoices, via the dashboard's `harvest_client.py` |
 | Wise CSV | VERIFIED | Checked against real business and personal exports |
 | BBVA | VERIFIED | .xlsx, sheet "Informe BBVA", headers row 5, dates dd/mm/yyyy from `Fecha` |
 | Upwork | VERIFIED | Drops scheduled rows — future-dated, no running balance |
 | Stripe | PROVISIONAL | Not yet seen a real export — verify before `--commit` |
 
-## Wise API and SCA
+## Wise API: statements are not available
 
-`balances` needs no strong customer authentication; **statement endpoints do**. The client
-at `~/.config/wise/wise_client.py` handles the challenge — it signs the one-time token with
-`wise_api_private.pem` and retries — but the retry still returns 403, with an empty body,
-which is what Wise sends when it will not accept the signature.
+`balances` works. **Statement endpoints do not, and cannot.** They return 403 with
+`x-2fa-approval-result: REJECTED`, because Wise does not support balance statements on a
+personal API token in the EU/UK under PSD2.
 
-The local keypair is sound (2048-bit RSA, private and public match). The key was generated
-2026-08-25 alongside the token and appears never to have been registered. That stayed
-invisible because `wise-pulse` only ever calls `balances`.
+This was investigated exhaustively under **BSTD-775** and recorded there as *"RULED OUT (do
+not revisit)"*: three signature formats were tried (PKCS#1 v1.5, PSS, raw-digest), both
+header cases, both profiles, and the public key was confirmed registered — Wise displays it.
+**The signature is not the problem.** Do not go back to it.
 
-**Fix:** upload `~/.config/wise/wise_api_public.pem` at
-<https://wise.com/settings/public-keys>. Until then use `--source wise-csv` with a
-downloaded export; the parser is identical, so nothing else changes.
+Use `--source wise-csv` with a downloaded export; the parser is identical, so nothing else
+changes. The long-term fix is Enable Banking (BSTD-775), not this endpoint.
+
+Still open there: whether statement access can be enabled for a Spanish *business* account,
+or whether it needs a Wise Platform partner credential.
 
 ## Invoices, and why they need their own source
 

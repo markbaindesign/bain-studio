@@ -36,12 +36,24 @@ def append_rule(path: str, match: str, account: str, currency: Optional[str] = N
     with open(path, "r", encoding="utf-8") as fh:
         content = fh.read()
 
+    # The same merchant string can legitimately appear twice under different
+    # scopes — "mark crawford bain" is a transfer to the personal profile when
+    # seen from the business account, and an owner's-draw settlement when seen
+    # from the personal one. Only an identical SCOPE is a duplicate.
+    scope = (match.lower(), direction, account_contains, currency,
+             str(date_from) if date_from else None,
+             str(date_to) if date_to else None)
     existing = yaml.safe_load(content) or {}
     for rule in existing.get("rules") or []:
-        if str(rule.get("match", "")).lower() == match.lower():
+        if (str(rule.get("match", "")).lower(),
+                rule.get("direction"), rule.get("account_contains"),
+                rule.get("currency"),
+                str(rule["from"]) if rule.get("from") else None,
+                str(rule["to"]) if rule.get("to") else None) == scope:
             raise RuleExists(
-                "A rule for %r already exists, pointing at %s. Edit it by hand "
-                "if it needs to change." % (match, rule.get("account"))
+                "A rule for %r with this exact scope already exists, pointing "
+                "at %s. Edit it by hand if it needs to change."
+                % (match, rule.get("account"))
             )
 
     lines = content.splitlines(keepends=True)

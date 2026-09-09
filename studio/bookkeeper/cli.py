@@ -77,9 +77,11 @@ def gather(args, rules) -> list:
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="bookkeeper")
     parser.add_argument("command",
-                        choices=["pull", "import", "accounts", "add-rule"],
+                        choices=["pull", "import", "accounts", "add-rule",
+                                 "journal"],
                         help="pull = fetch from an API; import = read a file; "
-                             "add-rule = record a confirmed classification")
+                             "add-rule = record a confirmed classification; "
+                             "journal = post an entry that has no bank line")
     parser.add_argument("--source", default="wise",
                         help="wise, wise-csv, harvest, bbva, upwork, stripe")
     parser.add_argument("--file", help="path to a CSV export")
@@ -91,6 +93,11 @@ def main(argv=None):
     parser.add_argument("--book", help="path to the .gnucash book")
     parser.add_argument("--rules", help="path to the rules YAML")
     parser.add_argument("--out", help="write the review sheet to this path")
+    parser.add_argument("--date", help="journal: entry date (YYYY-MM-DD)")
+    parser.add_argument("--description", help="journal: entry description")
+    parser.add_argument("--leg", action="append", default=[],
+                        help="journal: 'Account path|amount|CCY', repeatable. "
+                             "Amounts must net to zero per currency.")
     parser.add_argument("--match", help="add-rule: merchant substring to match")
     parser.add_argument("--note", help="add-rule: comment to record above the rule")
     parser.add_argument("--direction", choices=["in", "out"],
@@ -132,7 +139,36 @@ def main(argv=None):
         print("  added to %s:\n%s" % (rules.path, added.rstrip()))
         return 0
 
-    txns = gather(args, rules)
+    if args.command == "journal":
+        # Month-end accruals and other entries that never touch a bank feed.
+        # Routed through the same pipeline as an import, so it inherits dedupe,
+        # account resolution, balance verification and the backup.
+        if not args.date or not args.description or len(args.leg) < 2:
+            raise SystemExit(
+                "journal needs --date, --description and at least two --leg "
+                "arguments of the form 'Account path|amount|CCY'"
+            )
+        from datetime import datetime as _dt
+
+        from .model import Leg, Txn
+        txn = Txn(
+            date=_dt.strptime(args.date, "%Y-%m-%d").date(),
+            description=args.description,
+            source="journal",
+        )
+        for spec in args.leg:
+            parts = [p.strip() for p in spec.split("|")]
+            if len(parts) != 3:
+                raise SystemExit("Bad --leg %r: expected 'Account|amount|CCY'" % spec)
+            txn.legs.append(Leg(parts[0], parts[1], parts[2].upper()))
+        txn.balanced_by_construction = True
+        if not txn.is_balanced():
+            raise SystemExit(
+                "The legs do not net to zero — a journal entry must balance."
+            )
+        txns = [txn]
+    else:
+        txns = gather(args, rules)
     print("  %d transactions read from %s" % (len(txns), args.source))
 
     result = run(txns, book, rules, args.date_tolerance)
