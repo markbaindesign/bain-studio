@@ -1288,6 +1288,37 @@ def create_task(project_gid: str, name: str, notes: str = '', assignee_gid: str 
     return new_gid
 
 
+def update_task(task_gid: str, name: str = None, notes: str = None,
+                dry_run: bool = False) -> None:
+    """
+    Rewrite a task's name and/or notes in Asana via bainbot.
+
+    Notes are deliberately read-only in the mirror — multi-line content does not
+    survive the single-line FIELD_RE parser, so `_push_simple_fields` skips them
+    and a mirror edit silently does nothing. This is the sanctioned way to change
+    them without reaching for the Asana MCP, which runs as Mark's own account.
+
+    Replaces the notes wholesale; read the current value first if you mean to
+    amend rather than overwrite.
+    """
+    data = {}
+    if name is not None:
+        data["name"] = name
+    if notes is not None:
+        data["notes"] = notes
+    if not data:
+        raise ValueError("update_task needs a name or notes to set")
+
+    if dry_run:
+        for k, v in data.items():
+            preview = v if len(v) <= 60 else v[:60] + "…"
+            log.info(f"  [DRY-RUN] Would set {k} on {task_gid} to {preview!r}")
+        return
+
+    _put(f"/tasks/{task_gid}", {"data": data})
+    log.info(f"  Task {task_gid} updated: {', '.join(sorted(data))}")
+
+
 def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT UP",
                      notes: str = "", due: str = "", dry_run: bool = False) -> str:
     """
@@ -1579,6 +1610,10 @@ def main():
                         help="Assignee GID (optional; defaults to Mark's GID if not set)")
     parser.add_argument("--task-depends-on", metavar="GID", default="",
                         help="GID of the task this new task unblocks (optional)")
+    parser.add_argument("--update-task", action="store_true",
+                        help="Update an existing task's name and/or notes "
+                             "(requires --task-gid; notes cannot be pushed "
+                             "from the mirror)")
     parser.add_argument("--comment", action="store_true",
                         help="Post a comment to an Asana task via bainbot (use with --task-gid and --comment-text)")
     parser.add_argument("--task-gid", metavar="GID", default="",
@@ -1593,6 +1628,17 @@ def main():
     if not WORKSPACE_GID or not BAINBOT_GID:
         log.error("ERROR: ASANA_WORKSPACE_GID and ASANA_BAINBOT_GID must be set in .env")
         sys.exit(2)
+
+    if args.update_task:
+        if not args.task_gid:
+            parser.error("--update-task requires --task-gid")
+        if not args.task_name and not args.task_notes:
+            parser.error("--update-task requires --task-name and/or --task-notes")
+        update_task(args.task_gid,
+                    name=args.task_name or None,
+                    notes=args.task_notes or None,
+                    dry_run=args.dry_run)
+        sys.exit(0)
 
     if args.comment:
         if not args.task_gid or not args.comment_text:
