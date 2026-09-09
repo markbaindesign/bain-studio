@@ -96,8 +96,11 @@ def main(argv=None):
     parser.add_argument("--date", help="journal: entry date (YYYY-MM-DD)")
     parser.add_argument("--description", help="journal: entry description")
     parser.add_argument("--leg", action="append", default=[],
-                        help="journal: 'Account path|amount|CCY', repeatable. "
-                             "Amounts must net to zero per currency.")
+                        help="journal: 'Account path|amount|CCY[|value]', "
+                             "repeatable. Amounts must net to zero per currency. "
+                             "`value` is the same movement in the TRANSACTION's "
+                             "currency (that of the first leg) and is required "
+                             "only on a leg that crosses currencies.")
     parser.add_argument("--match", help="add-rule: merchant substring to match")
     parser.add_argument("--note", help="add-rule: comment to record above the rule")
     parser.add_argument("--direction", choices=["in", "out"],
@@ -158,9 +161,14 @@ def main(argv=None):
         )
         for spec in args.leg:
             parts = [p.strip() for p in spec.split("|")]
-            if len(parts) != 3:
-                raise SystemExit("Bad --leg %r: expected 'Account|amount|CCY'" % spec)
-            txn.legs.append(Leg(parts[0], parts[1], parts[2].upper()))
+            if len(parts) not in (3, 4):
+                raise SystemExit(
+                    "Bad --leg %r: expected 'Account|amount|CCY[|value]'" % spec
+                )
+            txn.legs.append(Leg(
+                parts[0], parts[1], parts[2].upper(),
+                value=parts[3] if len(parts) == 4 else None,
+            ))
         txn.balanced_by_construction = True
         if not txn.is_balanced():
             raise SystemExit(
