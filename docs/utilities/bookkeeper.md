@@ -172,12 +172,27 @@ save a file it cannot parse back.
 
 | Source | Column map | Notes |
 |---|---|---|
-| Wise API | n/a | Uses `~/.config/wise/wise_client.py`, shared with wise-pulse |
+| Wise API | n/a | **Blocked**: statement endpoints need SCA and the public key is not registered — see below. Use `wise-csv` meanwhile |
 | Harvest API | n/a | Invoices, via the dashboard's `harvest_client.py` |
 | Wise CSV | VERIFIED | Checked against real business and personal exports |
 | BBVA | VERIFIED | .xlsx, sheet "Informe BBVA", headers row 5, dates dd/mm/yyyy from `Fecha` |
 | Upwork | VERIFIED | Drops scheduled rows — future-dated, no running balance |
 | Stripe | PROVISIONAL | Not yet seen a real export — verify before `--commit` |
+
+## Wise API and SCA
+
+`balances` needs no strong customer authentication; **statement endpoints do**. The client
+at `~/.config/wise/wise_client.py` handles the challenge — it signs the one-time token with
+`wise_api_private.pem` and retries — but the retry still returns 403, with an empty body,
+which is what Wise sends when it will not accept the signature.
+
+The local keypair is sound (2048-bit RSA, private and public match). The key was generated
+2026-08-25 alongside the token and appears never to have been registered. That stayed
+invisible because `wise-pulse` only ever calls `balances`.
+
+**Fix:** upload `~/.config/wise/wise_api_public.pem` at
+<https://wise.com/settings/public-keys>. Until then use `--source wise-csv` with a
+downloaded export; the parser is identical, so nothing else changes.
 
 ## Invoices, and why they need their own source
 

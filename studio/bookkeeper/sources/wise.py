@@ -213,9 +213,26 @@ def from_api(
         capture_output=True, text=True,
     )
     if result.returncode != 0:
+        stderr = result.stderr.strip()
+        # Statement endpoints need SCA; balances do not. A 403 that survives the
+        # signing retry means Wise is not accepting the signature — almost
+        # always because the public key was generated but never registered,
+        # which stays invisible for as long as only `balances` is called.
+        if "403" in stderr:
+            raise SystemExit(
+                "Wise refused the statement for %s %s (HTTP 403 after signing).\n"
+                "  Statement endpoints require SCA, and the signature was "
+                "rejected.\n"
+                "  Register the public key at https://wise.com/settings/public-keys:\n"
+                "      %s\n"
+                "  `balances` works without SCA, so wise-pulse will keep running "
+                "either way.\n"
+                "  Until then, download the CSV and use --source wise-csv."
+                % (profile, currency, os.path.expanduser(
+                    "~/.config/wise/wise_api_public.pem"))
+            )
         raise SystemExit(
-            "Wise API call failed for %s %s: %s"
-            % (profile, currency, result.stderr.strip())
+            "Wise API call failed for %s %s: %s" % (profile, currency, stderr)
         )
 
     payload = result.stdout.strip()
