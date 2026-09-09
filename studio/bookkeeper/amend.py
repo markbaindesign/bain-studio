@@ -269,3 +269,79 @@ def apply(book_path: str, corrections: List[Correction], book: Book,
     report["backup"] = backup_path
     report["balances"] = {p: float(after.balance(p)) for p in deltas}
     return report
+
+
+# ---------------------------------------------------------------- prices
+
+PRICE_RE = re.compile(r"<price>.*?</price>", re.S)
+
+
+def fix_price(book_path: str, price_guid: str, value: str, reason: str,
+              dry_run: bool = True) -> Dict:
+    """Correct one entry in the GnuCash price database.
+
+    Prices are not splits, so nothing else in this module reaches them — but a
+    wrong one is quietly corrosive. GnuCash writes a price for every currency
+    transfer made through the transfer dialog, so a mis-keyed conversion leaves
+    a mis-keyed *rate* behind as well, and correcting the transaction does not
+    correct the price. Anything later reading rates from the book then picks up
+    a rate that never existed.
+
+    `value` is the rational GnuCash stores, e.g. "219437/256667", read as
+    1 <commodity> = value <currency>.
+    """
+    if _lock_present(book_path):
+        raise WriteRefused(
+            "The book is open in GnuCash (a .LCK file is present). Close it first."
+        )
+    if "/" not in value:
+        raise WriteRefused("Price value must be a rational like '219437/256667'")
+
+    with open(book_path, "rb") as fh:
+        gzipped = fh.read(2) == b"\x1f\x8b"
+    opener = gzip.open if gzipped else open
+    with opener(book_path, "rt", encoding="utf-8") as fh:
+        content = fh.read()
+
+    block = next(
+        (b for b in PRICE_RE.findall(content)
+         if '<price:id type="guid">%s</price:id>' % price_guid in b),
+        None,
+    )
+    if block is None:
+        raise WriteRefused("No price %s in the book" % price_guid)
+
+    old = re.search(r"<price:value>(.*?)</price:value>", block).group(1)
+    updated = re.sub(r"<price:value>.*?</price:value>",
+                     "<price:value>%s</price:value>" % value, block, count=1)
+    report = {"price": price_guid, "was": old, "now": value, "reason": reason,
+              "written": False, "backup": None}
+    if dry_run:
+        return report
+
+    before = Book(book_path)
+    backup_path = backup(book_path)
+    tmp = book_path + ".price.tmp"
+    with (gzip.open(tmp, "wt", encoding="utf-8") if gzipped
+          else open(tmp, "w", encoding="utf-8")) as fh:
+        fh.write(content.replace(block, updated, 1))
+    os.replace(tmp, book_path)
+
+    try:
+        after = Book(book_path)
+        # A price change must not move a single balance or transaction.
+        if after.txn_count != before.txn_count:
+            raise WriteRefused("Transaction count changed — aborting")
+        with opener(book_path, "rt", encoding="utf-8") as fh:
+            check = fh.read()
+        if "<price:value>%s</price:value>" % value not in check:
+            raise WriteRefused("The new price value is not in the saved file")
+        if "225667" in value and old == value:
+            raise WriteRefused("Nothing changed")
+    except Exception:
+        shutil.copy2(backup_path, book_path)
+        raise
+
+    report["written"] = True
+    report["backup"] = backup_path
+    return report

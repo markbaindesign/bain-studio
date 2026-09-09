@@ -160,6 +160,20 @@ business expense overstates the Modelo 303 deduction, which is the direction wit
 consequences; a business expense mis-booked as Personal Debt merely understates it. The
 fallback errs the safe way, and real suppliers recur often enough to earn a named rule.
 
+### Correcting a price
+
+GnuCash writes a price into its database for **every** currency transfer made through the
+transfer dialog. So a mis-keyed conversion leaves a mis-keyed *rate* behind as well, and
+correcting the transaction does not correct the price — anything later reading rates from the
+book then picks up a rate that never existed.
+
+`amend.fix_price(book, price_guid, "219437/256667", reason)` replaces one value, with the
+same backup-and-verify guarantees. It also asserts that no transaction count or balance moved,
+since a price change must not touch either.
+
+Worth checking after any conversion fix: a rate that sits well outside its neighbours in the
+price database is the tell.
+
 ### Journal entries
 
 Not everything has a bank line. The monthly owner's-draw accrual is the standing example:
