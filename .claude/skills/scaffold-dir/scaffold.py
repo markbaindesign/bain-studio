@@ -1,0 +1,273 @@
+#!/usr/bin/env python3
+"""Scaffold a new project directory with git repo and optionally WordPress structure."""
+
+import os
+import sys
+import argparse
+import json
+import subprocess
+from pathlib import Path
+
+
+def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
+                     plugin_names=None, theme_names=None, mu_plugin_names=None):
+    """
+    Create a new project directory with git repo and optional WordPress structure.
+
+    Args:
+        path: Absolute path for the new project directory
+        name: Project name (defaults to path basename)
+        is_wordpress: Create WordPress-aware structure
+        is_ddev: Set up DDEV configuration
+        plugin_names: List of custom plugin names to allowlist
+        theme_names: List of custom theme names to allowlist
+        mu_plugin_names: List of custom mu-plugin names to allowlist
+
+    Returns:
+        dict with status and messages
+    """
+    plugin_names = plugin_names or []
+    theme_names = theme_names or []
+    mu_plugin_names = mu_plugin_names or []
+
+    path = Path(path)
+    name = name or path.name
+
+    report = []
+
+    # 1. Validate
+    if path.exists() and any(path.iterdir()):
+        return {
+            'status': 'error',
+            'message': f"Directory {path} already exists and is non-empty — aborting to avoid overwriting."
+        }
+
+    if not path.parent.exists():
+        return {
+            'status': 'error',
+            'message': f"Parent directory {path.parent} does not exist. Create it first."
+        }
+
+    # 2. Create directory
+    path.mkdir(parents=True, exist_ok=True)
+    report.append("✓ directory created")
+
+    # 3. Git init
+    subprocess.run(['git', 'init'], cwd=path, check=True, capture_output=True)
+    report.append("✓ git init")
+
+    # 4. Create standard directory structure
+    (path / '.claude').mkdir(exist_ok=True)
+    (path / 'qa').mkdir(exist_ok=True)
+
+    if is_wordpress:
+        for dir_name in ['bin', 'export', 'import', 'scripts', 'public_html']:
+            (path / dir_name).mkdir(exist_ok=True)
+        report.append("✓ directories created (standard + WordPress)")
+
+    # 5. Write .gitignore
+    if is_wordpress:
+        gitignore_content = _create_wp_gitignore(plugin_names, theme_names, mu_plugin_names)
+    else:
+        gitignore_content = _create_generic_gitignore()
+
+    (path / '.gitignore').write_text(gitignore_content)
+    report.append("✓ .gitignore written" + (" (WordPress-aware)" if is_wordpress else ""))
+
+    # 6. DDEV configuration
+    ddev_report = None
+    if is_wordpress or is_ddev or (path / '.ddev').exists():
+        ddev_report = _setup_ddev_config(path)
+        report.append(f"✓ {ddev_report}")
+
+    # 7. Initial commit
+    subprocess.run(['git', 'add', '.'], cwd=path, check=True, capture_output=True)
+    commit_msg = f"init: scaffold {name}" + (" (WordPress)" if is_wordpress else "")
+    subprocess.run(['git', 'commit', '-m', commit_msg], cwd=path, check=True, capture_output=True)
+    report.append("✓ initial commit")
+
+    # 8. Shutter profile
+    shutter_available = subprocess.run(['which', 'shutter-profile'],
+                                     capture_output=True).returncode == 0
+    if shutter_available:
+        try:
+            subprocess.run(['shutter-profile', 'create', name, str(path / 'qa' / 'qa-inbox')],
+                         check=True, capture_output=True)
+            report.append(f"✓ shutter profile '{name}' created")
+        except subprocess.CalledProcessError:
+            report.append("⚠ shutter profile creation failed (continuing)")
+    else:
+        report.append("⊘ shutter-profile not found (skipped)")
+
+    return {
+        'status': 'success',
+        'path': str(path),
+        'report': report
+    }
+
+
+def _create_wp_gitignore(plugin_names, theme_names, mu_plugin_names):
+    """Create a WordPress-aware .gitignore with three-tier pattern."""
+    lines = [
+        "# Environment and credentials",
+        ".env",
+        ".env.local",
+        "wp-config.php",
+        "wp-config-ddev.php",
+        "",
+        "# Database, archives, logs",
+        "*.sql",
+        "*.zip",
+        "*.wpress",
+        "*.log",
+        "",
+        "# IDE and OS",
+        ".DS_Store",
+        ".vscode/",
+        "*.swp",
+        "__pycache__/",
+        "*.pyc",
+        "",
+        "# Node (if used for builds)",
+        "node_modules/",
+        "npm-debug.log",
+        "",
+        "# Ignore everything in the \"public_html\" directory except the \"wp-content\"",
+        "# directory.",
+        "public_html/*",
+        "!public_html/wp-content/",
+        "",
+        "# Ignore everything in the \"wp-content\" directory, except the \"plugins\",",
+        "# \"themes\" and \"mu-plugins\" directories.",
+        "public_html/wp-content/*",
+        "!public_html/wp-content/plugins/",
+        "!public_html/wp-content/themes/",
+        "!public_html/wp-content/mu-plugins/",
+        "",
+        "# Ignore everything in the \"plugins\" directory, except the plugins we maintain.",
+        "public_html/wp-content/plugins/*",
+    ]
+
+    # Add plugin allowlists
+    if plugin_names:
+        for plugin in plugin_names:
+            lines.append(f"!public_html/wp-content/plugins/{plugin}/")
+    else:
+        lines.append("# !public_html/wp-content/plugins/<client>-custom/")
+
+    lines.extend([
+        "",
+        "# Ignore everything in the \"mu-plugins\" directory, except the mu-plugins we",
+        "# maintain.",
+        "public_html/wp-content/mu-plugins/*",
+    ])
+
+    # Add mu-plugin allowlists
+    if mu_plugin_names:
+        for mu_plugin in mu_plugin_names:
+            lines.append(f"!public_html/wp-content/mu-plugins/{mu_plugin}")
+    else:
+        lines.append("# !public_html/wp-content/mu-plugins/<client>-fixes.php")
+
+    lines.extend([
+        "",
+        "# Ignore everything in the \"themes\" directory, except the themes we maintain.",
+        "public_html/wp-content/themes/*",
+    ])
+
+    # Add theme allowlists
+    if theme_names:
+        for theme in theme_names:
+            lines.append(f"!public_html/wp-content/themes/{theme}/")
+    else:
+        lines.append("# !public_html/wp-content/themes/<client>-theme/")
+
+    lines.extend([
+        "",
+        "# Asana and project-internal",
+        "asana-mirror.md",
+        "asana-ids.json",
+        "",
+        "# Working folders",
+        "bin/",
+        "export/",
+        "import/",
+        "qa/",
+    ])
+
+    return "\n".join(lines) + "\n"
+
+
+def _create_generic_gitignore():
+    """Create a minimal generic .gitignore."""
+    return """.env
+.env.local
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+"""
+
+
+def _setup_ddev_config(path):
+    """Set up DDEV configuration with docroot pointing to public_html."""
+    config_path = path / '.ddev' / 'config.yaml'
+
+    if config_path.exists():
+        content = config_path.read_text()
+        if 'docroot:' in content:
+            if 'docroot: public_html' in content:
+                return "DDEV config: docroot already set to public_html"
+            else:
+                return "DDEV config: existing docroot found (manual review recommended)"
+        else:
+            # Append docroot line
+            content = content.rstrip() + "\ndocroot: public_html\n"
+            config_path.write_text(content)
+            return "DDEV config: docroot set to public_html (added to existing config)"
+    else:
+        # Create minimal config
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_content = """# .ddev Config file
+ddev_version: ">=1.23.0"
+docroot: public_html
+"""
+        config_path.write_text(config_content)
+        return "DDEV config: created with docroot set to public_html"
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Scaffold a new project directory with git repo.')
+    parser.add_argument('path', help='Absolute path for the new project directory')
+    parser.add_argument('name', nargs='?', help='Project name (defaults to directory basename)')
+    parser.add_argument('--wordpress', action='store_true', help='Create WordPress-aware structure')
+    parser.add_argument('--ddev', action='store_true', help='Set up DDEV configuration')
+    parser.add_argument('--plugin', action='append', dest='plugins', help='Custom plugin name (can be repeated)')
+    parser.add_argument('--theme', action='append', dest='themes', help='Custom theme name (can be repeated)')
+    parser.add_argument('--mu-plugin', action='append', dest='mu_plugins', help='Custom mu-plugin name (can be repeated)')
+
+    args = parser.parse_args()
+
+    result = scaffold_project(
+        path=args.path,
+        name=args.name,
+        is_wordpress=args.wordpress,
+        is_ddev=args.ddev,
+        plugin_names=args.plugins or [],
+        theme_names=args.themes or [],
+        mu_plugin_names=args.mu_plugins or []
+    )
+
+    if result['status'] == 'error':
+        print(f"Error: {result['message']}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"scaffold-dir: {result['path']}")
+    for line in result['report']:
+        print(f"  {line}")
+
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

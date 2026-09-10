@@ -1,5 +1,5 @@
 ---
-description: Creates and initialises a new project directory as a git repo
+description: Creates and initialises a new project directory as a git repo. Supports WordPress-aware structure with DDEV configuration.
 god: hephaestus
 invoke: /scaffold-dir
 tags:
@@ -8,42 +8,120 @@ tags:
 
 # scaffold-dir
 
-Creates a new project directory, initialises git, and wires up studio tooling. It's a standalone step but is also called by `/commission` as part of the full project setup flow.
+Creates a new project directory, initialises git, and generates appropriate `.gitignore` and directory structure. For WordPress projects, creates the standard three-tier .gitignore pattern and public_html docroot structure.
+
+It's a standalone step but is also called by `/commission` as part of the full project setup flow.
 
 ## Usage
 
 ```
-/scaffold-dir <path> [name]
+/scaffold-dir <path> [name] [options]
 ```
 
-- `path` — absolute path for the new project directory
+### Arguments
+
+- `path` — absolute path for the new project directory (required)
 - `name` — optional display name, used in the initial commit message. Defaults to the directory basename.
+- `--wordpress` — enable WordPress-aware structure with three-tier .gitignore and public_html docroot
+- `--ddev` — set up DDEV configuration (sets docroot to public_html in .ddev/config.yaml)
+- `--plugin NAME` — custom plugin name to allowlist (can be repeated, e.g. `--plugin acme-custom`)
+- `--theme NAME` — custom theme name to allowlist (can be repeated)
+- `--mu-plugin NAME` — custom mu-plugin to allowlist (can be repeated)
 
-**Example:**
+### Examples
+
+**Non-WordPress project:**
+
 ```
-/scaffold-dir /home/bain/code/vvv/clients/www/acme-corp "Acme Corp"
+/scaffold-dir /home/bain/code/projects/acme-site acme-site
+```
+
+**WordPress project with custom code:**
+
+```
+/scaffold-dir /home/bain/vvv/clients/www/acme acme --wordpress --plugin acme-custom --theme acme-theme
+```
+
+**WordPress DDEV project:**
+
+```
+/scaffold-dir /home/bain/ddev/acme acme --wordpress --ddev
 ```
 
 ## What it does
 
+### All projects
+
 1. **Validates** — aborts if the path is non-empty, or if the parent directory doesn't exist
-2. **Creates** `{path}/`
+2. **Creates** `{path}/`, `.claude/`, and `qa/` directories
 3. **Git init**
-4. **Writes** a minimal `.gitignore` (`.env`, `node_modules/`, `__pycache__/`, etc.)
+4. **Writes** `.gitignore` tailored to the project type
 5. **Initial commit** — `init: scaffold {name}`
-6. **Creates a Bitbucket repo and pushes** — runs `bb-repo-create --name "{name}" --workspace markbaindesign --branch main`, unconditionally (not asked first). Creates a private repo, sets `origin`, pushes the initial commit, and sets `main` as the Bitbucket-side default branch. A failure here doesn't abort the scaffold — it's reported and the directory/git/commit work from steps 2-5 stands regardless. See [bb-repo-create.md](../../utilities/bb-repo-create.md).
-7. **Creates a Shutter profile** — `shutter-profile create "{name}" "{path}/qa/qa-inbox"`, also creating the `qa/qa-inbox` directory. Skipped silently if `shutter-profile` is not on PATH.
+6. **Creates a Shutter profile** — for the `{path}/qa/qa-inbox` directory
+
+### WordPress projects (`--wordpress`)
+
+Additionally:
+
+- **Creates standard directories**: `bin/`, `export/`, `import/`, `scripts/`, `public_html/`
+- **Writes WordPress-aware .gitignore** with three-tier deny/allow pattern:
+  - **Tier 1**: Deny `public_html/*`, allow `wp-content/`
+  - **Tier 2**: Deny `wp-content/*`, allow `plugins/`, `themes/`, `mu-plugins/`
+  - **Tier 3**: Deny contents of each, re-allow only your named custom code
+- **Creates allowlists** for custom plugins/themes/mu-plugins (uncommented if specified, commented placeholders otherwise)
+
+### DDEV projects (`--ddev`)
+
+Additionally:
+
+- **Sets docroot** in `.ddev/config.yaml` to `public_html` (studio standard, not DDEV's repo-root default)
+
+## The three-tier .gitignore pattern
+
+The WordPress .gitignore prevents the entire vendor tree from being committed. Without the third tier, you risk committing hundreds of MB of third-party plugin/theme code.
+
+**Example allowlist for Acme Corp:**
+
+```gitignore
+# Ignore everything in the "plugins" directory, except the plugins we maintain.
+public_html/wp-content/plugins/*
+!public_html/wp-content/plugins/acme-custom/
+
+# Ignore everything in the "mu-plugins" directory, except the mu-plugins we maintain.
+public_html/wp-content/mu-plugins/*
+# !public_html/wp-content/mu-plugins/<client>-fixes.php
+
+# Ignore everything in the "themes" directory, except the themes we maintain.
+public_html/wp-content/themes/*
+!public_html/wp-content/themes/acme-theme/
+```
+
+If you don't specify custom names, the script leaves commented placeholders for you to edit later.
 
 ## Output
 
+**Non-WordPress:**
+
 ```
-scaffold-dir: /home/bain/code/vvv/clients/www/acme-corp
+scaffold-dir: /home/bain/code/projects/acme-site
   ✓ directory created
   ✓ git init
   ✓ .gitignore written
   ✓ initial commit
-  ✓ Bitbucket repo created and pushed: https://bitbucket.org/markbaindesign/acme-corp
-  ✓ shutter profile 'Acme Corp' created
+  ✓ shutter profile 'acme-site' created
+```
+
+**WordPress:**
+
+```
+scaffold-dir: /home/bain/vvv/clients/www/acme
+  ✓ directory created
+  ✓ git init
+  ✓ directories created (standard + WordPress)
+  ✓ .gitignore written (WordPress-aware)
+  ✓ DDEV config: created with docroot set to public_html
+  ✓ initial commit
+  ✓ shutter profile 'acme' created
 ```
 
 ## Shutter profile
@@ -51,7 +129,7 @@ scaffold-dir: /home/bain/code/vvv/clients/www/acme-corp
 The created profile points Shutter's save folder to `{path}/qa/qa-inbox` — screenshots land directly in the project's QA inbox. Launch Shutter for the project with:
 
 ```bash
-shutter --profile='Acme Corp'
+shutter --profile='acme'
 ```
 
 See [shutter.md](shutter.md) for full Shutter documentation.
@@ -59,6 +137,14 @@ See [shutter.md](shutter.md) for full Shutter documentation.
 ## In the commission flow
 
 `scaffold-dir` is step 2 of `/commission`, which also handles Asana project creation, studio registration, CLAUDE.md generation, and task seeding. Run `scaffold-dir` directly only when you need the directory without the full commission ceremony — e.g. internal tools, experiments, or projects not tracked in Asana.
+
+When used with `/commission`, pass WordPress flags in the commission arguments and they will be forwarded to scaffold-dir.
+
+## Reference
+
+- **WordPress project layout standard**: `/media/data/dev/bain-studio/docs/utilities/wp-project-layout.md`
+- **Example WordPress VVV project**: `/media/data/dev/vvv/clients/www/nore`
+- **Example WordPress DDEV project**: `/media/data/dev/ddev/ebiz-global`
 
 ## Related
 
