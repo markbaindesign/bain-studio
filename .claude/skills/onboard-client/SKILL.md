@@ -88,9 +88,18 @@ description) when it asks. This gives you:
 
 ## Step 3 — Tech access request
 
-Invoke `/tech-access-request` with the contact name from Step 1. Ask Mark
-which items (if any) he already has for this client, same as that skill
-normally does.
+Invoke `/tech-access-request` with the contact name from Step 1 and the Asana
+project GID captured in Step 2 (`--project-gid`). Ask Mark which items (if any)
+he already has for this client, same as that skill normally does.
+
+That skill produces three things, not one: the client-facing request
+(`.md` + `.pdf`), **one Asana task per access item** plus a "Tech access
+complete" sign-off task, and `access-record.md` — the internal record of what
+access actually exists, filled in as items land. Pass the GID or the tasks
+land nowhere, and Asana is where Mark monitors this.
+
+Do not duplicate those access tasks in the Step 6 checklist. They already
+exist on the board by the time Step 6 runs.
 
 Save the output into the client's Dropbox folder, not the codebase and not the
 shared template folder:
@@ -115,12 +124,66 @@ run once credentials land (see Step 4).
 
 ## Step 4 — DDEV codebase
 
-Inside `/media/data/dev/ddev/{slug}` (created in Step 2):
+Inside `/media/data/dev/ddev/{slug}` (created in Step 2).
 
-1. `ddev config` — project type `wordpress`, docroot as appropriate, PHP
-   version per current studio default, database matching Periphetes'
-   convention (`bd324_` prefix on the DB name).
-2. `ddev start`
+**WordPress always lives in `public_html/`, never at the repo root.** This is
+the studio standard, set by the VVV-era projects (`nore`, `buddhist-film-
+foundation`) and carried forward to DDEV. A project with `wp-admin/` sitting
+next to `CLAUDE.md` is wrong and has to be restructured later, so get it right
+on the first pass.
+
+The full directory standard:
+
+```
+{slug}/
+├── public_html/     ← WordPress core + wp-content. The docroot.
+├── scripts/         ← deploy.sh, sync helpers, one-off migration scripts
+├── import/          ← DB dumps coming IN (from the client's host)
+├── export/          ← artefacts going OUT
+├── backups/         ← local safety copies before destructive work
+├── docs/            ← project docs, ADRs
+├── qa/              ← QA inbox, per the /qa skill
+├── .ddev/config.yaml
+├── wp-cli.yml
+├── .gitignore
+└── README.md
+```
+
+`provision/` and `log/` are deliberately absent — they are VVV artefacts
+(`vvv-init.sh`, nginx logs) and DDEV covers both.
+
+**Do not build this by hand.** One call to `/scaffold-dir` produces the whole
+tree above, the three-tier `.gitignore`, `wp-cli.yml` with `path: public_html`,
+the DDEV config with **`docroot: public_html`**, and a git repo on `main` with
+`develop` branched:
+
+```bash
+/scaffold-dir /media/data/dev/ddev/{slug} {slug} --wordpress --ddev \
+    --php 8.2 --db mariadb:11.8 --wp-version latest \
+    --plugin {slug}-custom --theme {slug}-theme
+```
+
+Match the client's host on `--php`, `--db` and `--wp-version` — a legacy site on
+PHP 7.4 and MySQL 5.7 must be scaffolded that way, or local will not match live.
+
+Then:
+
+1. `ddev start`
+2. For a **new build**: `./scripts/install-wp.sh` — installs WordPress with admin
+   user `bain_324` and prints a generated password. Akismet and Hello Dolly are
+   removed; one default theme is kept so the site renders.
+   For a **migration**: import the client's files and database instead, and skip
+   the install script.
+
+Two things `/scaffold-dir` does **not** do, which still need doing by hand:
+
+- The database name does not follow Periphetes' convention (`bd324_` prefix) —
+  DDEV names it `db`. Set it in `.ddev/config.yaml` if the project needs it.
+- `CLAUDE.md` and `.claude/settings.json` come from `/commission` and
+  `/register-project`, not from the scaffolder.
+
+See ADR 016 for why this is `/scaffold-dir` rather than a separate `wp-scaffold`
+tool, which was considered and rejected.
 
 Then branch on project type from Step 1:
 
@@ -137,9 +200,10 @@ Then branch on project type from Step 1:
   Step 6 checklist:
   ```
   Once tech access arrives:
-    - Pull files: rsync/SFTP the wp-content (and full docroot if needed)
-      into /media/data/dev/ddev/{slug}
-    - Pull DB: export from the client's host, `ddev import-db --file=...`
+    - Pull files: rsync/SFTP the client's docroot into
+      /media/data/dev/ddev/{slug}/public_html/
+      (NOT the repo root — that produces the wrong structure)
+    - Pull DB: dump into import/, then `ddev import-db --file=import/...`
     - `ddev wp search-replace 'https://livesite.com' 'https://{slug}.ddev.site'`
   ```
   This is a "come back once you have access" item, not something this skill
@@ -228,6 +292,13 @@ are now the actual source of truth for follow-up.
 
 - **Don't guess project type, prefix, or client name** — always ask in
   Step 1.
+- **Never install WordPress at the repo root.** Docroot is `public_html/`,
+  always. `ebiz-global` and `techstyle` predate this rule and are both wrong;
+  don't copy their layout when looking for a reference. Use `nore` or
+  `buddhist-film-foundation` instead.
+- **Don't let the tech access step run without a project GID** — the Asana
+  tasks are how Mark tracks access, and a run that skips them looks finished
+  while leaving nothing to monitor.
 - **Watch commission's output for the ownership warning** — `sync.py` uses
   `ASANA_USER_PAT` (`bain-studio/studio/.env`) automatically when present, so
   projects are owned by Mark today. If that ever changes, name/icon become
