@@ -229,3 +229,19 @@ afterwards, since a core install by other means can bring them back.
 when `--admin_password` is omitted. The script is committed, so a password in it would be a
 credential in git; the generated-and-printed route avoids that entirely. Site title, admin
 email and URL are environment-overridable.
+
+### End-to-end test, 2026-09-11
+
+Scaffolded, started DDEV and ran the generated install script against a real container set
+(PHP 8.3, mariadb 11.8, WordPress pinned to 6.6.2). Verified: core reported 6.6.2, the only
+user was `bain_324` as administrator, and both the plugin and theme lists were empty.
+
+It also caught something reading the code would not have. The front end returned **HTTP 200
+with a zero-byte body**: `wp-admin` redirected normally, so WordPress was healthy, but
+`--skip-content` means no theme is downloaded and `--theme NAME` only creates an empty
+directory with a `.gitkeep` in it. WordPress cannot render without a theme, so the site
+serves nothing.
+
+That gap closes when the `--type` templates land (ADR 016) and `--theme` produces a real
+minimal theme. Until then the install script checks for an installed theme and says so
+explicitly, rather than leaving a blank page to be puzzled over.

@@ -397,6 +397,18 @@ ddev wp core install \\
 ddev wp plugin delete akismet hello 2>/dev/null || true
 ddev wp theme list --field=name | grep '^twenty' | xargs -r ddev wp theme delete 2>/dev/null || true
 
+# WordPress cannot render without a theme, and core was downloaded with
+# --skip-content, so there may be none. Say so plainly rather than leaving a
+# blank page to be puzzled over.
+if [ -z "$(ddev wp theme list --field=name 2>/dev/null)" ]; then
+    echo
+    echo "WARNING: no theme is installed, so the front end will serve an empty page."
+    echo "         Add one under public_html/wp-content/themes/ and activate it:"
+    echo "           ddev wp theme activate <slug>"
+else
+    ddev wp theme list --field=name,status
+fi
+
 echo
 echo "Installed. Admin user: $ADMIN_USER — the generated password is printed above."
 """

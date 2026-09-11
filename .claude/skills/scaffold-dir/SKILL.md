@@ -61,6 +61,11 @@ flags ever change, or core arrives by some other route, the result is still clea
 generated install script repeats the removal after `wp core install`, which can bring them
 back.
 
+**A scaffolded site has no theme, and so renders nothing.** Core is downloaded with
+`--skip-content` and `--theme NAME` only creates an empty allowlisted directory, so the front
+end serves an empty page until a real theme is added and activated. This is expected until
+the `--type` templates land (ADR 016); the install script warns about it explicitly.
+
 **WordPress is not installed at scaffold time** - `wp core install` needs a running database,
 so the containers have to be up first. The scaffold writes `scripts/install-wp.sh` instead,
 with the admin user baked in, to be run once after `ddev start`:
