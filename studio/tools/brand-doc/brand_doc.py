@@ -103,9 +103,9 @@ def build_styles(F):
     add('BH5', fontName=F['MonoMedium'], fontSize=10, textColor=GRAPHITE, spaceBefore=5,  spaceAfter=2,  leading=14)
     add('BH6', fontName=F['MonoMedium'], fontSize=9,  textColor=PENCIL,   spaceBefore=4,  spaceAfter=2,  leading=13)
 
-    add('BBody',     fontName=F['Serif'],      fontSize=11, textColor=INK,     spaceAfter=7,  leading=17)
-    add('BListItem', fontName=F['Serif'],      fontSize=11, textColor=INK,     spaceAfter=4,  leading=16, leftIndent=16, bulletIndent=2)
-    add('BQuote',    fontName=F['SerifItalic'],fontSize=11, textColor=GRAPHITE, spaceBefore=4, spaceAfter=4, leading=17, leftIndent=12)
+    add('BBody',     fontName=F['Serif'],      fontSize=11, textColor=INK,     spaceAfter=7,  leading=15)
+    add('BListItem', fontName=F['Serif'],      fontSize=11, textColor=INK,     spaceAfter=4,  leading=14.5, leftIndent=16, bulletIndent=2)
+    add('BQuote',    fontName=F['SerifItalic'],fontSize=11, textColor=GRAPHITE, spaceBefore=4, spaceAfter=4, leading=15, leftIndent=12)
     add('BCaption',  fontName=F['Code'],       fontSize=8,  textColor=PENCIL,  spaceAfter=3,  leading=11)
     add('BTableHead',fontName=F['MonoBold'],   fontSize=9,  textColor=INK,     spaceAfter=0,  leading=13)
     add('BTableCell',fontName=F['Serif'],      fontSize=9.5,textColor=INK,     spaceAfter=0,  leading=13)
