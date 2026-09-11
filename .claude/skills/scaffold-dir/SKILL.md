@@ -1,6 +1,6 @@
 ---
 name: scaffold-dir
-description: Create a new project directory and initialise it as a git repo on main with a develop branch. Supports WordPress-aware structure with DDEV configuration. Args: path [name] [--wordpress] [--ddev] [--php VERSION] [--plugin NAME] [--theme NAME] [--mu-plugin NAME]
+description: Create a new project directory and initialise it as a git repo on main with a develop branch. Supports WordPress-aware structure with DDEV configuration. Args: path [name] [--wordpress] [--ddev] [--php VERSION] [--db TYPE:VERSION] [--plugin NAME] [--theme NAME] [--mu-plugin NAME]
 allowed-tools: [Bash, Write]
 ---
 
@@ -21,6 +21,24 @@ Create a project directory and git repo at the given path. Optional WordPress su
 - **--wordpress**: Enable WordPress-aware .gitignore with public_html structure and standard directories
 - **--ddev**: Set up DDEV configuration (sets docroot to public_html, and creates it)
 - **--php VERSION**: PHP version for the DDEV config. Defaults to `8.2`.
+- **--db TYPE:VERSION**: Database for the DDEV config. Defaults to `mariadb:11.8`
+  (DDEV's own default, and what existing studio projects run).
+
+**Match the client's host on both.** A client project inherits whatever their host runs, and
+scaffolding to studio defaults is how you get "works locally, breaks live". Legacy sites are
+routinely on MySQL rather than MariaDB, and on older PHP:
+
+```bash
+/scaffold-dir /media/data/dev/ddev/oldclient oldclient \
+    --wordpress --ddev --php 7.4 --db mysql:5.7
+```
+
+DDEV does **not** validate these at config time - it writes whatever it is given and the
+container fails later - so the script checks their shape up front, before anything is
+created. `--db mysql8.0` and `--php 8` are both rejected with a usable message.
+
+WordPress's own version is not set here, because this script does not install WordPress. It
+is recorded in `docs/installed-versions.md` instead (below).
 - **--plugin NAME**: Custom plugin name to allowlist (e.g., `--plugin acme-custom`). Can be repeated.
 - **--theme NAME**: Custom theme name to allowlist (e.g., `--theme acme-theme`). Can be repeated.
 - **--mu-plugin NAME**: Custom mu-plugin to allowlist (e.g., `--mu-plugin acme-fixes.php`). Can be repeated.
@@ -76,6 +94,7 @@ project-root/
 ├── public_html/    docroot: WordPress core, wp-content, wp-config.php
 ├── README.md
 ├── wp-cli.yml      path: public_html
+├── docs/installed-versions.md   seeded manifest, see below
 └── .gitignore
 ```
 
@@ -85,6 +104,12 @@ The working folders are ignored **by content** (`bin/*`) rather than wholesale (
 
 This layout follows `docs/utilities/wp-project-layout.md`, which is authoritative where it
 and any other source disagree. See ADR 016.
+
+**`docs/installed-versions.md`:** the .gitignore deliberately excludes `plugins/` and
+`themes/`, which loses the record of what is actually installed. `wp-project-layout.md`
+requires a committed manifest in its place, so the scaffold seeds one - pre-filled with the
+target PHP and database, and with the commands to regenerate it. Left uncreated it is simply
+forgotten, and the repo ends up with no record of its own stack.
 
 **A note on `wp-cli.yml`:** many setups carry a VVV-era `wp-cli.yml` entry in the global
 gitignore, which silently prevents it being tracked. The script checks for this after writing

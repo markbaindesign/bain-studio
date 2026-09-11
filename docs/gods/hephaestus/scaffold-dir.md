@@ -180,3 +180,18 @@ One environment finding surfaced during review: `wp-cli.yml` is listed in
 project file that should be versioned. The script now warns when a file it wrote is ignored,
 naming the gitignore and line, rather than force-adding over a deliberate user setting.
 Removing that line from the global gitignore is a separate decision for Mark.
+
+### Client stacks, 2026-09-11
+
+Client projects inherit whatever their host runs, so PHP and database are now both flags:
+`--php` (default 8.2) and `--db TYPE:VERSION` (default `mariadb:11.8`). DDEV does not
+validate either at config time - it writes what it is given and the container fails later -
+so `scaffold.py` checks their shape before creating anything.
+
+The previous hardcoded `mariadb 10.11` came from `wp-scaffold/PLAN.md` and was already stale:
+DDEV 1.25's own default is `mariadb:11.8`, which is what existing studio projects run.
+
+WordPress's own version is not settable here - this script does not install WordPress. It is
+recorded in `docs/installed-versions.md`, which the scaffold now seeds, pre-filled with the
+target PHP and database. That manifest is required by `wp-project-layout.md` because the
+.gitignore excludes `plugins/` and `themes/`, leaving no other record of what is installed.
