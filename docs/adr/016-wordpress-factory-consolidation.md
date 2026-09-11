@@ -1,4 +1,4 @@
-# ADR 016 — Four WordPress factory repos consolidate into two
+# ADR 016 — Four WordPress factory repos consolidate into one
 
 Date: 2026-09-11
 Status: Accepted
@@ -36,12 +36,22 @@ Two further findings shaped the decision:
 
 Four repos become two.
 
-### 1. One scaffolder, `--type` selects the theme template
+### 1. One scaffolder - the existing `scaffold-dir`, extended with `--type`
 
-Everything `wp-scaffold` generates above `wp-content/` - the DDEV config, `.gitignore`,
-`wp-cli.yml`, `scripts/`, `import/`, `export/`, `backups/`, `docs/`, `qa/` - is
-project-type agnostic. Only the theme inside varies. Splitting into a script per type would
-duplicate the shared 80%, including the `docroot: public_html` line already got wrong twice.
+Everything generated above `wp-content/` - the DDEV config, `.gitignore`, `wp-cli.yml`,
+`scripts/`, `import/`, `export/`, `backups/`, `docs/`, `qa/` - is project-type agnostic.
+Only the theme inside varies. Splitting into a script per type would duplicate the shared
+80%, including the `docroot: public_html` line already got wrong twice.
+
+**That shared skeleton is already built.** `/scaffold-dir`'s `scaffold.py` (BSTD-790,
+commit eaf86b9, 2026-09-10) creates it and writes the three-tier `.gitignore` and the DDEV
+docroot. So the scaffolder is not a new tool: `--type` is added to `scaffold.py`, and
+**no `wp-scaffold` repo is created**. Theme templates and fixtures live in
+`bain-studio/templates/wp/`, referenced by path.
+
+This also keeps the shape the studio's tooling rule asks for - `scaffold.py` does the work,
+the skill is a trigger for a long argument list - and keeps project creation inside the
+existing `/commission` → `/scaffold-dir` → `/register-project` chain.
 
 v1 supports three types:
 
@@ -54,6 +64,12 @@ No `classic-product`. Starting a new classic theme for wordpress.org today is a 
 `block-product` differs from the client types by addition (wordpress.org-format `readme.txt`,
 GPL headers, translation-ready strings) and by subtraction (no `import/` or `backups/` -
 there is no client database; and **no custom post types**).
+
+**The shared skeleton is the union of the three sources**, resolving the disagreement noted
+under Consequences. `scaffold.py` today creates `.claude/`, `qa/`, `bin/`, `export/`,
+`import/`, `scripts/` and `public_html/`; it must additionally create `context/`, `docs/`,
+`backups/`, `wp-cli.yml` (with `path: public_html`) and `README.md`. Directories are created
+empty with `.gitkeep` rather than left to appear ad hoc.
 
 ### 2. Content seeding is a separate, re-runnable command
 
@@ -105,18 +121,29 @@ The merge runs in this direction because `wp-theme-factory` has the git history,
 project (WTF) and six live tasks, while `wp-repo-factory` has a single markdown file, no git
 and no Asana. Merging into the one with infrastructure is far cheaper than the reverse.
 
-### 6. bain-theme-factory folds into wp-scaffold and is deleted
+### 6. bain-theme-factory is dissolved; Slipstream is a product
 
-The decisions above hollowed it out. Scaffolding belongs to `wp-scaffold`; products belong to
-the renamed product repo; the `wp-block-theme` skill written the same day lives in
-`bain-skills`. What remained was Slipstream and a superseded spec.
+The decisions above hollowed it out. Scaffolding belongs to `scaffold-dir`; the
+`wp-block-theme` skill written the same day lives in `bain-skills`. What remained was
+Slipstream and a superseded spec.
 
-- **Slipstream** becomes the donor skeleton for the `block-client` and `block-product`
-  templates - bones kept, signature moves (the slip wordmark, the bracket marks, the ink
-  block styles) stripped. It stays a reference implementation and is explicitly **not** a
-  candidate product: it was built to a deliberately bespoke brief, and a wordpress.org theme
-  needs neutrality.
-- **`css-foundation-spec.md`** becomes a decision record inside `wp-scaffold/docs/`. It is
+- **Slipstream is a product**, and moves to the renamed product repo to be finished and
+  submitted. An earlier draft of this ADR called it a reference implementation and "explicitly
+  not a candidate product", on the reasoning that a wordpress.org theme needs neutrality.
+  That reasoning was wrong - opinionated themes ship there routinely - and Mark's call is that
+  it is a product. Its README already lists what stands between it and submission: the
+  upstream `OFL.txt` for both font families is not yet shipped (OFL 1.1 requires the notice to
+  travel with the files), pattern copy is placeholder with real facts needed wherever there
+  are `[square brackets]`, `patterns/plate.php` draws stand-ins where photographs go, and
+  there is no `style.min.css`.
+- **The block template is forked from Slipstream once**, now, and the two then diverge. The
+  fork keeps the bones - `theme.json` structure, the layer contract and `foundation.css`, the
+  `functions.php` enqueues, the nine templates and two parts - and drops the signature moves
+  (the slip wordmark, the bracket marks, the ink block styles) along with the
+  `remove_theme_support( 'core-block-patterns' )` call, which is a bespoke choice rather than
+  a studio default. It lands in `bain-studio/templates/wp/block/`. After the cut, changes to
+  Slipstream do not propagate to the template and vice versa.
+- **`css-foundation-spec.md`** becomes a decision record in `bain-studio/docs/`. It is
   not merely stale - Slipstream **contradicted** it. The spec proposes a named-line grid
   (`.l-page`) for containment; Slipstream deliberately ships no such thing, because
   `useRootPaddingAwareAlignments` already puts the gutter on the root and lets `alignfull`
@@ -124,12 +151,33 @@ the renamed product repo; the `wp-block-theme` skill written the same day lives 
   Its one genuinely open thread is the **non-WordPress** case the spec wanted to serve;
   Slipstream answers only the WordPress half, by handing containment to WordPress.
 
+## Resolved — `scaffold-dir` already existed
+
+Found immediately after the decisions above were first taken, and it reshaped decisions 1
+and 6.
+
+`bain-studio` was sitting on `feature/bstd-790-scaffold-wp-gitignore`, one commit (eaf86b9,
+2026-09-10), which taught `/scaffold-dir` WordPress-aware scaffolding: a 273-line
+`scaffold.py` creating `.claude/`, `qa/`, `bin/`, `export/`, `import/`, `scripts/` and
+`public_html/`, writing the three-tier `.gitignore` and setting DDEV's docroot to
+`public_html`, with `--wordpress`, `--ddev`, `--plugin`, `--theme` and `--mu-plugin`.
+BSTD-790 is at Looper Status **Review**, not merged. It writes no theme or plugin files.
+
+Building a separate `new-project.sh` would therefore have been a second scaffolder
+duplicating a first that was awaiting review - precisely the duplication this ADR exists to
+end. Resolved by extending `scaffold-dir` rather than replacing it, and by not creating the
+`wp-scaffold` repo at all. Decisions 1 and 6 above are written as resolved.
+
 ## Consequences
 
-- Four repos become two: `wp-scaffold` (build) and the renamed product repo (distribute),
-  alongside `bain-skills`, which already holds the block theme knowledge.
-- `wp-scaffold` and the product repo must both become real git repos. Neither is one today.
-- `/onboard-client` step 4 should call `new-project.sh` instead of building structure by hand.
+- Four repos become one: the renamed product repo. Building moves into `bain-studio`
+  (`scaffold-dir` plus `templates/wp/`), and the block theme knowledge is already in
+  `bain-skills`. `bain-theme-factory`, `wp-repo-factory` and `wp-scaffold` all disappear -
+  the last was never created.
+- The product repo must become a real git repo. It is one today (`wp-theme-factory`), but
+  needs the rename and the merge.
+- BSTD-790 must be reviewed and merged before `--type` is added on top of it.
+- `/onboard-client` step 4 should call `/scaffold-dir` instead of building structure by hand.
 - **`docs/utilities/wp-project-layout.md` is authoritative for the shared skeleton, not
   `wp-scaffold/PLAN.md`.** The layout doc was written 2026-09-09, after the same two projects
   drifted, and the two disagree: the layout doc carries `bin/`, `context/`, `.claude/` and
@@ -151,48 +199,15 @@ the renamed product repo; the `wp-block-theme` skill written the same day lives 
   checklist superseded by `wp-scaffold/PLAN.md` and this ADR. It should be archived.
 - Nothing has been moved or deleted on disk as of this ADR. The repo changes are pending.
 
-## Open conflict — `scaffold-dir` already exists
-
-Found immediately after the decisions above were taken, and it affects decisions 1 and 6.
-
-`bain-studio` is sitting on `feature/bstd-790-scaffold-wp-gitignore`, one commit (eaf86b9,
-2026-09-10), which taught the existing `/scaffold-dir` skill WordPress-aware scaffolding:
-a 273-line `scaffold.py` that creates `.claude/`, `qa/`, `bin/`, `export/`, `import/`,
-`scripts/` and `public_html/`, writes the three-tier `.gitignore`, and sets DDEV's docroot to
-`public_html`. It supports `--wordpress`, `--ddev`, `--plugin`, `--theme` and `--mu-plugin`.
-BSTD-790 is at Looper Status **Review**, not merged.
-
-It writes **no theme or plugin files** - only `.gitignore` and the DDEV config.
-
-So the shared skeleton that decision 1 is about is already built, and building
-`new-project.sh` in `wp-scaffold` would be a second scaffolder duplicating a first that is
-awaiting review. That is precisely the duplication this ADR exists to end.
-
-What is genuinely missing is the dimension decision 1 actually adds: **`--type`, selecting a
-theme template**, plus the template content itself and the seeding of decisions 2 and 3.
-
-Two ways to resolve, not yet chosen:
-
-- **Extend `scaffold-dir`.** Add `--type classic-client|block-client|block-product` to the
-  existing `scaffold.py`; `wp-scaffold` supplies templates and fixtures as data rather than a
-  script, or is not needed as a repo at all. Keeps one scaffolder, in the `/commission` chain
-  where project creation already lives.
-- **Build `wp-scaffold` as decided and retire `scaffold-dir`'s WordPress mode.** Cleaner
-  separation of a standalone tool from the studio skill set, at the cost of discarding
-  BSTD-790's work or porting it.
-
-Until this is resolved, **do not start `new-project.sh`.** Decisions 2, 3, 4 and 5 are
-unaffected; decision 6's disposal of `bain-theme-factory` depends on where the block template
-ends up living.
-
 ## Sequencing
 
-0. **Resolve the `scaffold-dir` conflict above.** Everything below assumes a home for the
-   scaffolder has been chosen.
-1. Reconcile `wp-project-layout.md` with `wp-scaffold/PLAN.md`, then implement the three
-   types against the reconciled layout.
-2. Add seeding, `--unit-test` first - it is nearly free.
-3. Merge and rename the product repos.
-4. Fold `bain-theme-factory` in; delete it.
-5. Retire `css-foundation-spec.md` into a decision record, keeping the non-WordPress
-   question open.
+1. Review and merge BSTD-790 (`feature/bstd-790-scaffold-wp-gitignore`).
+2. Extend `scaffold.py` to create the union skeleton - add `context/`, `docs/`, `backups/`,
+   `wp-cli.yml`, `README.md`.
+3. Fork the neutral block template out of Slipstream into `bain-studio/templates/wp/block/`.
+4. Add `--type classic-client|block-client|block-product` to `scaffold.py`.
+5. Add seeding, `--unit-test` first - it is nearly free.
+6. Merge `wp-repo-factory` into `wp-theme-factory`, rename it, move Slipstream in.
+7. Delete `bain-theme-factory`; retire `css-foundation-spec.md` into a decision record,
+   keeping the non-WordPress question open.
+8. Repoint `/onboard-client` step 4 at `/scaffold-dir`.
