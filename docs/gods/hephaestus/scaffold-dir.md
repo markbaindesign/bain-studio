@@ -195,3 +195,19 @@ WordPress's own version is not settable here - this script does not install Word
 recorded in `docs/installed-versions.md`, which the scaffold now seeds, pre-filled with the
 target PHP and database. That manifest is required by `wp-project-layout.md` because the
 .gitignore excludes `plugins/` and `themes/`, leaving no other record of what is installed.
+
+### Pinning WordPress core
+
+`--wp-version X.Y[.Z]` or `latest` downloads core into `public_html/` using local wp-cli,
+which needs neither a database nor a running container. `--skip-content` is always passed, so
+the bundled themes and plugins never arrive; `scaffold.py` creates the
+`wp-content/{plugins,themes,mu-plugins}` skeleton itself, plus a `.gitkeep` in each
+allowlisted custom plugin and theme directory so the tree survives a clone.
+
+Omitting the flag downloads nothing, which is the right default: most client work imports the
+client's own files rather than starting from a clean core.
+
+Core is never committed - the .gitignore excludes everything under `public_html/` except
+`wp-content/`, which is correct, since core is vendor code. The pinned version is recorded in
+`docs/installed-versions.md` instead. That is the only durable record of which core a project
+targets, which is a further reason the manifest is seeded rather than left to be remembered.

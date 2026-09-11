@@ -12,7 +12,7 @@ from pathlib import Path
 
 def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
                      plugin_names=None, theme_names=None, mu_plugin_names=None,
-                     php_version='8.2', database='mariadb:11.8'):
+                     php_version='8.2', database='mariadb:11.8', wp_version=None):
     """
     Create a new project directory with git repo and optional WordPress structure.
 
@@ -26,6 +26,7 @@ def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
         mu_plugin_names: List of custom mu-plugin names to allowlist
         php_version: PHP version for the DDEV config
         database: Database as TYPE:VERSION for the DDEV config
+        wp_version: WordPress core version to pin, or 'latest'. None downloads nothing.
 
     Returns:
         dict with status and messages
@@ -49,6 +50,11 @@ def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
         return {
             'status': 'error',
             'message': f"--php must be MAJOR.MINOR, e.g. 8.2 (got '{php_version}')."
+        }
+    if wp_version and not re.fullmatch(r'latest|[0-9]+\.[0-9]+(\.[0-9]+)?', wp_version):
+        return {
+            'status': 'error',
+            'message': f"--wp-version must be latest or X.Y[.Z], e.g. 6.4.3 (got '{wp_version}')."
         }
 
     report = []
@@ -132,12 +138,43 @@ def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
             "## Target stack\n\n"
             f"- PHP: {php_version}\n"
             f"- Database: {database}\n"
-            "- WordPress: _record the client's version here_\n\n"
+            "- WordPress: " + (wp_version or "_record the client's version here_") + "\n\n"
             "## WordPress core\n\n_not yet installed_\n\n"
             "## Plugins\n\n_not yet installed_\n\n"
             "## Themes\n\n_not yet installed_\n"
         )
         report.append("✓ wp-cli.yml + README.md + docs/installed-versions.md written")
+
+        # wp-content skeleton. Core is downloaded with --skip-content so the
+        # bundled themes and plugins do not arrive, which means these have to be
+        # created here. The named custom dirs are allowlisted in .gitignore, so a
+        # .gitkeep in them is tracked and the clone carries the full tree.
+        wp_content = path / 'public_html' / 'wp-content'
+        for sub in ('plugins', 'themes', 'mu-plugins'):
+            (wp_content / sub).mkdir(parents=True, exist_ok=True)
+        for sub, names in (('plugins', plugin_names), ('themes', theme_names)):
+            for n in names:
+                (wp_content / sub / n).mkdir(parents=True, exist_ok=True)
+                (wp_content / sub / n / '.gitkeep').touch()
+        report.append("✓ wp-content skeleton created")
+
+    # 5c. WordPress core, pinned. Only on request - most client projects import
+    # the client's own files rather than a clean core.
+    if wp_version:
+        have_wp = subprocess.run(['which', 'wp'], capture_output=True).returncode == 0
+        if not have_wp:
+            report.append(f"⊘ wp-cli not found — WordPress {wp_version} NOT downloaded")
+        else:
+            cmd = ['wp', 'core', 'download', '--path=public_html', '--skip-content']
+            if wp_version != 'latest':
+                cmd.append(f'--version={wp_version}')
+            done = subprocess.run(cmd, cwd=path, capture_output=True, text=True)
+            if done.returncode == 0:
+                report.append(f"✓ WordPress {wp_version} downloaded (--skip-content)")
+            else:
+                err = (done.stderr or done.stdout).strip().splitlines()
+                report.append(f"⚠ WordPress {wp_version} download failed: "
+                              f"{err[-1] if err else 'unknown error'}")
 
         # A global or system gitignore can silently swallow a file we just
         # wrote - wp-cli.yml is a VVV-era entry in many setups. Say so rather
@@ -348,6 +385,9 @@ def main():
     parser.add_argument('--ddev', action='store_true', help='Set up DDEV configuration')
     parser.add_argument('--php', default='8.2',
                         help='PHP version for DDEV config (default: 8.2). Match the client host.')
+    parser.add_argument('--wp-version', dest='wp_version', default=None,
+                        help="Pin WordPress core: X.Y[.Z] or 'latest'. Downloads core into "
+                             "public_html (needs wp-cli). Omit to download nothing.")
     parser.add_argument('--db', default='mariadb:11.8', dest='database',
                         help='Database as TYPE:VERSION (default: mariadb:11.8). '
                              'Match the client host, e.g. mysql:8.0, mysql:5.7, mariadb:10.4.')
@@ -366,7 +406,8 @@ def main():
         theme_names=args.themes or [],
         mu_plugin_names=args.mu_plugins or [],
         php_version=args.php,
-        database=args.database
+        database=args.database,
+        wp_version=args.wp_version
     )
 
     if result['status'] == 'error':

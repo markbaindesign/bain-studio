@@ -1,6 +1,6 @@
 ---
 name: scaffold-dir
-description: Create a new project directory and initialise it as a git repo on main with a develop branch. Supports WordPress-aware structure with DDEV configuration. Args: path [name] [--wordpress] [--ddev] [--php VERSION] [--db TYPE:VERSION] [--plugin NAME] [--theme NAME] [--mu-plugin NAME]
+description: Create a new project directory and initialise it as a git repo on main with a develop branch. Supports WordPress-aware structure with DDEV configuration. Args: path [name] [--wordpress] [--ddev] [--php VERSION] [--db TYPE:VERSION] [--wp-version X.Y.Z] [--plugin NAME] [--theme NAME] [--mu-plugin NAME]
 allowed-tools: [Bash, Write]
 ---
 
@@ -37,8 +37,23 @@ DDEV does **not** validate these at config time - it writes whatever it is given
 container fails later - so the script checks their shape up front, before anything is
 created. `--db mysql8.0` and `--php 8` are both rejected with a usable message.
 
-WordPress's own version is not set here, because this script does not install WordPress. It
-is recorded in `docs/installed-versions.md` instead (below).
+- **--wp-version X.Y[.Z] | latest**: Pin WordPress core. Downloads it into `public_html/`
+  with `--skip-content`, so the bundled themes and plugins do not arrive. Omit it and nothing
+  is downloaded - which is right for a migration, where the client's own files are imported.
+
+```bash
+# a legacy site stuck on an old core
+/scaffold-dir /media/data/dev/ddev/oldclient oldclient \
+    --wordpress --ddev --php 7.4 --db mysql:5.7 --wp-version 6.4.3
+```
+
+Core is downloaded with local wp-cli, which needs no database and no running container. If
+wp-cli is absent the step is skipped with a note rather than failing the scaffold. The pinned
+version is also written into `docs/installed-versions.md`.
+
+Note that core is **not** committed - the `.gitignore` excludes everything under
+`public_html/` except `wp-content/`, which is correct: core is vendor code. The pin lives in
+the manifest, which is why that file matters.
 - **--plugin NAME**: Custom plugin name to allowlist (e.g., `--plugin acme-custom`). Can be repeated.
 - **--theme NAME**: Custom theme name to allowlist (e.g., `--theme acme-theme`). Can be repeated.
 - **--mu-plugin NAME**: Custom mu-plugin to allowlist (e.g., `--mu-plugin acme-fixes.php`). Can be repeated.
