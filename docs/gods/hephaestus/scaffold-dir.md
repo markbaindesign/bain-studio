@@ -245,3 +245,21 @@ serves nothing.
 That gap closes when the `--type` templates land (ADR 016) and `--theme` produces a real
 minimal theme. Until then the install script checks for an installed theme and says so
 explicitly, rather than leaving a blank page to be puzzled over.
+
+### Amendment, 2026-09-11 — keep the default theme
+
+The first pass downloaded core with `--skip-content` and stripped every bundled theme, which
+produced a WordPress install serving a zero-byte front page: healthy, but unable to render
+because no theme existed. Mark's call is that a scaffolded site should be usable for testing
+straight away.
+
+So core is now downloaded *with* its content, and `_strip_default_content()` removes Akismet,
+Hello Dolly and every bundled theme **except the default**. The one kept is read from
+`WP_DEFAULT_THEME` in `wp-includes/default-constants.php`, so it matches the core version
+actually downloaded instead of a slug hardcoded here - a pinned 6.4.3 keeps
+`twentytwentyfour`, latest keeps `twentytwentyfive`. `wp core install` activates it by itself,
+and the install script deletes only *inactive* bundled themes so the active one survives.
+
+Verified end to end: WordPress 6.6.2, `bain_324` sole administrator, no plugins,
+`twentytwentyfour` active, front end HTTP 200 at 84,406 bytes with the correct title. The
+previous run of the same test returned 0 bytes.

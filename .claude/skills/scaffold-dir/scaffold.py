@@ -147,9 +147,8 @@ def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
         )
         report.append("✓ wp-cli.yml + README.md + docs/installed-versions.md written")
 
-        # wp-content skeleton. Core is downloaded with --skip-content so the
-        # bundled themes and plugins do not arrive, which means these have to be
-        # created here. The named custom dirs are allowlisted in .gitignore, so a
+        # wp-content skeleton. Created up front so the tree exists even when no
+        # core is downloaded at all; a later core download merges into it. The named custom dirs are allowlisted in .gitignore, so a
         # .gitkeep in them is tracked and the clone carries the full tree.
         wp_content = path / 'public_html' / 'wp-content'
         for sub in ('plugins', 'themes', 'mu-plugins'):
@@ -170,14 +169,20 @@ def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
         if not have_wp:
             report.append(f"⊘ wp-cli not found — WordPress {wp_version} NOT downloaded")
         else:
-            cmd = ['wp', 'core', 'download', '--path=public_html', '--skip-content']
+            # Deliberately NOT --skip-content: core ships the default theme that
+            # matches this version (6.4.3 brings twentytwentyfour, not whatever is
+            # current), wp core install activates it, and the site renders out of
+            # the box for testing. The cruft that comes with it is stripped below.
+            cmd = ['wp', 'core', 'download', '--path=public_html']
             if wp_version != 'latest':
                 cmd.append(f'--version={wp_version}')
             done = subprocess.run(cmd, cwd=path, capture_output=True, text=True)
             if done.returncode == 0:
                 stripped = _strip_default_content(path)
-                note = f", removed {', '.join(stripped)}" if stripped else ""
-                report.append(f"✓ WordPress {wp_version} downloaded (--skip-content{note})")
+                kept = _default_theme(path)
+                note = f", removed {len(stripped)} bundled item(s)" if stripped else ""
+                note += f", kept {kept}" if kept else ""
+                report.append(f"✓ WordPress {wp_version} downloaded{note}")
             else:
                 err = (done.stderr or done.stdout).strip().splitlines()
                 report.append(f"⚠ WordPress {wp_version} download failed: "
@@ -331,13 +336,27 @@ def _create_wp_gitignore(plugin_names, theme_names, mu_plugin_names):
     return "\n".join(lines) + "\n"
 
 
-def _strip_default_content(path):
-    """Remove Akismet, Hello Dolly and the bundled default themes if present.
+def _default_theme(path):
+    """The theme this core considers default, read from WP_DEFAULT_THEME.
 
-    `wp core download --skip-content` means these never arrive in the first
-    place, so this is normally a no-op. It exists so the guarantee is enforced
-    rather than incidental - if the download flags ever change, or core is
-    fetched some other way, the result is still a clean install.
+    Core defines it in wp-includes/default-constants.php, so it is always the
+    right one for the version actually downloaded, rather than a slug hardcoded
+    here that goes stale every release.
+    """
+    consts = path / 'public_html' / 'wp-includes' / 'default-constants.php'
+    if not consts.is_file():
+        return None
+    found = re.search(r"WP_DEFAULT_THEME'\s*,\s*'([^']+)'", consts.read_text())
+    return found.group(1) if found else None
+
+
+def _strip_default_content(path):
+    """Remove Akismet and Hello Dolly, and every bundled theme but the default.
+
+    Akismet and Hello Dolly are cruft on every studio project. One theme is
+    kept, because WordPress cannot render without one and a freshly scaffolded
+    site should be usable for testing. The one kept is whichever this core calls
+    default, so a pinned old core keeps the theme it actually shipped with.
     """
     import shutil
     wp_content = path / 'public_html' / 'wp-content'
@@ -350,10 +369,11 @@ def _strip_default_content(path):
         elif target.is_file():
             target.unlink(); removed.append(target.name)
 
+    keep = _default_theme(path)
     themes = wp_content / 'themes'
     if themes.is_dir():
         for theme in sorted(themes.iterdir()):
-            if theme.is_dir() and theme.name.startswith('twenty'):
+            if theme.is_dir() and theme.name.startswith('twenty') and theme.name != keep:
                 shutil.rmtree(theme); removed.append(theme.name)
 
     return removed
@@ -392,21 +412,21 @@ ddev wp core install \\
     --admin_email="$ADMIN_EMAIL" \\
     --skip-email
 
-# Belt and braces: these should never have been downloaded, but a core install
-# by other means can bring them back.
+# Akismet and Hello Dolly are cruft on every studio project.
 ddev wp plugin delete akismet hello 2>/dev/null || true
-ddev wp theme list --field=name | grep '^twenty' | xargs -r ddev wp theme delete 2>/dev/null || true
 
-# WordPress cannot render without a theme, and core was downloaded with
-# --skip-content, so there may be none. Say so plainly rather than leaving a
-# blank page to be puzzled over.
+# Keep exactly one theme - whichever core activated, which is the default for
+# this version - so the site renders for testing. Delete the rest.
+ddev wp theme list --status=inactive --field=name 2>/dev/null \\
+    | grep '^twenty' | xargs -r ddev wp theme delete 2>/dev/null || true
+
 if [ -z "$(ddev wp theme list --field=name 2>/dev/null)" ]; then
     echo
     echo "WARNING: no theme is installed, so the front end will serve an empty page."
     echo "         Add one under public_html/wp-content/themes/ and activate it:"
     echo "           ddev wp theme activate <slug>"
 else
-    ddev wp theme list --field=name,status
+    ddev wp theme list --fields=name,status
 fi
 
 echo

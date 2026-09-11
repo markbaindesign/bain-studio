@@ -38,7 +38,7 @@ container fails later - so the script checks their shape up front, before anythi
 created. `--db mysql8.0` and `--php 8` are both rejected with a usable message.
 
 - **--wp-version X.Y[.Z] | latest**: Pin WordPress core. Downloads it into `public_html/`
-  with `--skip-content`, so the bundled themes and plugins do not arrive. Omit it and nothing
+  along with its bundled content, which is then stripped back to one theme. Omit it and nothing
   is downloaded - which is right for a migration, where the client's own files are imported.
 
 ```bash
@@ -54,17 +54,16 @@ version is also written into `docs/installed-versions.md`.
 - **--admin-user NAME**: WordPress admin username written into `scripts/install-wp.sh`.
   Defaults to `bain_324`.
 
-**No Akismet, no Hello Dolly, no default themes.** `--skip-content` means they are never
-downloaded in the first place, so there is nothing to delete on the normal path. A sweep runs
-anyway after download, so the guarantee is enforced rather than incidental - if the download
-flags ever change, or core arrives by some other route, the result is still clean. The
-generated install script repeats the removal after `wp core install`, which can bring them
-back.
+**No Akismet, no Hello Dolly - but one theme is kept.** Core is downloaded *with* its
+content, and the sweep then removes Akismet, Hello Dolly and every bundled theme except the
+one this core calls default. WordPress cannot render without a theme, so keeping one means a
+freshly scaffolded site works immediately for testing.
 
-**A scaffolded site has no theme, and so renders nothing.** Core is downloaded with
-`--skip-content` and `--theme NAME` only creates an empty allowlisted directory, so the front
-end serves an empty page until a real theme is added and activated. This is expected until
-the `--type` templates land (ADR 016); the install script warns about it explicitly.
+The theme kept is read from `WP_DEFAULT_THEME` in `wp-includes/default-constants.php`, so it
+always matches the version actually downloaded rather than a slug hardcoded here that goes
+stale each release. Pin 6.4.3 and you keep `twentytwentyfour`; take latest and you keep
+`twentytwentyfive`. The install script repeats the removal afterwards, deleting only
+*inactive* bundled themes so the active one survives.
 
 **WordPress is not installed at scaffold time** - `wp core install` needs a running database,
 so the containers have to be up first. The scaffold writes `scripts/install-wp.sh` instead,
