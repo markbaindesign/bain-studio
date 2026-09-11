@@ -106,6 +106,7 @@ Quick reference (paths only — see project file for full details):
 | EBIZG | `/media/data/dev/ddev/ebiz-global` |
 | SL | `/media/data/dev/bain-studio/studio/looper` |
 | SLT | `/media/data/dev/bain-studio/studio/looper-test` |
+| BTF | `/media/data/dev/bain-theme-factory` |
 
 SL (Studio Looper) is not a codebase — it is the cross-project queue. Tasks are multi-homed into
 it from their home projects and keep their home prefix, so a task listed there is mirrored twice
