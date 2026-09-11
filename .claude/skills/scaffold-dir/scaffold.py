@@ -12,7 +12,8 @@ from pathlib import Path
 
 def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
                      plugin_names=None, theme_names=None, mu_plugin_names=None,
-                     php_version='8.2', database='mariadb:11.8', wp_version=None):
+                     php_version='8.2', database='mariadb:11.8', wp_version=None,
+                     admin_user='bain_324'):
     """
     Create a new project directory with git repo and optional WordPress structure.
 
@@ -27,6 +28,7 @@ def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
         php_version: PHP version for the DDEV config
         database: Database as TYPE:VERSION for the DDEV config
         wp_version: WordPress core version to pin, or 'latest'. None downloads nothing.
+        admin_user: WordPress admin username written into scripts/install-wp.sh
 
     Returns:
         dict with status and messages
@@ -158,6 +160,9 @@ def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
                 (wp_content / sub / n / '.gitkeep').touch()
         report.append("✓ wp-content skeleton created")
 
+        _write_install_script(path, name, admin_user)
+        report.append(f"✓ scripts/install-wp.sh written (admin user: {admin_user})")
+
     # 5c. WordPress core, pinned. Only on request - most client projects import
     # the client's own files rather than a clean core.
     if wp_version:
@@ -170,7 +175,9 @@ def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
                 cmd.append(f'--version={wp_version}')
             done = subprocess.run(cmd, cwd=path, capture_output=True, text=True)
             if done.returncode == 0:
-                report.append(f"✓ WordPress {wp_version} downloaded (--skip-content)")
+                stripped = _strip_default_content(path)
+                note = f", removed {', '.join(stripped)}" if stripped else ""
+                report.append(f"✓ WordPress {wp_version} downloaded (--skip-content{note})")
             else:
                 err = (done.stderr or done.stdout).strip().splitlines()
                 report.append(f"⚠ WordPress {wp_version} download failed: "
@@ -324,6 +331,80 @@ def _create_wp_gitignore(plugin_names, theme_names, mu_plugin_names):
     return "\n".join(lines) + "\n"
 
 
+def _strip_default_content(path):
+    """Remove Akismet, Hello Dolly and the bundled default themes if present.
+
+    `wp core download --skip-content` means these never arrive in the first
+    place, so this is normally a no-op. It exists so the guarantee is enforced
+    rather than incidental - if the download flags ever change, or core is
+    fetched some other way, the result is still a clean install.
+    """
+    import shutil
+    wp_content = path / 'public_html' / 'wp-content'
+    removed = []
+
+    for target in (wp_content / 'plugins' / 'akismet',
+                   wp_content / 'plugins' / 'hello.php'):
+        if target.is_dir():
+            shutil.rmtree(target); removed.append(target.name)
+        elif target.is_file():
+            target.unlink(); removed.append(target.name)
+
+    themes = wp_content / 'themes'
+    if themes.is_dir():
+        for theme in sorted(themes.iterdir()):
+            if theme.is_dir() and theme.name.startswith('twenty'):
+                shutil.rmtree(theme); removed.append(theme.name)
+
+    return removed
+
+
+def _write_install_script(path, name, admin_user):
+    """Write scripts/install-wp.sh.
+
+    WordPress cannot be installed at scaffold time - `wp core install` needs a
+    running database, which means the containers have to be up. So the command
+    is generated here with the studio's defaults baked in, to be run once DDEV
+    is started.
+
+    No password is written. `wp core install` generates one and prints it when
+    --admin_password is omitted, which is the right behaviour for a file that
+    lands in a git repo.
+    """
+    script = f"""#!/usr/bin/env bash
+# Install WordPress into this DDEV project. Run once, after `ddev start`.
+#
+# No admin password is set here on purpose - wp-cli generates one and prints
+# it. Never put a password in this file; it is committed.
+set -euo pipefail
+
+SITE_TITLE="${{SITE_TITLE:-{name}}}"
+ADMIN_USER="${{ADMIN_USER:-{admin_user}}}"
+ADMIN_EMAIL="${{ADMIN_EMAIL:-mark@bain.design}}"
+SITE_URL="${{SITE_URL:-https://{name}.ddev.site}}"
+
+ddev start
+
+ddev wp core install \\
+    --url="$SITE_URL" \\
+    --title="$SITE_TITLE" \\
+    --admin_user="$ADMIN_USER" \\
+    --admin_email="$ADMIN_EMAIL" \\
+    --skip-email
+
+# Belt and braces: these should never have been downloaded, but a core install
+# by other means can bring them back.
+ddev wp plugin delete akismet hello 2>/dev/null || true
+ddev wp theme list --field=name | grep '^twenty' | xargs -r ddev wp theme delete 2>/dev/null || true
+
+echo
+echo "Installed. Admin user: $ADMIN_USER — the generated password is printed above."
+"""
+    script_path = path / 'scripts' / 'install-wp.sh'
+    script_path.write_text(script)
+    script_path.chmod(0o755)
+
+
 def _create_generic_gitignore():
     """Create a minimal generic .gitignore."""
     return """.env
@@ -388,6 +469,9 @@ def main():
     parser.add_argument('--wp-version', dest='wp_version', default=None,
                         help="Pin WordPress core: X.Y[.Z] or 'latest'. Downloads core into "
                              "public_html (needs wp-cli). Omit to download nothing.")
+    parser.add_argument('--admin-user', dest='admin_user', default='bain_324',
+                        help='WordPress admin username for scripts/install-wp.sh '
+                             '(default: bain_324)')
     parser.add_argument('--db', default='mariadb:11.8', dest='database',
                         help='Database as TYPE:VERSION (default: mariadb:11.8). '
                              'Match the client host, e.g. mysql:8.0, mysql:5.7, mariadb:10.4.')
@@ -407,7 +491,8 @@ def main():
         mu_plugin_names=args.mu_plugins or [],
         php_version=args.php,
         database=args.database,
-        wp_version=args.wp_version
+        wp_version=args.wp_version,
+        admin_user=args.admin_user
     )
 
     if result['status'] == 'error':

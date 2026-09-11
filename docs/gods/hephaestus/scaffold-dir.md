@@ -211,3 +211,21 @@ Core is never committed - the .gitignore excludes everything under `public_html/
 `wp-content/`, which is correct, since core is vendor code. The pinned version is recorded in
 `docs/installed-versions.md` instead. That is the only durable record of which core a project
 targets, which is a further reason the manifest is seeded rather than left to be remembered.
+
+### Clean installs and the install script
+
+Akismet, Hello Dolly and the bundled `twenty*` themes are never downloaded: core is fetched
+with `--skip-content`. `_strip_default_content()` runs after the download regardless, so the
+guarantee is enforced by code rather than left as a property of one flag - if the download
+ever changes, the outcome does not.
+
+WordPress itself cannot be installed at scaffold time, because `wp core install` needs a
+running database and the containers are not up yet. So `scripts/install-wp.sh` is generated
+with the studio defaults baked in - admin user `bain_324` by default, overridable with
+`--admin-user` - and run once after `ddev start`. It repeats the plugin and theme removal
+afterwards, since a core install by other means can bring them back.
+
+**No password is written into that script.** `wp core install` generates one and prints it
+when `--admin_password` is omitted. The script is committed, so a password in it would be a
+credential in git; the generated-and-printed route avoids that entirely. Site title, admin
+email and URL are environment-overridable.

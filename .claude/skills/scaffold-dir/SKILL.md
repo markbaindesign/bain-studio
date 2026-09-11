@@ -1,6 +1,6 @@
 ---
 name: scaffold-dir
-description: Create a new project directory and initialise it as a git repo on main with a develop branch. Supports WordPress-aware structure with DDEV configuration. Args: path [name] [--wordpress] [--ddev] [--php VERSION] [--db TYPE:VERSION] [--wp-version X.Y.Z] [--plugin NAME] [--theme NAME] [--mu-plugin NAME]
+description: Create a new project directory and initialise it as a git repo on main with a develop branch. Supports WordPress-aware structure with DDEV configuration. Args: path [name] [--wordpress] [--ddev] [--php VERSION] [--db TYPE:VERSION] [--wp-version X.Y.Z] [--admin-user NAME] [--plugin NAME] [--theme NAME] [--mu-plugin NAME]
 allowed-tools: [Bash, Write]
 ---
 
@@ -50,6 +50,29 @@ created. `--db mysql8.0` and `--php 8` are both rejected with a usable message.
 Core is downloaded with local wp-cli, which needs no database and no running container. If
 wp-cli is absent the step is skipped with a note rather than failing the scaffold. The pinned
 version is also written into `docs/installed-versions.md`.
+
+- **--admin-user NAME**: WordPress admin username written into `scripts/install-wp.sh`.
+  Defaults to `bain_324`.
+
+**No Akismet, no Hello Dolly, no default themes.** `--skip-content` means they are never
+downloaded in the first place, so there is nothing to delete on the normal path. A sweep runs
+anyway after download, so the guarantee is enforced rather than incidental - if the download
+flags ever change, or core arrives by some other route, the result is still clean. The
+generated install script repeats the removal after `wp core install`, which can bring them
+back.
+
+**WordPress is not installed at scaffold time** - `wp core install` needs a running database,
+so the containers have to be up first. The scaffold writes `scripts/install-wp.sh` instead,
+with the admin user baked in, to be run once after `ddev start`:
+
+```bash
+ddev start          # or just run the script, it starts DDEV itself
+./scripts/install-wp.sh
+```
+
+**No password is written into that script.** `wp core install` generates one and prints it
+when `--admin_password` is omitted, which is the correct behaviour for a file that is
+committed to git. Site title, admin email and URL are all overridable by environment variable.
 
 Note that core is **not** committed - the `.gitignore` excludes everything under
 `public_html/` except `wp-content/`, which is correct: core is vendor code. The pin lives in
