@@ -1,6 +1,6 @@
 ---
 name: scaffold-dir
-description: Create a new project directory and initialise it as a git repo. Supports WordPress-aware structure with DDEV configuration. Args: path [name] [--wordpress] [--ddev] [--plugin NAME] [--theme NAME] [--mu-plugin NAME]
+description: Create a new project directory and initialise it as a git repo on main with a develop branch. Supports WordPress-aware structure with DDEV configuration. Args: path [name] [--wordpress] [--ddev] [--php VERSION] [--plugin NAME] [--theme NAME] [--mu-plugin NAME]
 allowed-tools: [Bash, Write]
 ---
 
@@ -19,7 +19,8 @@ Create a project directory and git repo at the given path. Optional WordPress su
 - **path** (required): Absolute path for the new project directory
 - **name** (optional): Project name, used in the initial commit message. Defaults to the directory basename.
 - **--wordpress**: Enable WordPress-aware .gitignore with public_html structure and standard directories
-- **--ddev**: Set up DDEV configuration (sets docroot to public_html)
+- **--ddev**: Set up DDEV configuration (sets docroot to public_html, and creates it)
+- **--php VERSION**: PHP version for the DDEV config. Defaults to `8.2`.
 - **--plugin NAME**: Custom plugin name to allowlist (e.g., `--plugin acme-custom`). Can be repeated.
 - **--theme NAME**: Custom theme name to allowlist (e.g., `--theme acme-theme`). Can be repeated.
 - **--mu-plugin NAME**: Custom mu-plugin to allowlist (e.g., `--mu-plugin acme-fixes.php`). Can be repeated.
@@ -51,7 +52,10 @@ Create a project directory and git repo at the given path. Optional WordPress su
 - `.claude/` directory (for project-specific Claude configuration)
 - `qa/` directory (for QA inbox)
 - `.gitignore` file tailored to the project type
-- Initial git commit
+- Initial git commit **on `main`**, then a `develop` branch checked out - the studio's
+  git flow layout, so it never has to be fixed by hand afterwards
+- A `.gitkeep` in every directory created. Git does not track empty directories, so without
+  these a clone arrives with none of the layout.
 
 ### For WordPress projects (with `--wordpress`):
 
@@ -61,14 +65,31 @@ Create a project directory and git repo at the given path. Optional WordPress su
 project-root/
 ├── .ddev/          DDEV configuration (or provision/ for VVV)
 ├── .claude/        Claude Code configuration
-├── bin/            working folder (ignored)
-├── export/         working folder (ignored)
-├── import/         working folder (ignored)
-├── qa/             QA inbox (ignored)
+├── backups/        local safety copies (contents ignored)
+├── bin/            working folder (contents ignored)
+├── context/        project context: perf, seo, specs (tracked)
+├── docs/           developer docs and ADRs (tracked)
+├── export/         working folder (contents ignored)
+├── import/         working folder (contents ignored)
+├── qa/             QA inbox (contents ignored)
 ├── scripts/        project scripts (tracked)
 ├── public_html/    docroot: WordPress core, wp-content, wp-config.php
+├── README.md
+├── wp-cli.yml      path: public_html
 └── .gitignore
 ```
+
+The working folders are ignored **by content** (`bin/*`) rather than wholesale (`bin/`), with
+`!bin/.gitkeep` re-allowing the marker. Ignoring the directory outright would swallow the
+.gitkeep too and the layout would not survive a clone.
+
+This layout follows `docs/utilities/wp-project-layout.md`, which is authoritative where it
+and any other source disagree. See ADR 016.
+
+**A note on `wp-cli.yml`:** many setups carry a VVV-era `wp-cli.yml` entry in the global
+gitignore, which silently prevents it being tracked. The script checks for this after writing
+and reports a warning naming the offending gitignore and line - it does not force-add, since
+that would override a deliberate user setting.
 
 **.gitignore — three-tier pattern:**
 

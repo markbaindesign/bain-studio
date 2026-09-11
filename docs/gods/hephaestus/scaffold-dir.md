@@ -151,3 +151,32 @@ When used with `/commission`, pass WordPress flags in the commission arguments a
 - [`/commission`](commission.md) — full project setup including Asana and studio registration
 - [`/register-project`](register-project.md) — add an existing directory to the studio registry
 - [shutter.md](shutter.md) — Shutter profile management
+
+## Revision, 2026-09-11 — review fixes
+
+BSTD-790's first pass was reviewed before merge and four defects were fixed:
+
+1. **Nothing but `.gitignore` and `.ddev/config.yaml` was actually committed.** Every
+   directory the script created was either empty or ignored, and git tracks neither - so a
+   clone arrived with none of the layout. Fixed by writing a `.gitkeep` into every created
+   directory and ignoring working folders by content (`bin/*` plus `!bin/.gitkeep`) rather
+   than wholesale (`bin/`), which would have swallowed the marker too.
+2. **`--ddev` without `--wordpress` produced a project DDEV could not start** - the config
+   set `docroot: public_html` while the directory loop was gated on `--wordpress`, so the
+   docroot did not exist. `public_html/` is now created whenever a DDEV config is written.
+3. **Projects landed on `master` with no `develop`**, against studio git flow. HEAD is now
+   repointed to `main` immediately after `git init` (git 2.25 has no `init -b`), and
+   `develop` is branched after the initial commit.
+4. **The DDEV config was a two-line stub.** It now spells out `name`, `type: wordpress`,
+   `php_version` (new `--php` flag, default 8.2), `webserver_type` and the database block,
+   rather than leaving them to DDEV's defaults to drift.
+
+Also added per ADR 016: `context/`, `docs/`, `backups/`, `wp-cli.yml` and `README.md`, making
+the skeleton the union of `wp-project-layout.md` and `wp-scaffold/PLAN.md`.
+
+One environment finding surfaced during review: `wp-cli.yml` is listed in
+`~/.gitignore_global` under a VVV heading, so it has never been tracked in any studio project
+(`nore` and `buddhist-film-foundation` both have it on disk, untracked). Under DDEV it is a
+project file that should be versioned. The script now warns when a file it wrote is ignored,
+naming the gitignore and line, rather than force-adding over a deliberate user setting.
+Removing that line from the global gitignore is a separate decision for Mark.

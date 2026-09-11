@@ -10,7 +10,8 @@ from pathlib import Path
 
 
 def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
-                     plugin_names=None, theme_names=None, mu_plugin_names=None):
+                     plugin_names=None, theme_names=None, mu_plugin_names=None,
+                     php_version='8.2'):
     """
     Create a new project directory with git repo and optional WordPress structure.
 
@@ -22,6 +23,7 @@ def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
         plugin_names: List of custom plugin names to allowlist
         theme_names: List of custom theme names to allowlist
         mu_plugin_names: List of custom mu-plugin names to allowlist
+        php_version: PHP version for the DDEV config
 
     Returns:
         dict with status and messages
@@ -52,18 +54,36 @@ def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
     path.mkdir(parents=True, exist_ok=True)
     report.append("✓ directory created")
 
-    # 3. Git init
+    # 3. Git init. git 2.25 has no `init -b`, so HEAD is repointed directly -
+    # this works on every version and avoids ever creating `master`.
     subprocess.run(['git', 'init'], cwd=path, check=True, capture_output=True)
-    report.append("✓ git init")
+    subprocess.run(['git', 'symbolic-ref', 'HEAD', 'refs/heads/main'],
+                   cwd=path, check=True, capture_output=True)
+    report.append("✓ git init (on main)")
 
-    # 4. Create standard directory structure
+    # 4. Create standard directory structure.
+    #
+    # Every directory gets a .gitkeep. Without one, git tracks nothing empty and
+    # a clone arrives with none of the layout - which is the whole point of this
+    # script. The working folders are ignored by content (`bin/*`) rather than
+    # wholesale (`bin/`), so the .gitkeep inside them survives.
     (path / '.claude').mkdir(exist_ok=True)
     (path / 'qa').mkdir(exist_ok=True)
+    created = ['qa']
 
     if is_wordpress:
-        for dir_name in ['bin', 'export', 'import', 'scripts', 'public_html']:
-            (path / dir_name).mkdir(exist_ok=True)
-        report.append("✓ directories created (standard + WordPress)")
+        created += ['bin', 'export', 'import', 'scripts', 'context', 'docs',
+                    'backups', 'public_html']
+    elif is_ddev:
+        # A DDEV config points docroot at public_html, so the directory has to
+        # exist or `ddev start` fails against a missing docroot.
+        created += ['public_html']
+
+    for dir_name in created:
+        (path / dir_name).mkdir(exist_ok=True)
+        (path / dir_name / '.gitkeep').touch()
+
+    report.append(f"✓ directories created ({len(created)}, each with .gitkeep)")
 
     # 5. Write .gitignore
     if is_wordpress:
@@ -74,10 +94,29 @@ def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
     (path / '.gitignore').write_text(gitignore_content)
     report.append("✓ .gitignore written" + (" (WordPress-aware)" if is_wordpress else ""))
 
+    # 5b. wp-cli.yml and README - WordPress projects only.
+    if is_wordpress:
+        # Without this, a bare `wp` command runs against the repo root rather
+        # than the install.
+        (path / 'wp-cli.yml').write_text("path: public_html\n")
+        (path / 'README.md').write_text(f"# {name}\n")
+        report.append("✓ wp-cli.yml + README.md written")
+
+        # A global or system gitignore can silently swallow a file we just
+        # wrote - wp-cli.yml is a VVV-era entry in many setups. Say so rather
+        # than force-adding, which would override a deliberate user setting.
+        for fname in ('wp-cli.yml', 'README.md'):
+            ignored = subprocess.run(['git', 'check-ignore', '-q', fname],
+                                     cwd=path, capture_output=True).returncode == 0
+            if ignored:
+                src = subprocess.run(['git', 'check-ignore', '-v', fname],
+                                     cwd=path, capture_output=True, text=True).stdout.strip()
+                report.append(f"⚠ {fname} is gitignored and will NOT be tracked — {src}")
+
     # 6. DDEV configuration
     ddev_report = None
     if is_wordpress or is_ddev or (path / '.ddev').exists():
-        ddev_report = _setup_ddev_config(path)
+        ddev_report = _setup_ddev_config(path, name, php_version, is_wordpress)
         report.append(f"✓ {ddev_report}")
 
     # 7. Initial commit
@@ -85,6 +124,11 @@ def scaffold_project(path, name=None, is_wordpress=False, is_ddev=False,
     commit_msg = f"init: scaffold {name}" + (" (WordPress)" if is_wordpress else "")
     subprocess.run(['git', 'commit', '-m', commit_msg], cwd=path, check=True, capture_output=True)
     report.append("✓ initial commit")
+
+    # 7b. Git flow layout: main is released code, develop is where work happens.
+    # Studio convention, so the scaffold should not leave it to be done by hand.
+    subprocess.run(['git', 'checkout', '-b', 'develop'], cwd=path, check=True, capture_output=True)
+    report.append("✓ develop branched from main (git flow)")
 
     # 8. Shutter profile
     shutter_available = subprocess.run(['which', 'shutter-profile'],
@@ -135,6 +179,7 @@ def _create_wp_gitignore(plugin_names, theme_names, mu_plugin_names):
         "# Ignore everything in the \"public_html\" directory except the \"wp-content\"",
         "# directory.",
         "public_html/*",
+        "!public_html/.gitkeep",
         "!public_html/wp-content/",
         "",
         "# Ignore everything in the \"wp-content\" directory, except the \"plugins\",",
@@ -188,11 +233,18 @@ def _create_wp_gitignore(plugin_names, theme_names, mu_plugin_names):
         "asana-mirror.md",
         "asana-ids.json",
         "",
-        "# Working folders",
-        "bin/",
-        "export/",
-        "import/",
-        "qa/",
+        "# Working folders - contents ignored, the directory itself is kept so",
+        "# a clone arrives with the full layout.",
+        "bin/*",
+        "!bin/.gitkeep",
+        "export/*",
+        "!export/.gitkeep",
+        "import/*",
+        "!import/.gitkeep",
+        "backups/*",
+        "!backups/.gitkeep",
+        "qa/*",
+        "!qa/.gitkeep",
     ])
 
     return "\n".join(lines) + "\n"
@@ -209,7 +261,7 @@ __pycache__/
 """
 
 
-def _setup_ddev_config(path):
+def _setup_ddev_config(path, name, php_version='8.2', is_wordpress=False):
     """Set up DDEV configuration with docroot pointing to public_html."""
     config_path = path / '.ddev' / 'config.yaml'
 
@@ -228,12 +280,24 @@ def _setup_ddev_config(path):
     else:
         # Create minimal config
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_content = """# .ddev Config file
-ddev_version: ">=1.23.0"
-docroot: public_html
-"""
-        config_path.write_text(config_content)
-        return "DDEV config: created with docroot set to public_html"
+        # Spelled out rather than left to DDEV's defaults - unstated values are
+        # how configuration drifts between projects.
+        lines = [
+            "# .ddev config - generated by scaffold-dir",
+            'ddev_version: ">=1.23.0"',
+            f"name: {name}",
+            "docroot: public_html",
+            f'php_version: "{php_version}"',
+            "webserver_type: nginx-fpm",
+            "database:",
+            "  type: mariadb",
+            '  version: "10.11"',
+        ]
+        if is_wordpress:
+            lines.insert(3, "type: wordpress")
+        config_path.write_text("\n".join(lines) + "\n")
+        kind = "wordpress, " if is_wordpress else ""
+        return f"DDEV config: created ({kind}php {php_version}, docroot public_html)"
 
 
 def main():
@@ -242,6 +306,7 @@ def main():
     parser.add_argument('name', nargs='?', help='Project name (defaults to directory basename)')
     parser.add_argument('--wordpress', action='store_true', help='Create WordPress-aware structure')
     parser.add_argument('--ddev', action='store_true', help='Set up DDEV configuration')
+    parser.add_argument('--php', default='8.2', help='PHP version for DDEV config (default: 8.2)')
     parser.add_argument('--plugin', action='append', dest='plugins', help='Custom plugin name (can be repeated)')
     parser.add_argument('--theme', action='append', dest='themes', help='Custom theme name (can be repeated)')
     parser.add_argument('--mu-plugin', action='append', dest='mu_plugins', help='Custom mu-plugin name (can be repeated)')
@@ -255,7 +320,8 @@ def main():
         is_ddev=args.ddev,
         plugin_names=args.plugins or [],
         theme_names=args.themes or [],
-        mu_plugin_names=args.mu_plugins or []
+        mu_plugin_names=args.mu_plugins or [],
+        php_version=args.php
     )
 
     if result['status'] == 'error':
