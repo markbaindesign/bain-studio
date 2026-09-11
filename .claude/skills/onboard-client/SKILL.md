@@ -152,18 +152,38 @@ The full directory standard:
 `provision/` and `log/` are deliberately absent — they are VVV artefacts
 (`vvv-init.sh`, nginx logs) and DDEV covers both.
 
-1. `ddev config` — project type `wordpress`, **`docroot: public_html`**, PHP
-   version per current studio default, database matching Periphetes'
-   convention (`bd324_` prefix on the DB name).
-2. Create the directory tree above. `wp-cli.yml` gets `path: public_html` and
-   no SSH aliases — DDEV routes via `ddev wp`.
-3. `ddev start`
+**Do not build this by hand.** One call to `/scaffold-dir` produces the whole
+tree above, the three-tier `.gitignore`, `wp-cli.yml` with `path: public_html`,
+the DDEV config with **`docroot: public_html`**, and a git repo on `main` with
+`develop` branched:
 
-> Once `/media/data/dev/wp-scaffold/new-project.sh` exists, steps 1–2 collapse
-> into a single call to it and this skill should just invoke it. Until then,
-> create the structure by hand and match the tree above exactly. See
-> `wp-scaffold/PLAN.md` for the theme and plugin boilerplate that script will
-> also generate.
+```bash
+/scaffold-dir /media/data/dev/ddev/{slug} {slug} --wordpress --ddev \
+    --php 8.2 --db mariadb:11.8 --wp-version latest \
+    --plugin {slug}-custom --theme {slug}-theme
+```
+
+Match the client's host on `--php`, `--db` and `--wp-version` — a legacy site on
+PHP 7.4 and MySQL 5.7 must be scaffolded that way, or local will not match live.
+
+Then:
+
+1. `ddev start`
+2. For a **new build**: `./scripts/install-wp.sh` — installs WordPress with admin
+   user `bain_324` and prints a generated password. Akismet and Hello Dolly are
+   removed; one default theme is kept so the site renders.
+   For a **migration**: import the client's files and database instead, and skip
+   the install script.
+
+Two things `/scaffold-dir` does **not** do, which still need doing by hand:
+
+- The database name does not follow Periphetes' convention (`bd324_` prefix) —
+  DDEV names it `db`. Set it in `.ddev/config.yaml` if the project needs it.
+- `CLAUDE.md` and `.claude/settings.json` come from `/commission` and
+  `/register-project`, not from the scaffolder.
+
+See ADR 016 for why this is `/scaffold-dir` rather than a separate `wp-scaffold`
+tool, which was considered and rejected.
 
 Then branch on project type from Step 1:
 
