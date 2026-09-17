@@ -67,6 +67,17 @@ the looper legitimately needs hit an allow (or a scripted deny) rather than an a
 
 Tasks added to the Studio Looper project with no Looper Status are automatically pushed to "Queue" by sync.py on the next sync run.
 
+## Documented-answer gate
+
+Before blocking a task on a question, the looper must look for the answer in the task (notes,
+comments, linked tasks), the project's CLAUDE.md and ADRs, the studio/dev-root/global CLAUDE.md
+files, and the studio ADRs. Standing answers such as "where does research output go" (Dropbox,
+never the repo) and "what format" (markdown) are spelled out in the skill. Title-only tasks with
+one clearly most likely reading get worked, with the interpretation stated for Review. A blocker
+that survives must say what was checked and ask one specific question.
+
+Added 2026-09-17 after a run blocked six tasks on questions CLAUDE.md already answered.
+
 ## Linked Asana tasks
 
 The looper works from local mirrors, but it is not limited to them. When a task links to another
