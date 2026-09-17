@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-09-17
+
+### Fixed
+- **The ops worktree would have kept its own copy of the Daily Brief and audio notes state.**
+  `ops-worktree-link.sh` did not list `daily_brief_state.json` or `audio_notes_state.json`, so
+  cron runs would have re-transcribed every recording already done from the dev checkout and
+  restarted escalation ages from zero. Both state files and both logs are now linked.
+
 ## [1.6.0] - 2026-09-17
 
 ### Added
@@ -218,7 +226,8 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.6.0...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.6.1...develop
+[1.6.1]: https://github.com/markbaindesign/bain-studio/compare/1.6.0...1.6.1
 [1.6.0]: https://github.com/markbaindesign/bain-studio/compare/1.5.1...1.6.0
 [1.5.1]: https://github.com/markbaindesign/bain-studio/compare/1.5.0...1.5.1
 [1.5.0]: https://github.com/markbaindesign/bain-studio/compare/1.4.0...1.5.0
