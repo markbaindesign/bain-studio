@@ -58,10 +58,11 @@ show_delta() {
   local from="$1" to="$2"
   if [ -n "$(git -C "$SRC" log --oneline "$from".."$to" 2>/dev/null)" ]; then
     echo "Changes being deployed:"
-    git -C "$SRC" log --oneline "$from".."$to" | sed 's/^/  + /' | head -20
+    # -20 rather than | head -20: head closing the pipe early SIGPIPEs git, and pipefail aborts
+    git -C "$SRC" log --oneline -20 "$from".."$to" | sed 's/^/  + /'
   elif [ -n "$(git -C "$SRC" log --oneline "$to".."$from" 2>/dev/null)" ]; then
     echo "ROLLBACK - these commits will no longer be live:"
-    git -C "$SRC" log --oneline "$to".."$from" | sed 's/^/  - /' | head -20
+    git -C "$SRC" log --oneline -20 "$to".."$from" | sed 's/^/  - /'
   else
     echo "(no commit difference)"
   fi
