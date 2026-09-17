@@ -36,7 +36,7 @@ load_dotenv(Path(__file__).resolve().parent / '.env')
 
 STUDIO_ROOT   = Path(__file__).resolve().parents[1]
 SCAN_ROOTS    = [Path(p) for p in os.getenv('STUDIO_SCAN_ROOTS', '').split(':') if p]
-VALID_TYPES   = {'event', 'handoff', 'alert', 'report'}
+VALID_TYPES   = {'event', 'handoff', 'alert', 'report', 'note'}
 VALID_PRIORITIES = {'low', 'normal', 'high', 'urgent'}
 
 
@@ -141,13 +141,16 @@ sent_at: {sent_at}
         try:
             sys.path.insert(0, str(Path(__file__).parent))
             from notifier import notify
-            notify(
+            posted = notify(
                 body or subject,
                 subject=subject,
                 priority=priority,
                 sender=sender,
                 project=project,
             )
+            # Posted now, so the sweep must not post it again. If it failed, the sweep retries.
+            if posted:
+                _stamp_notified(dest)
         except Exception as e:
             print(f'[postman] Slack notify failed: {e}', file=sys.stderr)
 
@@ -160,8 +163,14 @@ sent_at: {sent_at}
 
 def sweep(dry_run: bool = False) -> int:
     """
-    Scan all inboxes, dispatch unprocessed messages via Slack, archive them.
-    Returns count of messages dispatched.
+    Scan all inboxes and post each message to Slack once, stamping it `notified_at`.
+
+    Messages stay in the inbox: archiving is done by /check-inbox once a session has
+    actually read them. (Until 2026-09-17 the sweep archived everything, so messages were
+    gone before any session saw them.) High/urgent messages sent via send() are stamped at
+    send time; hand-written message files carry no stamp and get notified here whatever
+    their priority.
+    Returns count of messages notified.
     """
     try:
         sys.path.insert(0, str(Path(__file__).parent))
@@ -171,48 +180,48 @@ def sweep(dry_run: bool = False) -> int:
 
     dispatched = 0
     for inbox in _find_all_inboxes():
-        messages = sorted(inbox.glob('msg-*.md'))
-        if not messages:
-            continue
-
-        processed_dir = inbox / 'processed'
-        if not dry_run:
-            processed_dir.mkdir(exist_ok=True)
-
-        for msg_path in messages:
+        for msg_path in sorted(inbox.glob('msg-*.md')):
             meta, body = _parse_message(msg_path)
-            if not meta:
+            if not meta or meta.get('notified_at'):
                 continue
 
-            priority = meta.get('priority', 'normal')
-            # Skip high/urgent — already dispatched at send time
-            if priority in ('high', 'urgent'):
-                if not dry_run:
-                    msg_path.rename(processed_dir / msg_path.name)
-                    _log('SWEEP', id=msg_path.stem, from_=meta.get('from', ''), to=meta.get('to', ''),
-                         project=meta.get('project', ''), priority=priority, subject=meta.get('subject', ''))
+            if dry_run:
+                print(f'[dry-run] would notify: {msg_path.name} — {meta.get("subject", "")}')
                 dispatched += 1
                 continue
 
-            if notify and not dry_run:
-                notify(
-                    body.strip() or meta.get('subject', ''),
-                    subject=meta.get('subject', ''),
-                    priority=priority,
-                    sender=meta.get('from', 'studio'),
-                    project=meta.get('project', ''),
-                )
-
-            if dry_run:
-                print(f'[dry-run] would dispatch: {msg_path.name} — {meta.get("subject", "")}')
-            else:
-                msg_path.rename(processed_dir / msg_path.name)
-                _log('SWEEP', id=msg_path.stem, from_=meta.get('from', ''), to=meta.get('to', ''),
-                     project=meta.get('project', ''), priority=priority, subject=meta.get('subject', ''))
-
+            # Left unstamped on failure, so the next sweep retries it
+            if not notify:
+                print('[postman] notifier unavailable; nothing posted', file=sys.stderr)
+                return dispatched
+            posted = notify(
+                body.strip() or meta.get('subject', ''),
+                subject=meta.get('subject', ''),
+                priority=meta.get('priority', 'normal'),
+                sender=meta.get('from', 'studio'),
+                project=meta.get('project', ''),
+            )
+            if not posted:
+                print(f'[postman] Slack notify failed for {msg_path.name}', file=sys.stderr)
+                continue
+            _stamp_notified(msg_path)
+            _log('NOTIFY', id=msg_path.stem, from_=meta.get('from', ''), to=meta.get('to', ''),
+                 project=meta.get('project', ''), priority=meta.get('priority', ''), subject=meta.get('subject', ''))
             dispatched += 1
 
     return dispatched
+
+
+def _stamp_notified(path: Path):
+    """Add `notified_at` as the last frontmatter line."""
+    text = path.read_text()
+    if not text.startswith('---'):
+        return
+    close = text.find('\n---', 3)
+    if close == -1:
+        return
+    stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    path.write_text(text[:close] + f'\nnotified_at: {stamp}' + text[close:])
 
 
 def _parse_message(path: Path):
@@ -279,7 +288,7 @@ if __name__ == '__main__':
     p_send.add_argument('--priority', default='normal',         choices=list(VALID_PRIORITIES))
     p_send.set_defaults(func=_cmd_send)
 
-    p_sweep = sub.add_parser('sweep', help='Dispatch all pending messages')
+    p_sweep = sub.add_parser('sweep', help='Post not-yet-notified messages to Slack (does not archive)')
     p_sweep.add_argument('--dry-run', action='store_true',      help='Print without dispatching')
     p_sweep.set_defaults(func=_cmd_sweep)
 
