@@ -14,6 +14,7 @@ Areas:
   Projects    overdue tasks, looper tasks blocked on Mark, work waiting in Review,
               projects with no activity
   Clients     tasks waiting on a client (chase, sign-off, client action) gone quiet
+  Voice notes transcripts from audio_notes.py not yet marked reviewed; silent recordings
 
 Escalation: every finding has a stable key. studio/collectors/daily_brief_state.json
 records when each was first raised; a finding still open after 7 days goes up one
@@ -490,6 +491,47 @@ def check_repos(projects, today):
 
 
 # ---------------------------------------------------------------------------
+# Voice notes
+# ---------------------------------------------------------------------------
+
+def check_voice_notes(today):
+    """Transcripts from audio_notes.py still marked reviewed: false, and recordings that came out silent."""
+    vault = os.getenv("OBSIDIAN_VAULT")
+    if not vault:
+        return []
+    out = []
+    for note in sorted((Path(vault) / "Transcripts").glob("*.md")):
+        try:
+            head = note.read_text(errors="replace").split("\n---\n", 1)[0]
+        except OSError:
+            continue
+        if not re.search(r"^reviewed:\s*false\s*$", head, re.M):
+            continue
+        rec = re.search(r"^recorded:\s*(\S+)", head, re.M)
+        age = _days_since(rec.group(1), today) if rec else None
+        tasks = re.search(r"^tasks:\s*\[(.*)\]", head, re.M)
+        tasks = tasks.group(1).strip() if tasks else ""
+        about = re.search(r"^\*\*About:\*\*\s*(.+)$", note.read_text(errors="replace"), re.M)
+        detail = about.group(1)[:140] if about else (f"tasks: {tasks}" if tasks else "no task attached")
+        out.append(finding(f"voice:{note.stem}", "Voice notes", "high" if (age or 0) > 3 else "normal",
+                           note.stem, detail, url=obsidian_uri(note), age_days=age))
+    try:
+        state = json.loads((COLLECTORS_DIR / "audio_notes_state.json").read_text())
+    except (OSError, ValueError):
+        state = {}
+    for path, entry in state.items():
+        if entry.get("status") == "silent" and (_days_since(entry.get("checked", ""), today) or 0) <= 7:
+            out.append(finding(f"voice:silent:{Path(path).name}", "Voice notes", "normal",
+                               f"{Path(path).name} was silent",
+                               f"mean volume {entry.get('mean_db')} dB, not transcribed. Check the mic input "
+                               "(Scarlett gain, or Obsidian using the webcam mic)"))
+        elif entry.get("status") == "failed" and entry.get("attempts", 0) >= 3:
+            out.append(finding(f"voice:failed:{Path(path).name}", "Operations", "high",
+                               f"Could not transcribe {Path(path).name}", entry.get("error", "")[:160]))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # State, ranking, rendering
 # ---------------------------------------------------------------------------
 
@@ -536,7 +578,7 @@ def render(findings, today):
     top = [f for f in eligible if f["severity"] != "normal"][:8] or eligible[:5]
     lines += [_line(f) for f in top] or ["Nothing pressing."]
 
-    for area in ("Finance", "Operations", "Projects", "Clients"):
+    for area in ("Voice notes", "Finance", "Operations", "Projects", "Clients"):
         items = [f for f in findings if f["area"] == area]
         lines += ["", f"## {area}", ""]
         if not items:
@@ -577,7 +619,7 @@ def collect(today):
     findings = []
     for check in (lambda: check_books(today), lambda: check_snapshot(today), lambda: check_tax(today),
                   lambda: check_cron(today), lambda: check_repos(projects, today),
-                  lambda: check_tasks(projects, today)):
+                  lambda: check_tasks(projects, today), lambda: check_voice_notes(today)):
         try:
             findings += check()
         except Exception as e:  # one broken check must not sink the brief
