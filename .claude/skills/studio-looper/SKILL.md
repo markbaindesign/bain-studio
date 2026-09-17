@@ -369,6 +369,20 @@ cd {PROJECT_DIR}
 Read `{PROJECT_DIR}/asana-mirror.md` for task Notes, Blockers, Dependencies.
 Read `{PROJECT_DIR}/CLAUDE.md` for the project's tech stack and build instructions.
 
+**Linked Asana tasks.** When the Notes or comments point at another Asana task (a
+`https://app.asana.com/...` link, a bare task GID, or a local ID like `BD-152`), read it — a
+link is never a reason to block:
+
+```bash
+python3 /media/data/dev/bain-studio/studio/sync.py --get-task "<url, GID or local ID>"
+```
+
+It is read-only (no mirror writes, safe alongside a running sync), goes through bainbot, and
+prints the linked task's local ID, completion state, notes and every comment — including earlier
+looper progress notes. If the linked task is already completed, say so in your progress note;
+the work it asked for may already be done. Only block if the command exits non-zero, and quote
+its error in the blocker (a 404/403 means bainbot is not a member of that task's project).
+
 **Duplicate-work guard.** Before doing anything, check the task's Progress history and comments.
 If the task was already completed ("Ready for review {date}" or equivalent) and has been
 re-queued with **no new instructions**, do NOT redo the work. "No new instructions" means:
@@ -406,6 +420,35 @@ as needed:
    ```
    Use sparingly; this is the expensive rung.
 4. Still unresolved — mark the task **Blocked** with the specific question rather than guessing.
+   But first pass the documented-answer gate below.
+
+**Documented-answer gate — never block on a question the docs already answer.** Before marking a
+task Blocked on a question, look for the answer in, in order:
+1. The task itself: Notes, every comment, attachments, and any linked task (`--get-task`).
+2. `{PROJECT_DIR}/CLAUDE.md` and the project's `docs/adr/` (if present).
+3. `/media/data/dev/bain-studio/CLAUDE.md`, `/media/data/dev/CLAUDE.md` and `~/.claude/CLAUDE.md`.
+4. `/media/data/dev/bain-studio/docs/adr/`.
+
+If the answer is there, use it and carry on. Questions with standing answers that have blocked
+runs before:
+- *Where does a report, audit, research note or test template go?* Never the repo. Studio/internal
+  research → `/media/data/Dropbox/Work/Studio/context/research/looper/`; client work →
+  `/media/data/Dropbox/Work/Projects/Client/{Client}/Docs/<Topic>/`. Dated `YYYY-MM-DD-<slug>.md`.
+  Check that folder for an existing document on the topic first.
+- *What format?* Markdown, unless the task names another. A client-facing report also gets a
+  branded PDF via brand-doc. Test code/tooling that runs against a codebase is code and lives in
+  that repo.
+- *Branch, versioning, dates, dashes?* Git flow + the looper's own branch rules; ISO dates; no
+  m-dashes in client-facing copy.
+
+A thin task (title only, no notes) is not automatically blocked either: if the title plus the
+project's CLAUDE.md, recent git history and neighbouring tasks make one reading clearly most likely,
+do that and state the interpretation in the Progress note so Mark can redirect at Review. Block
+only when the plausible readings lead to materially different work, or the work is irreversible
+or outward-facing (live sites, DNS, client email, deleting data).
+
+A blocker that survives the gate must name what was checked, e.g. "Not in task, project CLAUDE.md
+or studio ADRs:", and then ask one specific question — not a list of open-ended ones.
 
 All work happens on a **run review branch — never on develop/main directly, and never pushed**.
 The branch is shared by every task in the same looper run: use `$LOOPER_RUN_ID` (set by the
@@ -514,6 +557,8 @@ python3 /media/data/dev/bain-studio/studio/notifier.py \
 ```
 
 ### 4f — If blocked
+
+Blocking on a question? It must have passed the **documented-answer gate** in 4c first.
 
 **1. Update target mirror:**
 ```

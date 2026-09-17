@@ -26,7 +26,7 @@ Invoke in Claude Code with `/skill-name [args]`.
 | `studio-pm-align` | `/studio-pm-align` | Align a project's Asana board with studio template |
 | `abderus` | `/abderus` | Timing sweep: harvest gaps, overdue tasks, stale triage |
 | `task-looper` | `/task-looper` | DEPRECATED — redirects to `/studio-looper` (ADR 009) |
-| `check-inbox` | `/check-inbox` | Process messages in `.claude/inbox/` |
+| `check-inbox` | `/check-inbox` | Process messages in `.claude/inbox/` and `studio/inbox/` |
 
 ### Project Lifecycle
 
@@ -149,7 +149,7 @@ Invoke in Claude Code with `/skill-name [args]`.
 | `sync.py --setup` | `python3 studio/sync.py --setup --project MCF` | First-time custom field setup for a project |
 | `sync.py --create` | `python3 studio/sync.py --create --name "Name" --prefix MCF --path /path` | Scaffold new Asana project from template |
 | `notifier.py` | `python3 studio/notifier.py "msg" --priority high --sender hermes` | Send a Slack notification |
-| `postman.py` | `python3 studio/postman.py` | Process `.claude/inbox/` message queue |
+| `postman.py` | `python3 studio/postman.py` | Send inter-agent messages; `sweep` posts them to Slack |
 | `dashboard/server.py` | `python3 studio/dashboard/server.py` | Launch studio dashboard at localhost:5555 |
 | `collectors/gnucash_collector.py` | `python3 studio/collectors/gnucash_collector.py` | Parse GnuCash → /media/data/Dropbox/Work/Admin/Financial/Accounting/accounts.json |
 | `collectors/harvest_kf_collector.py` | `python3 studio/collectors/harvest_kf_collector.py` | Fetch KF Harvest hours → time_snapshot.json |

@@ -183,7 +183,7 @@ def fetch_postings(url):
 def notify(message, details=None, priority="normal"):
     cmd = [
         "python3", str(NOTIFIER), message,
-        "--project", "PIPE", "--priority", priority, "--sender", "careers-watch",
+        "--project", "UAP", "--priority", priority, "--sender", "careers-watch",
     ]
     if details:
         cmd += ["--details", details]

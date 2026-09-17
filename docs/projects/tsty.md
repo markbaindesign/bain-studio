@@ -12,15 +12,15 @@ path: /media/data/dev/ddev/techstyle
 asana: "yes"
 qa: "no"
 inbox: "no"
-current_focus: Onboarding — awaiting tech access from client contact Andrew
-next_action: Pull existing site into DDEV once tech access arrives
+current_focus: Post-incident remediation — access held, site pulled into DDEV, working the security backlog
+next_action: TSTY-078 — request a full backup and get the old site taken offline (due 2026-09-04)
 ---
 
 # Techstyle
 
-WordPress project for Techstyle, contact Andrew. Existing live site —
-DDEV set up as an empty shell pending tech access; local dev at
-`https://techstyle.ddev.site` once configured.
+WordPress project for Techstyle, contact **Andrew Till** — the same contact as
+[[ebizg]] (Ebiz Global), a separate site. Existing live site, since pulled into
+DDEV at `https://techstyle.ddev.site`. Tech access is held.
 
 ## Notes
 

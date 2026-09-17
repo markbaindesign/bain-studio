@@ -139,7 +139,7 @@ See [[projects.base]] for the live project index. Individual project files in `d
 
 - [[projects/bstd]] — Bain Studio (internal tooling)
 - [[projects/mcf]] — Mhairi McFarlane (Astro.js author site)
-- [[projects/pipe]] — Upwork Pipeline (internal BizDev)
+- [[projects/uap]] — Upwork Pipeline (internal BizDev)
 - [[projects/nore]] — The Nature of Real Estate (WordPress/MemberPress)
 
 Financial Review and Iris capabilities are **studio-wide** — not per-project enrollments.

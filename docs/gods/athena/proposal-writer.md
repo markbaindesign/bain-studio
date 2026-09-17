@@ -38,7 +38,7 @@ Saved to a file, not returned as chat text — `proposal-{slug-or-topic}-{YYYY-M
 
 ## Notes
 
-- Fully decoupled from the Upwork prospecting pipeline (PIPE) — that pipeline generates and sends its own proposals internally and never hands off to this skill. See `athena.md` → Prospecting (Upwork Pipeline).
+- Fully decoupled from the Upwork prospecting pipeline (UAP) — that pipeline generates and sends its own proposals internally and never hands off to this skill. See `athena.md` → Prospecting (Upwork Pipeline).
 - No independent guardrails — voice and accuracy come only from brand voice (step 1) and the Copywriter pass (step 4), not from rules duplicated in this skill.
 - No SKILL VERIFICATION table — output is the proposal document and PDF only.
 

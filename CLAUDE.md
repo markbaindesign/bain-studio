@@ -96,15 +96,17 @@ Quick reference (paths only — see project file for full details):
 | BSTD | `/media/data/dev/bain-studio` |
 | KF-WEB | `/media/data/dev/vvv/clients/www/kf-21` |
 | MCF | `/home/bain/code/misc/js/astrojs/client/mhairi_mcf` |
-| PIPE | `/media/data/dev/misc/upwork-proposals` |
+| UAP | `/media/data/dev/misc/upwork-proposals` |
 | DOM | `/media/data/dev/misc/premium_domains` |
 | NORE | `/home/bain/code/vvv/clients/www/nore` |
 | BD | `/media/data/dev/bain/www/bain.design` |
 | FOOB | `/media/data/dev/ddev/wp-foobot-api-plugin` |
 | TARA | `/media/data/dev/misc/kf-tara-web` |
 | TSTY | `/media/data/dev/ddev/techstyle` |
+| EBIZG | `/media/data/dev/ddev/ebiz-global` |
 | SL | `/media/data/dev/bain-studio/studio/looper` |
 | SLT | `/media/data/dev/bain-studio/studio/looper-test` |
+| BTF | `/media/data/dev/bain-theme-factory` |
 
 SL (Studio Looper) is not a codebase — it is the cross-project queue. Tasks are multi-homed into
 it from their home projects and keep their home prefix, so a task listed there is mirrored twice
@@ -130,6 +132,7 @@ ln -s /media/data/dev/bain-studio/.claude/skills/{name} ~/.claude/skills/{name}
 | `interview-me` | real-time voice interview via OpenAI Realtime API, takes a topic arg |
 | `proposal-intake` | turns raw client input (RFP, emails, notes) into a proposal skeleton, flagging gaps |
 | `proposal-writer` | turns a completed proposal skeleton into a client-ready proposal + branded PDF |
+| `bookkeeper` | catches the GnuCash books up from bank feeds (Wise API + CSV imports) |
 
 **Global-only skills** (not in this repo — live directly in `~/.claude/skills/`):
 - `grill-me` — general planning, useful everywhere

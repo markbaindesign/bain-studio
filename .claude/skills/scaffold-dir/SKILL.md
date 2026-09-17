@@ -1,75 +1,229 @@
 ---
 name: scaffold-dir
-description: Create a new project directory and initialise it as a git repo. Standalone step — callable directly or by /commission. Args: path [name]
+description: Create a new project directory and initialise it as a git repo on main with a develop branch. Supports WordPress-aware structure with DDEV configuration. Args: path [name] [--wordpress] [--ddev] [--php VERSION] [--db TYPE:VERSION] [--wp-version X.Y.Z] [--admin-user NAME] [--plugin NAME] [--theme NAME] [--mu-plugin NAME]
 allowed-tools: [Bash, Write]
 ---
 
 # Scaffold Dir
 
-Create a project directory and git repo at the given path.
+Create a project directory and git repo at the given path. Optional WordPress support with DDEV configuration.
 
-Arguments: $ARGUMENTS
-- First arg: absolute path for the new project directory
-- Second arg (optional): project name, used in the initial commit message
-
-## Steps
-
-### 1. Validate
-
-- If the path already exists and is non-empty, stop and report: "Directory already exists and is non-empty — aborting to avoid overwriting."
-- If the path already exists and is empty, continue.
-- If a parent directory doesn't exist, stop: "Parent directory {parent} does not exist. Create it first."
-
-### 2. Create directory
+## Usage
 
 ```bash
-mkdir -p {path}
+/scaffold-dir <path> [name] [options]
 ```
 
-### 3. Git init
+## Arguments
+
+- **path** (required): Absolute path for the new project directory
+- **name** (optional): Project name, used in the initial commit message. Defaults to the directory basename.
+- **--wordpress**: Enable WordPress-aware .gitignore with public_html structure and standard directories
+- **--ddev**: Set up DDEV configuration (sets docroot to public_html, and creates it)
+- **--php VERSION**: PHP version for the DDEV config. Defaults to `8.2`.
+- **--db TYPE:VERSION**: Database for the DDEV config. Defaults to `mariadb:11.8`
+  (DDEV's own default, and what existing studio projects run).
+
+**Match the client's host on both.** A client project inherits whatever their host runs, and
+scaffolding to studio defaults is how you get "works locally, breaks live". Legacy sites are
+routinely on MySQL rather than MariaDB, and on older PHP:
 
 ```bash
-cd {path} && git init
+/scaffold-dir /media/data/dev/ddev/oldclient oldclient \
+    --wordpress --ddev --php 7.4 --db mysql:5.7
 ```
 
-### 4. Write .gitignore
+DDEV does **not** validate these at config time - it writes whatever it is given and the
+container fails later - so the script checks their shape up front, before anything is
+created. `--db mysql8.0` and `--php 8` are both rejected with a usable message.
 
-Write a minimal `.gitignore` at the project root:
-
-```
-.env
-.env.local
-node_modules/
-__pycache__/
-*.pyc
-.DS_Store
-```
-
-### 5. Initial commit
+- **--wp-version X.Y[.Z] | latest**: Pin WordPress core. Downloads it into `public_html/`
+  along with its bundled content, which is then stripped back to one theme. Omit it and nothing
+  is downloaded - which is right for a migration, where the client's own files are imported.
 
 ```bash
-cd {path} && git add .gitignore && git commit -m "init: scaffold {name or basename}"
+# a legacy site stuck on an old core
+/scaffold-dir /media/data/dev/ddev/oldclient oldclient \
+    --wordpress --ddev --php 7.4 --db mysql:5.7 --wp-version 6.4.3
 ```
 
-### 6. Shutter profile
+Core is downloaded with local wp-cli, which needs no database and no running container. If
+wp-cli is absent the step is skipped with a note rather than failing the scaffold. The pinned
+version is also written into `docs/installed-versions.md`.
 
-If `shutter-profile` is available on PATH, create a Shutter profile for this project's QA inbox:
+- **--admin-user NAME**: WordPress admin username written into `scripts/install-wp.sh`.
+  Defaults to `bain_324`.
+
+**No Akismet, no Hello Dolly - but one theme is kept.** Core is downloaded *with* its
+content, and the sweep then removes Akismet, Hello Dolly and every bundled theme except the
+one this core calls default. WordPress cannot render without a theme, so keeping one means a
+freshly scaffolded site works immediately for testing.
+
+The theme kept is read from `WP_DEFAULT_THEME` in `wp-includes/default-constants.php`, so it
+always matches the version actually downloaded rather than a slug hardcoded here that goes
+stale each release. Pin 6.4.3 and you keep `twentytwentyfour`; take latest and you keep
+`twentytwentyfive`. The install script repeats the removal afterwards, deleting only
+*inactive* bundled themes so the active one survives.
+
+**WordPress is not installed at scaffold time** - `wp core install` needs a running database,
+so the containers have to be up first. The scaffold writes `scripts/install-wp.sh` instead,
+with the admin user baked in, to be run once after `ddev start`:
 
 ```bash
-shutter-profile create "{name or basename}" "{path}/qa/qa-inbox"
+ddev start          # or just run the script, it starts DDEV itself
+./scripts/install-wp.sh
 ```
 
-This creates `~/.shutter/profiles/{name}.xml` pointing to `{path}/qa/qa-inbox`, so Shutter can be launched for this project with `shutter --profile='{name}'`.
+**No password is written into that script.** `wp core install` generates one and prints it
+when `--admin_password` is omitted, which is the correct behaviour for a file that is
+committed to git. Site title, admin email and URL are all overridable by environment variable.
 
-Skip silently if `shutter-profile` is not found.
+Note that core is **not** committed - the `.gitignore` excludes everything under
+`public_html/` except `wp-content/`, which is correct: core is vendor code. The pin lives in
+the manifest, which is why that file matters.
+- **--plugin NAME**: Custom plugin name to allowlist (e.g., `--plugin acme-custom`). Can be repeated.
+- **--theme NAME**: Custom theme name to allowlist (e.g., `--theme acme-theme`). Can be repeated.
+- **--mu-plugin NAME**: Custom mu-plugin to allowlist (e.g., `--mu-plugin acme-fixes.php`). Can be repeated.
 
-### 7. Report
+## Examples
+
+**Non-WordPress project:**
+
+```bash
+/scaffold-dir /home/user/new-site site-name
+```
+
+**WordPress project with custom plugin and theme:**
+
+```bash
+/scaffold-dir /home/user/projects/acme acme --wordpress --plugin acme-custom --theme acme-theme
+```
+
+**WordPress DDEV project:**
+
+```bash
+/scaffold-dir /home/user/ddev/acme acme --wordpress --ddev
+```
+
+## What gets created
+
+### For all projects:
+
+- `.claude/` directory (for project-specific Claude configuration)
+- `qa/` directory (for QA inbox)
+- `.gitignore` file tailored to the project type
+- Initial git commit **on `main`**, then a `develop` branch checked out - the studio's
+  git flow layout, so it never has to be fixed by hand afterwards
+- A `.gitkeep` in every directory created. Git does not track empty directories, so without
+  these a clone arrives with none of the layout.
+
+### For WordPress projects (with `--wordpress`):
+
+**Directory structure:**
 
 ```
-scaffold-dir: {path}
-  ✓ directory created
-  ✓ git init
-  ✓ .gitignore written
-  ✓ initial commit
-  ✓ shutter profile '{name}' created  (or "skipped — shutter-profile not found")
+project-root/
+├── .ddev/          DDEV configuration (or provision/ for VVV)
+├── .claude/        Claude Code configuration
+├── backups/        local safety copies (contents ignored)
+├── bin/            working folder (contents ignored)
+├── context/        project context: perf, seo, specs (tracked)
+├── docs/           developer docs and ADRs (tracked)
+├── export/         working folder (contents ignored)
+├── import/         working folder (contents ignored)
+├── qa/             QA inbox (contents ignored)
+├── scripts/        project scripts (tracked)
+├── public_html/    docroot: WordPress core, wp-content, wp-config.php
+├── README.md
+├── wp-cli.yml      path: public_html
+├── docs/installed-versions.md   seeded manifest, see below
+└── .gitignore
 ```
+
+The working folders are ignored **by content** (`bin/*`) rather than wholesale (`bin/`), with
+`!bin/.gitkeep` re-allowing the marker. Ignoring the directory outright would swallow the
+.gitkeep too and the layout would not survive a clone.
+
+This layout follows `docs/utilities/wp-project-layout.md`, which is authoritative where it
+and any other source disagree. See ADR 016.
+
+**`docs/installed-versions.md`:** the .gitignore deliberately excludes `plugins/` and
+`themes/`, which loses the record of what is actually installed. `wp-project-layout.md`
+requires a committed manifest in its place, so the scaffold seeds one - pre-filled with the
+target PHP and database, and with the commands to regenerate it. Left uncreated it is simply
+forgotten, and the repo ends up with no record of its own stack.
+
+**A note on `wp-cli.yml`:** many setups carry a VVV-era `wp-cli.yml` entry in the global
+gitignore, which silently prevents it being tracked. The script checks for this after writing
+and reports a warning naming the offending gitignore and line - it does not force-add, since
+that would override a deliberate user setting.
+
+**.gitignore — three-tier pattern:**
+
+The WordPress .gitignore uses a three-tier allow/deny pattern to ignore vendor code while tracking only custom code:
+
+1. **Tier 1**: Deny `public_html/*`, allow only `wp-content/`
+2. **Tier 2**: Deny `wp-content/*`, allow only `plugins/`, `themes/`, `mu-plugins/`
+3. **Tier 3**: Deny contents of each, re-allow only your named custom code
+
+This pattern prevents the entire vendor directory from being committed. Without it, you can accidentally commit 300,000+ files and hundreds of MB of vendor code.
+
+**Allowlisted custom code:**
+
+If you pass `--plugin acme-custom --theme acme-theme`, the .gitignore will have:
+
+```gitignore
+!public_html/wp-content/plugins/acme-custom/
+!public_html/wp-content/themes/acme-theme/
+```
+
+Without arguments, commented placeholders are left for you to uncomment and customize:
+
+```gitignore
+# !public_html/wp-content/plugins/<client>-custom/
+# !public_html/wp-content/themes/<client>-theme/
+# !public_html/wp-content/mu-plugins/<client>-fixes.php
+```
+
+### For DDEV projects (with `--ddev`):
+
+Sets `docroot: public_html` in `.ddev/config.yaml`. If the file doesn't exist, creates a minimal one.
+
+This ensures the docroot matches the studio standard (public_html) rather than DDEV's default (repo root).
+
+## What gets ignored
+
+All WordPress projects ignore:
+
+- **Secrets**: `.env`, `wp-config.php` (environment-specific)
+- **Archives & backups**: `*.sql`, `*.zip`, `*.wpress` (database dumps, exports)
+- **Logs**: `*.log` (runtime logs)
+- **Dependencies**: `vendor/`, `node_modules/` (installed packages)
+- **Project-internal**: `asana-mirror.md`, `asana-ids.json` (Asana task mirrors)
+- **Working folders**: `bin/`, `export/`, `import/`, `qa/` (temporary working space)
+- **Third-party code**: All of `public_html/wp-content/plugins/`, `themes/`, `mu-plugins/` except your named custom code
+
+Generic projects ignore:
+
+- Environment files: `.env`, `.env.local`
+- Dependencies: `node_modules/`, `__pycache__/`, `*.pyc`
+- OS junk: `.DS_Store`
+
+## Reference
+
+Studio WordPress project layout standard: `/media/data/dev/bain-studio/docs/utilities/wp-project-layout.md`
+
+Example projects:
+- VVV: `/media/data/dev/vvv/clients/www/nore`
+- DDEV: `/media/data/dev/ddev/ebiz-global`
+
+## Execution
+
+This skill runs the `scaffold.py` Python script in the same directory, passing all arguments through. The script:
+
+1. Validates paths and parent directory existence
+2. Creates the directory structure (with or without WordPress tiers)
+3. Generates the appropriate `.gitignore`
+4. Initializes git with an initial commit
+5. Sets up DDEV config if needed
+6. Creates a Shutter profile (if available)

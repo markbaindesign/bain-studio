@@ -1,6 +1,6 @@
 ---
 name: triage
-description: Triage an inbound signal — classify it, qualify it if it's an RFQ, and route it. Paste the signal text as the argument. Handles email, LinkedIn, referral, contact form, and direct outreach. For automated Upwork pipeline signals, use the PIPE project pipeline instead.
+description: Triage an inbound signal — classify it, qualify it if it's an RFQ, and route it. Paste the signal text as the argument. Handles email, LinkedIn, referral, contact form, and direct outreach. For automated Upwork pipeline signals, use the UAP project pipeline instead.
 ---
 
 # Triage (Autolycus)
@@ -166,7 +166,7 @@ Keep it under 80 words. Specific, warm, no false promises.
 
 ## Notes
 
-- The automated Upwork pipeline (PIPE project) handles Upwork alert emails. Use this skill for DMs, emails, LinkedIn, referrals, and contact form submissions.
+- The automated Upwork pipeline (UAP project) handles Upwork alert emails. Use this skill for DMs, emails, LinkedIn, referrals, and contact form submissions.
 - For known clients with a poor outcome grade or Would Repeat = FALSE, note this in the qualification — it factors into the pursuit decision.
 - Never invent budget or timeline figures not stated in the signal.
 - Slug format: client name or company lowercased, spaces to hyphens, date appended (e.g. `harper-legal-2026-05`).

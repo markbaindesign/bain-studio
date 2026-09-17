@@ -748,3 +748,73 @@ def test_bot_comment_texts_separates_bot_from_human(monkeypatch):
     ]
     assert sync.bot_comment_texts(stories) == {"Blocked 2026-08-25. Research findings missing."}
     assert [c["text"] for c in sync.human_comments(stories)] == ["where is it?"]
+
+
+# ---------------------------------------------------------------------------
+# --get-task
+# ---------------------------------------------------------------------------
+
+def _registry(tmp_path, monkeypatch, projects):
+    """projects: {dirname: {gid: local_id}}"""
+    entries = []
+    for name, tasks in projects.items():
+        d = tmp_path / name
+        d.mkdir()
+        (d / "asana-ids.json").write_text(json.dumps({"tasks": tasks, "posted_progress": {"9": "Blocked 2026-08-25"}}))
+        entries.append({"path": str(d), "status": "archived"})
+    reg = tmp_path / "projects.json"
+    reg.write_text(json.dumps(entries))
+    monkeypatch.setattr(sync, "PROJECTS_FILE", reg)
+
+
+def test_resolve_task_ref_url_gid_and_local_id(tmp_path, monkeypatch):
+    _registry(tmp_path, monkeypatch, {"bd": {"1217094791482756": "BD-152"}})
+    assert sync.resolve_task_ref("https://app.asana.com/1/512209774840/task/1217094791482756?focus=true") == "1217094791482756"
+    assert sync.resolve_task_ref("https://app.asana.com/1/512/project/99/task/42") == "42"
+    assert sync.resolve_task_ref(" 1217094791482756 ") == "1217094791482756"
+    assert sync.resolve_task_ref("bd-152") == "1217094791482756"
+    assert sync.resolve_task_ref("BD-999") is None
+    assert sync.resolve_task_ref("nonsense") is None
+
+
+def test_local_id_maps_includes_archived_and_ignores_non_ids(tmp_path, monkeypatch):
+    _registry(tmp_path, monkeypatch, {"a": {"1": "KF-WEB-005"}, "b": {"2": "PIPE-063", "3": "garbage"}})
+    gid_to_lid, lid_to_gid = sync._local_id_maps()
+    assert gid_to_lid == {"1": "KF-WEB-005", "2": "PIPE-063"}
+    assert lid_to_gid["KF-WEB-005"] == "1"
+
+
+def test_format_task_includes_notes_bot_comments_and_local_id(monkeypatch):
+    monkeypatch.setattr(sync, "LOOPER_STATUS_FIELD_GID", "ls_gid")
+    task = {"gid": "7", "name": "Perf audit", "notes": "See roadmap", "completed": True,
+            "projects": [{"name": "BDW"}], "assignee": {"name": "Mark"},
+            "custom_fields": [{"gid": "ls_gid", "display_value": "Blocked"}],
+            "permalink_url": "https://x/7"}
+    stories = [
+        {"resource_subtype": "comment_added", "text": "Blocked: file missing", "created_at": "2026-08-25T10:00",
+         "created_by": {"gid": sync.BAINBOT_GID, "name": "BainBot"}},
+        {"resource_subtype": "assigned", "text": "assigned to Mark"},
+    ]
+    out = sync.format_task(task, stories, {"7": "BD-152"})
+    assert "### BD-152 — Perf audit" in out
+    assert "**Completed:** yes" in out
+    assert "**Looper Status:** Blocked" in out
+    assert "See roadmap" in out
+    assert "BainBot: Blocked: file missing" in out
+    assert "assigned to Mark" not in out
+
+
+def test_get_task_reports_unresolvable_ref(tmp_path, monkeypatch, capsys):
+    _registry(tmp_path, monkeypatch, {})
+    assert sync.get_task("BD-404") == 1
+    assert "could not resolve" in capsys.readouterr().err
+
+
+def test_get_task_reports_http_error(tmp_path, monkeypatch, capsys):
+    _registry(tmp_path, monkeypatch, {})
+    resp = MagicMock(status_code=404)
+    def boom(*a, **k):
+        raise sync.requests.HTTPError(response=resp)
+    monkeypatch.setattr(sync, "_get", boom)
+    assert sync.get_task("123") == 1
+    assert "HTTP 404" in capsys.readouterr().err

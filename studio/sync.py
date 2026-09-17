@@ -22,6 +22,7 @@ Usage:
     python sync.py --dry-run                                # preview only, no writes or Asana mutations
     python sync.py --create --name "Client" --prefix CLI --path /path/to/project
                                                             # scaffold a new project from template
+    python sync.py --get-task <url|gid|LOCAL-ID>            # read-only: print one task's notes + comments
 
 Log: studio/sync.log (rotating, 5 MB × 3)
 """
@@ -1288,6 +1289,37 @@ def create_task(project_gid: str, name: str, notes: str = '', assignee_gid: str 
     return new_gid
 
 
+def update_task(task_gid: str, name: str = None, notes: str = None,
+                dry_run: bool = False) -> None:
+    """
+    Rewrite a task's name and/or notes in Asana via bainbot.
+
+    Notes are deliberately read-only in the mirror — multi-line content does not
+    survive the single-line FIELD_RE parser, so `_push_simple_fields` skips them
+    and a mirror edit silently does nothing. This is the sanctioned way to change
+    them without reaching for the Asana MCP, which runs as Mark's own account.
+
+    Replaces the notes wholesale; read the current value first if you mean to
+    amend rather than overwrite.
+    """
+    data = {}
+    if name is not None:
+        data["name"] = name
+    if notes is not None:
+        data["notes"] = notes
+    if not data:
+        raise ValueError("update_task needs a name or notes to set")
+
+    if dry_run:
+        for k, v in data.items():
+            preview = v if len(v) <= 60 else v[:60] + "…"
+            log.info(f"  [DRY-RUN] Would set {k} on {task_gid} to {preview!r}")
+        return
+
+    _put(f"/tasks/{task_gid}", {"data": data})
+    log.info(f"  Task {task_gid} updated: {', '.join(sorted(data))}")
+
+
 def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT UP",
                      notes: str = "", due: str = "", dry_run: bool = False) -> str:
     """
@@ -1540,6 +1572,108 @@ def _scaffold_project_inner(name, prefix, path, template_gid, extra_members=None
 
 
 # ---------------------------------------------------------------------------
+# Read a single task (--get-task)
+# ---------------------------------------------------------------------------
+
+TASK_URL_GID = re.compile(r'/task/(\d+)')
+LOCAL_ID_RE  = re.compile(r'^[A-Z][A-Z0-9-]*-\d+$')
+
+
+def _local_id_maps() -> tuple:
+    """Build gid→local ID and local ID→gid maps from every registered project's asana-ids.json.
+
+    Includes paused/archived projects: a link can point at a task in any of them.
+    """
+    gid_to_lid, lid_to_gid = {}, {}
+    for entry in load_projects_registry():
+        ids_file = Path(entry["path"]).expanduser() / "asana-ids.json"
+        try:
+            tasks = json.loads(ids_file.read_text()).get("tasks") or {}
+        except (OSError, ValueError):
+            continue
+        for gid, lid in tasks.items():
+            if isinstance(lid, str) and LOCAL_ID_RE.match(lid):
+                gid_to_lid.setdefault(gid, lid)
+                lid_to_gid.setdefault(lid, gid)
+    return gid_to_lid, lid_to_gid
+
+
+def resolve_task_ref(ref: str, lid_to_gid: dict = None) -> str:
+    """Turn an Asana task URL, a bare GID, or a local ID (e.g. BD-152) into a task GID.
+
+    Returns None when the reference cannot be resolved.
+    """
+    ref = (ref or "").strip()
+    m = TASK_URL_GID.search(ref)
+    if m:
+        return m.group(1)
+    if ref.isdigit():
+        return ref
+    if LOCAL_ID_RE.match(ref.upper()):
+        if lid_to_gid is None:
+            lid_to_gid = _local_id_maps()[1]
+        return lid_to_gid.get(ref.upper())
+    return None
+
+
+def format_task(task: dict, stories: list, gid_to_lid: dict) -> str:
+    """Render a task as markdown for an agent to read. Includes bainbot's comments too:
+    earlier looper progress notes are context, unlike in the mirror."""
+    gid = task.get("gid", "")
+    looper = next((f.get("display_value") for f in task.get("custom_fields") or []
+                   if f.get("gid") == LOOPER_STATUS_FIELD_GID), None)
+    lines = [
+        f"### {gid_to_lid.get(gid, 'no local ID')} — {task.get('name', '')}",
+        f"- **Asana ID:** {gid}",
+        f"- **Completed:** {'yes' if task.get('completed') else 'no'}",
+        f"- **Projects:** {', '.join(p.get('name', '') for p in task.get('projects') or []) or 'none'}",
+        f"- **Assignee:** {(task.get('assignee') or {}).get('name', 'none')}",
+        f"- **Due:** {task.get('due_on') or 'none'}",
+    ]
+    if looper:
+        lines.append(f"- **Looper Status:** {looper}")
+    parent = task.get("parent")
+    if parent:
+        lines.append(f"- **Parent:** {gid_to_lid.get(parent.get('gid'), parent.get('gid'))} — {parent.get('name', '')}")
+    lines.append(f"- **URL:** {task.get('permalink_url', '')}")
+    lines += ["", "#### Notes", (task.get("notes") or "").strip() or "No notes."]
+    comments = [s for s in stories if s.get("resource_subtype") == "comment_added"
+                and (s.get("text") or "").strip()]
+    lines += ["", "#### Comments"]
+    if not comments:
+        lines.append("none")
+    for s in comments:
+        author = (s.get("created_by") or {}).get("name", "Unknown")
+        lines.append(f"- {(s.get('created_at') or '')[:10]} {author}: {s['text'].strip()}")
+    return "\n".join(lines)
+
+
+def get_task(ref: str) -> int:
+    """Print a task read via bainbot. Read-only. Returns a process exit code."""
+    gid_to_lid, lid_to_gid = _local_id_maps()
+    gid = resolve_task_ref(ref, lid_to_gid)
+    if not gid:
+        print(f"ERROR: could not resolve '{ref}' to an Asana task GID "
+              f"(expected a task URL, a numeric GID, or a registered local ID)", file=sys.stderr)
+        return 1
+    try:
+        task = _get(f"/tasks/{gid}", {
+            "opt_fields": "name,notes,completed,due_on,permalink_url,assignee.name,"
+                          "projects.name,parent.name,custom_fields.gid,custom_fields.display_value",
+        })["data"]
+    except requests.HTTPError as e:
+        code = e.response.status_code if e.response is not None else "?"
+        print(f"ERROR: Asana returned HTTP {code} for task {gid} "
+              f"(404/403 usually means bainbot is not a member of that task's project)", file=sys.stderr)
+        return 1
+    except requests.RequestException as e:
+        print(f"ERROR: could not reach Asana for task {gid}: {e}", file=sys.stderr)
+        return 1
+    print(format_task(task, fetch_stories(gid), gid_to_lid))
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -1579,12 +1713,19 @@ def main():
                         help="Assignee GID (optional; defaults to Mark's GID if not set)")
     parser.add_argument("--task-depends-on", metavar="GID", default="",
                         help="GID of the task this new task unblocks (optional)")
+    parser.add_argument("--update-task", action="store_true",
+                        help="Update an existing task's name and/or notes "
+                             "(requires --task-gid; notes cannot be pushed "
+                             "from the mirror)")
     parser.add_argument("--comment", action="store_true",
                         help="Post a comment to an Asana task via bainbot (use with --task-gid and --comment-text)")
     parser.add_argument("--task-gid", metavar="GID", default="",
                         help="Asana task GID to comment on (required with --comment)")
     parser.add_argument("--comment-text", metavar="TEXT", default="",
                         help="Comment text to post (required with --comment)")
+    parser.add_argument("--get-task", metavar="REF",
+                        help="Read-only: print one task (notes + comments) via bainbot. "
+                             "REF is an Asana task URL, a GID, or a local ID like BD-152")
     args = parser.parse_args()
 
     if not ASANA_PAT:
@@ -1593,6 +1734,20 @@ def main():
     if not WORKSPACE_GID or not BAINBOT_GID:
         log.error("ERROR: ASANA_WORKSPACE_GID and ASANA_BAINBOT_GID must be set in .env")
         sys.exit(2)
+
+    if args.get_task:
+        sys.exit(get_task(args.get_task))
+
+    if args.update_task:
+        if not args.task_gid:
+            parser.error("--update-task requires --task-gid")
+        if not args.task_name and not args.task_notes:
+            parser.error("--update-task requires --task-name and/or --task-notes")
+        update_task(args.task_gid,
+                    name=args.task_name or None,
+                    notes=args.task_notes or None,
+                    dry_run=args.dry_run)
+        sys.exit(0)
 
     if args.comment:
         if not args.task_gid or not args.comment_text:

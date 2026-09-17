@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-09-17
+
+### Added
+- **Daily Brief** (`studio/collectors/daily_brief.py`) - a morning chief-of-staff sweep of
+  finance (books behind, account shortfalls, tax deadlines, losses, money tasks), operations
+  (failing or quiet cron jobs, stale snapshot, uncommitted work, unmerged branches), projects
+  (overdue, blocked on Mark, stuck in review, stale), clients (chases gone quiet) and voice
+  notes. Writes a ranked note to `Work Notes/Daily Brief/`, escalates findings ignored for a
+  week, and posts the top items to Slack. No Claude call.
+- **Audio notes** (`studio/collectors/audio_notes.py`) - transcribes voice memos recorded in the
+  Obsidian vault. The checklist line above each embedded recording is the memo's context, so a
+  memo recorded under a task item is linked to that task. Silent recordings are skipped and
+  reported; audio is never moved (that would break the embed).
+- `sync.py --get-task <url|gid|LOCAL-ID>` - read-only lookup of any Asana task via bainbot, so
+  the looper can follow links to other tasks instead of blocking on them.
+- `studio/scripts/rename_prefix.py` - renames a project's task ID prefix while keeping every
+  task number (used for PIPE -> UAP).
+- `sync.py --update-task`, for task notes the mirror cannot push.
+- **bookkeeper** - catches the GnuCash book up from bank feeds (Wise API, BBVA/Upwork/Stripe
+  CSV and XLSX, Harvest invoices), with journal and amend commands.
+- **scaffold-dir** - WordPress-aware project scaffolding: pinned core, `--db`, a generated
+  install script and a three-tier `.gitignore`.
+- ADR 016 (WordPress factory consolidation), ADR 017 (per-client looper queues), ADR 018
+  (uptime monitoring via Better Stack, email and Slack only).
+
+### Changed
+- **Studio inbox**: the Hermes postman sweep posts each message to Slack once and stamps it
+  `notified_at` instead of archiving it, and `/check-inbox` now also reads `studio/inbox/`.
+  Messages from other sessions (e.g. the KF account) were previously archived before any
+  session saw them. New message type `note`.
+- **studio-looper**: a documented-answer gate - before blocking on a question the looper checks
+  the task, CLAUDE.md files and ADRs, and works title-only tasks with one clear reading.
+- The Upwork Pipeline's task prefix is now UAP (was PIPE); references updated.
+- brand-doc: tighter body leading in branded PDFs.
+
 ## [1.5.1] - 2026-09-02
 
 ### Fixed
@@ -183,7 +218,8 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.5.1...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.6.0...develop
+[1.6.0]: https://github.com/markbaindesign/bain-studio/compare/1.5.1...1.6.0
 [1.5.1]: https://github.com/markbaindesign/bain-studio/compare/1.5.0...1.5.1
 [1.5.0]: https://github.com/markbaindesign/bain-studio/compare/1.4.0...1.5.0
 [1.4.0]: https://github.com/markbaindesign/bain-studio/compare/1.3.0...1.4.0
