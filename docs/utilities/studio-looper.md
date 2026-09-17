@@ -29,7 +29,7 @@ Must be invoked from `/media/data/dev/bain-studio`.
 
 ## How it works
 
-1. Mark multi-homes tasks from any project (MCF, NORE, BSTD, PIPE…) into the **Studio Looper**
+1. Mark multi-homes tasks from any project (MCF, NORE, BSTD, UAP…) into the **Studio Looper**
    Asana project, Queue section. Drag order = execution priority.
 2. `/studio-looper` syncs the SL project, reads the Queue, and presents the list for
    confirmation before starting.
@@ -66,6 +66,34 @@ the looper legitimately needs hit an allow (or a scripted deny) rather than an a
 | Done | Mark confirmed; task complete |
 
 Tasks added to the Studio Looper project with no Looper Status are automatically pushed to "Queue" by sync.py on the next sync run.
+
+## Documented-answer gate
+
+Before blocking a task on a question, the looper must look for the answer in the task (notes,
+comments, linked tasks), the project's CLAUDE.md and ADRs, the studio/dev-root/global CLAUDE.md
+files, and the studio ADRs. Standing answers such as "where does research output go" (Dropbox,
+never the repo) and "what format" (markdown) are spelled out in the skill. Title-only tasks with
+one clearly most likely reading get worked, with the interpretation stated for Review. A blocker
+that survives must say what was checked and ask one specific question.
+
+Added 2026-09-17 after a run blocked six tasks on questions CLAUDE.md already answered.
+
+## Linked Asana tasks
+
+The looper works from local mirrors, but it is not limited to them. When a task links to another
+Asana task, the looper reads it with:
+
+```bash
+python3 studio/sync.py --get-task <url|gid|LOCAL-ID>
+```
+
+Read-only, via bainbot. Accepts a task URL, a bare GID, or a local ID (resolved through every
+registered project's `asana-ids.json`, including paused and archived ones). Prints the task's
+local ID, completion state, projects, Looper Status, notes and all comments (bainbot's included).
+Exits non-zero with a specific error if the reference can't be resolved or Asana refuses it
+(404/403 usually means bainbot isn't a member of that project).
+
+Before this existed (SL-133) the looper blocked every task that pointed at another task.
 
 ## State file
 

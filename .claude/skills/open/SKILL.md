@@ -8,7 +8,7 @@ allowed-tools: [Bash]
 
 Open a project in a new Terminator tab with Claude Code running.
 
-Usage: `/open PREFIX` — e.g. `/open MCF`, `/open NORE`, `/open PIPE`
+Usage: `/open PREFIX` — e.g. `/open MCF`, `/open NORE`, `/open UAP`
 
 ## Steps
 

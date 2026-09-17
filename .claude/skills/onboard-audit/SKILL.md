@@ -47,7 +47,7 @@ Produce a compact table per project, then a summary of the worst offenders.
 ✓ open-questions  ✓ inbox  ✗ ADR
 ✗ Mnemosyne entry
 
-### PIPE — Upwork Pipeline
+### UAP — Upwork Pipeline
 ...
 
 ---

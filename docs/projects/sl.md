@@ -27,7 +27,7 @@ Work itself always happens in the *home* project of each task, never here.
 ## How it differs from every other studio project
 
 Most projects own their tasks. SL owns almost none of them: Mark multi-homes tasks from other
-boards into it, so a task in SL is simultaneously a task in BD, PIPE, FOOB, and so on. Two
+boards into it, so a task in SL is simultaneously a task in BD, UAP, FOOB, and so on. Two
 consequences follow, and both have bitten:
 
 - **Every multi-homed task is mirrored twice** — once in its home project, once here — with a
@@ -36,7 +36,7 @@ consequences follow, and both have bitten:
   what produced duplicate progress comments until the dedupe moved to Asana's own story list
   (2026-08-25).
 - **`PRESERVE_FOREIGN_IDS: true`** — sync.py must not assign `SL-NNN` IDs to multi-homed tasks.
-  They keep their home ID (`BD-152`, `PIPE-028`), which is how the looper routes each task to the
+  They keep their home ID (`BD-152`, `UAP-028`), which is how the looper routes each task to the
   right project directory. Only tasks *created* in SL get an SL ID.
 
 ## Looper Status
@@ -60,8 +60,8 @@ BainBot hands finished work to Mark at `Review` rather than marking it `Done` it
 - SL-126 — Follow up on job description gap analysis (Blocked)
 - BD-152 — Performance audit (Blocked)
 - BD-157 — Implement performance roadmap Phase 1 (Blocked)
-- PIPE-056 — Follow up on RSS/remote job board poller (Blocked)
-- PIPE-057 — Follow up on nudge priority proposals (Blocked)
+- UAP-056 — Follow up on RSS/remote job board poller (Blocked)
+- UAP-057 — Follow up on nudge priority proposals (Blocked)
 - BSTD-768 — Audit Mark's own boilerplate for cross-project reuse (Blocked)
 - FOOB-001 — Retire the remote demo site (Blocked)
 

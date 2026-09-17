@@ -70,7 +70,7 @@ Recommended next step:
 
 - Triage does not open Athena automatically — Mark makes the call to pursue after seeing the verdict
 - Abderus tracks `Investigate` verdicts and flags them if no follow-up is recorded within a reasonable window
-- For automated Upwork pipeline signals, use the PIPE project pipeline instead of Triage
+- For automated Upwork pipeline signals, use the UAP project pipeline instead of Triage
 
 ## See also
 

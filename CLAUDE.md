@@ -96,7 +96,7 @@ Quick reference (paths only — see project file for full details):
 | BSTD | `/media/data/dev/bain-studio` |
 | KF-WEB | `/media/data/dev/vvv/clients/www/kf-21` |
 | MCF | `/home/bain/code/misc/js/astrojs/client/mhairi_mcf` |
-| PIPE | `/media/data/dev/misc/upwork-proposals` |
+| UAP | `/media/data/dev/misc/upwork-proposals` |
 | DOM | `/media/data/dev/misc/premium_domains` |
 | NORE | `/home/bain/code/vvv/clients/www/nore` |
 | BD | `/media/data/dev/bain/www/bain.design` |
