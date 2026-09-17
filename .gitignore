@@ -57,3 +57,4 @@ docs/audits/
 # Obsidian workspace state
 docs/.obsidian/workspace.json
 .env
+studio/collectors/daily_brief_state.json
