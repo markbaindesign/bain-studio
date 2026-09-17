@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-09-17
+
+### Fixed
+- **ops-deploy.sh aborted any deploy spanning more than 20 commits** (exit 141, before checking
+  anything out). The change list piped `git log` into `head -20`; `head` closing the pipe
+  SIGPIPEd `git`, and `set -o pipefail` turned that into a failure. The limit is now `git log -20`.
+
 ## [1.6.1] - 2026-09-17
 
 ### Fixed
@@ -226,7 +233,8 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.6.1...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.6.2...develop
+[1.6.2]: https://github.com/markbaindesign/bain-studio/compare/1.6.1...1.6.2
 [1.6.1]: https://github.com/markbaindesign/bain-studio/compare/1.6.0...1.6.1
 [1.6.0]: https://github.com/markbaindesign/bain-studio/compare/1.5.1...1.6.0
 [1.5.1]: https://github.com/markbaindesign/bain-studio/compare/1.5.0...1.5.1
