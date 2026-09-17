@@ -369,6 +369,20 @@ cd {PROJECT_DIR}
 Read `{PROJECT_DIR}/asana-mirror.md` for task Notes, Blockers, Dependencies.
 Read `{PROJECT_DIR}/CLAUDE.md` for the project's tech stack and build instructions.
 
+**Linked Asana tasks.** When the Notes or comments point at another Asana task (a
+`https://app.asana.com/...` link, a bare task GID, or a local ID like `BD-152`), read it — a
+link is never a reason to block:
+
+```bash
+python3 /media/data/dev/bain-studio/studio/sync.py --get-task "<url, GID or local ID>"
+```
+
+It is read-only (no mirror writes, safe alongside a running sync), goes through bainbot, and
+prints the linked task's local ID, completion state, notes and every comment — including earlier
+looper progress notes. If the linked task is already completed, say so in your progress note;
+the work it asked for may already be done. Only block if the command exits non-zero, and quote
+its error in the blocker (a 404/403 means bainbot is not a member of that task's project).
+
 **Duplicate-work guard.** Before doing anything, check the task's Progress history and comments.
 If the task was already completed ("Ready for review {date}" or equivalent) and has been
 re-queued with **no new instructions**, do NOT redo the work. "No new instructions" means:

@@ -67,6 +67,23 @@ the looper legitimately needs hit an allow (or a scripted deny) rather than an a
 
 Tasks added to the Studio Looper project with no Looper Status are automatically pushed to "Queue" by sync.py on the next sync run.
 
+## Linked Asana tasks
+
+The looper works from local mirrors, but it is not limited to them. When a task links to another
+Asana task, the looper reads it with:
+
+```bash
+python3 studio/sync.py --get-task <url|gid|LOCAL-ID>
+```
+
+Read-only, via bainbot. Accepts a task URL, a bare GID, or a local ID (resolved through every
+registered project's `asana-ids.json`, including paused and archived ones). Prints the task's
+local ID, completion state, projects, Looper Status, notes and all comments (bainbot's included).
+Exits non-zero with a specific error if the reference can't be resolved or Asana refuses it
+(404/403 usually means bainbot isn't a member of that project).
+
+Before this existed (SL-133) the looper blocked every task that pointed at another task.
+
 ## State file
 
 `/tmp/studio-looper/studio-looper.{session_id}.local.md` — **session-scoped**, named
