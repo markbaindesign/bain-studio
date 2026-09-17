@@ -38,6 +38,8 @@ PATHS=(
   "studio/collectors/obsidian_collector_state.json"
   "studio/collectors/obsidian_standup.json"
   "studio/collectors/obsidian_tagged_items.json"
+  "studio/collectors/daily_brief_state.json"
+  "studio/collectors/audio_notes_state.json"
 
   # Asana mirrors - sync.py reads and writes these
   "asana-mirror.md"
@@ -60,6 +62,8 @@ PATHS=(
   "studio/collectors/hermes.log"
   "studio/collectors/obsidian_collector.log"
   "studio/collectors/wp_pulse.log"
+  "studio/collectors/daily_brief.log"
+  "studio/collectors/audio_notes.log"
   "studio/scripts/account_forecast_report.log"
 )
 
