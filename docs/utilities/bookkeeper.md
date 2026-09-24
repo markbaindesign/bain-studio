@@ -32,7 +32,7 @@ python3 -m studio.bookkeeper pull   --source wise --from 2026-08-05 --commit
 
 | Flag | Meaning |
 |---|---|
-| `--source` | `wise` (API), `wise-csv`, `harvest` (API), `bbva`, `upwork`, `stripe` |
+| `--source` | `wise` (API), `wise-csv`, `harvest` (API), `bbva`, `upwork`, `stripe` (rare; not a feed to chase) |
 | `--file` | CSV to import (required for every source but `wise`) |
 | `--from` / `--to` | Date range. Windows an API pull, and filters the rows of an `import` file (a whole-history export is otherwise read in full) |
 | `--profile` | `business` or `personal`; both if omitted. Warns when the other choice would match far more rows already in the book (see Wise profile below) |
@@ -214,6 +214,15 @@ it cannot parse back.
 if any resolves in no currency. The same check runs as a warning at the start of every
 `pull` and `import`.
 
+### Harvest invoices
+
+`--source harvest` recognises income when an invoice is issued. With IVA and an IRPF
+retention it books four legs (`Dr AR` amount due, `Dr IRPF Retenido`, `Cr Client Income`
+pre-tax subtotal, `Cr IVA Repercutido`); with no tax, two. The subtotal is derived as
+`amount - tax - tax2`, so it holds whatever signs Harvest reports. A positive second tax
+is held for review rather than booked as a retention. Only EUR has `IVA Repercutido` and
+`IRPF Retenido` leaves, so a taxed non-EUR invoice is held back until they exist.
+
 ### Possible duplicates
 
 A same-amount match a few days off is held back for a human. Two things keep this from
@@ -245,7 +254,7 @@ in the book; when in doubt, omit `--profile` and let it infer per row.
 | Wise CSV | VERIFIED | Checked against real business and personal exports |
 | BBVA | VERIFIED | .xlsx, sheet "Informe BBVA", headers row 5, dates dd/mm/yyyy from `Fecha` |
 | Upwork | VERIFIED | Drops scheduled rows — future-dated, no running balance |
-| Stripe | PROVISIONAL | Not yet seen a real export — verify before `--commit` |
+| Stripe | PROVISIONAL | Barely used, so not tracked as a feed and never counted against "books are current". Verify against a real export before `--commit` if a charge appears |
 
 ## Wise API: statements are not available
 

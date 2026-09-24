@@ -1,6 +1,6 @@
 ---
 name: bookkeeper
-description: Catch the GnuCash books up from bank feeds — pulls Wise via API, imports CSV exports from BBVA/Upwork/Stripe, dedupes against the book, restores netted-out fees, and writes balanced transactions. Use when the books need updating, before a quarterly tax filing, or when asked to reconcile an account.
+description: Catch the GnuCash books up from bank feeds — pulls Wise via API, imports CSV exports from BBVA/Upwork, dedupes against the book, restores netted-out fees, and writes balanced transactions. Use when the books need updating, before a quarterly tax filing, or when asked to reconcile an account.
 allowed-tools: [Bash, Read, Edit]
 ---
 
@@ -39,7 +39,10 @@ python3 -m studio.bookkeeper pull   --source wise --from 2026-08-05 --commit
 
 `--from`/`--to` filter file imports too, so pass the window rather than trimming the CSV.
 
-Sources: `wise` (API), `wise-csv`, `bbva`, `upwork`, `stripe`.
+Sources: `wise` (API), `wise-csv`, `bbva`, `upwork`, `harvest` (invoices). The feeds that
+can fall behind, and so the only ones to check for "books are current", are Wise, BBVA and
+Upwork. Stripe and PayPal are barely used: `stripe` still imports for the rare charge, but
+never list either as a feed to chase or as outstanding work.
 
 ## Steps
 
@@ -97,6 +100,13 @@ python3 -m studio.bookkeeper journal --date 2026-09-10 --description "USD to EUR
 
 Dry-run first; the balance check and backup apply as for any import.
 
+## Harvest invoices
+
+`--source harvest` books income on issue. A Spanish invoice is split four ways: `Dr AR`
+(amount due), `Dr IRPF Retenido`, `Cr Client Income` (pre-tax subtotal), `Cr IVA
+Repercutido`. An invoice with no tax stays two legs. Check the dry run's Posting column
+against the invoice before `--commit`.
+
 ## Amending something already booked
 
 `studio.bookkeeper.amend` corrects splits that are already in the book. It is narrow on
@@ -121,7 +131,7 @@ Always run it against a copy of the book first.
 
 - `Income:Other Income` is EUR-only, so USD/GBP cashback is held until those leaves
   exist.
-- Stripe's column map is PROVISIONAL. BBVA and Upwork are VERIFIED against real exports.
+- BBVA and Upwork column maps are VERIFIED against real exports.
 - The Wise **personal** profile is treated as business (same rules as Wise Business), and
   the history is booked under the Personal accounts. Omit `--profile` on a `wise-csv`
   import unless you know the export's profile; the tool warns on a mismatch.

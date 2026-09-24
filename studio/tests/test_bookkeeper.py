@@ -876,3 +876,27 @@ def test_csv_alt_date_is_captured(tmp_path):
                               fixed_currency="EUR")
     t = csv_source.parse(path, cm, "Assets:X", "bbva")[0]
     assert t.date == date(2026, 9, 1) and t.alt_dates == [date(2026, 9, 3)]
+
+
+# ------------------------------------------------ Harvest tax split
+
+def test_harvest_spanish_invoice_splits_iva_and_irpf():
+    from studio.bookkeeper.sources.harvest import build_legs
+    # subtotal 1000, IVA 21% = 210, IRPF -15% = -150, amount due 1060
+    legs = build_legs(Fraction(1060), Fraction(210), Fraction(-150), "EUR")
+    by = {l.account.split(":")[-1]: l.amount for l in legs}
+    assert by == {"Accounts Receivable": 1060, "IRPF Retenido": 150,
+                  "Client Income": -1000, "IVA Repercutido": -210}
+    assert sum(l.amount for l in legs) == 0
+
+
+def test_harvest_untaxed_invoice_keeps_two_legs():
+    from studio.bookkeeper.sources.harvest import build_legs
+    legs = build_legs(Fraction(500), Fraction(0), Fraction(0), "USD")
+    assert [l.amount for l in legs] == [500, -500]
+
+
+def test_harvest_iva_only_invoice_balances():
+    from studio.bookkeeper.sources.harvest import build_legs
+    legs = build_legs(Fraction(121), Fraction(21), Fraction(0), "EUR")
+    assert sum(l.amount for l in legs) == 0 and len(legs) == 3
