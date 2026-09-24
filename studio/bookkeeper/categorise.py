@@ -84,6 +84,36 @@ def default_rules_path() -> Optional[str]:
     return None
 
 
+CHECK_CURRENCIES = ("EUR", "USD", "GBP")
+
+
+def check_rules(rules, book):
+    """Resolve every rule and fallback target against the book.
+
+    Returns (broken, partial). `broken` are entries whose account resolves in
+    none of the currencies they could apply to: they can never post and would
+    otherwise surface only at import time, row by row. `partial` resolve for
+    some currencies but not others, which is often deliberate (the family
+    has no GBP leaf) so it is information, not an error.
+    """
+    broken, partial = [], []
+    entries = [("rule", r.get("match"), r) for r in rules.rules]
+    entries += [("fallback", r.get("reason", "default"), r) for r in rules.fallbacks]
+    for kind, label, spec in entries:
+        template = spec.get("account")
+        if not template:
+            broken.append((kind, label, "names no account", []))
+            continue
+        scope = spec.get("currency") or (spec.get("when") or {}).get("currency")
+        ccys = (scope,) if scope else CHECK_CURRENCIES
+        ok = [c for c in ccys if resolve_account(book, template, c)]
+        if not ok:
+            broken.append((kind, label, template, list(ccys)))
+        elif len(ok) < len(ccys):
+            partial.append((kind, label, template, ok))
+    return broken, partial
+
+
 class Rules:
     """Merchant/description to account mapping."""
 

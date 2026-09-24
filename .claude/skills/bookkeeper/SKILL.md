@@ -29,12 +29,15 @@ gnucash-playbook.md`) — section 3 for conversion fees, section 4 for Upwork su
 ## Invoke
 
 ```bash
-python3 -m studio.bookkeeper accounts                                # what exists
+python3 -m studio.bookkeeper accounts [--type EXPENSE]               # what exists (all types)
+python3 -m studio.bookkeeper check-rules                             # rules -> real accounts
 python3 -m studio.bookkeeper pull   --source wise --from 2026-08-05  # dry run
 python3 -m studio.bookkeeper import --source wise-csv --file x.csv --profile business
 python3 -m studio.bookkeeper add-rule --match "strand book" --account "Expenses:Books"
 python3 -m studio.bookkeeper pull   --source wise --from 2026-08-05 --commit
 ```
+
+`--from`/`--to` filter file imports too, so pass the window rather than trimming the CSV.
 
 Sources: `wise` (API), `wise-csv`, `bbva`, `upwork`, `stripe`.
 
@@ -47,12 +50,13 @@ Sources: `wise` (API), `wise-csv`, `bbva`, `upwork`, `stripe`.
 3. **Work the possible-duplicates list first.** These are same-amount entries a few
    days either side of one already booked — nearly always the same transaction
    hand-entered on a different date. Check each against the book before assuming it
-   is new. Getting this wrong double-counts income.
+   is new. Getting this wrong double-counts income. Once confirmed as already
+   booked, re-run with `--acknowledge-duplicates` so they are not listed again.
 4. **Work the review queue.** For each unmatched merchant, propose an account **with
    your reasoning**, and ask Mark to confirm in **one batch** — never one question per
    line. State what you inferred from: currency, date, amount, what else was happening
    that week, whether it looks like a supplier or a shop.
-5. **Record every confirmed decision** with `add-rule`. Never hand-edit the YAML.
+5. **Record every confirmed decision** with `add-rule` (`--replace` to change one). Never hand-edit the YAML.
    Add `--currency` / `--direction` / `--from` / `--to` when the answer is only true
    in a given scope.
 6. **Consider a fallback instead of a rule.** If you are about to add three or more
@@ -79,6 +83,20 @@ Sources: `wise` (API), `wise-csv`, `bbva`, `upwork`, `stripe`.
 - Amounts are exact fractions. If you reach for a float to settle a rounding
   complaint, something else is wrong.
 
+## Worked example: a multi-currency journal
+
+`journal` handles a split with conversion and fees. A leg that crosses currencies takes
+a fourth field, the same movement in the first leg's currency (signed like the leg;
+add a separate fee leg if the conversion cost anything):
+
+```bash
+python3 -m studio.bookkeeper journal --date 2026-09-10 --description "USD to EUR" \
+    --leg "Assets:Current Assets:Wise:Wise (Business):Wise Business (EUR)|920.00|EUR" \
+    --leg "Assets:Current Assets:Wise:Wise (Business):Wise Business (USD)|-1000.00|USD|-920.00"
+```
+
+Dry-run first; the balance check and backup apply as for any import.
+
 ## Amending something already booked
 
 `studio.bookkeeper.amend` corrects splits that are already in the book. It is narrow on
@@ -103,8 +121,8 @@ Always run it against a copy of the book first.
 
 - `Income:Other Income` is EUR-only, so USD/GBP cashback is held until those leaves
   exist.
-- BBVA, Upwork and Stripe column maps are PROVISIONAL — unverified against a real
-  export.
-- The Wise **personal** profile has no agreed treatment yet: the monthly draw, transfers
-  to Bain Design, and ordinary personal spending all still need a decision from Mark.
+- Stripe's column map is PROVISIONAL. BBVA and Upwork are VERIFIED against real exports.
+- The Wise **personal** profile is treated as business (same rules as Wise Business), and
+  the history is booked under the Personal accounts. Omit `--profile` on a `wise-csv`
+  import unless you know the export's profile; the tool warns on a mismatch.
 - Suspense (USD) carries a stale $340.74 from Dec 2025 / Jan 2026, predating this tool.

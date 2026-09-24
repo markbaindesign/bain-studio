@@ -81,6 +81,11 @@ class Txn:
     reference: str = ""
     counterparty: str = ""
 
+    # Other dates the bank gives this same movement — BBVA reports an operation
+    # date and a value date, and a hand entry may carry either. Dedupe accepts
+    # a match on any of them.
+    alt_dates: List[date] = field(default_factory=list)
+
     # Set by the categoriser when it cannot decide on its own.
     needs_review: bool = False
     review_reason: str = ""
@@ -113,6 +118,29 @@ class Txn:
         """
         p = self.primary
         return (self.date, p.account, p.amount, p.currency) if p else None
+
+    def signatures(self):
+        """The signature on the main date plus one per alternative date."""
+        p = self.primary
+        if not p:
+            return []
+        return [(d, p.account, p.amount, p.currency)
+                for d in [self.date] + list(self.alt_dates)]
+
+    def ack_key(self) -> str:
+        """Stable identity for the acknowledged-not-new list.
+
+        The bank's own transaction ID when the source has one; otherwise the
+        fields that identify the line, since a bank that gives no ID gives
+        nothing better to key on.
+        """
+        if self.source_id:
+            return "%s:%s" % (self.source, self.source_id)
+        p = self.primary
+        return "%s:%s:%s:%s:%s" % (
+            self.source, self.date, p.account if p else "",
+            p.amount if p else "", self.description,
+        )
 
     def is_balanced(self) -> bool:
         """True when every currency present nets to zero across the legs.

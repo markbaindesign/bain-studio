@@ -33,6 +33,9 @@ class ColumnMap:
     reference: Optional[str] = None
     counterparty: Optional[str] = None
     source_id: Optional[str] = None
+    # A second date column for the same movement (BBVA's value date). Dedupe
+    # matches on either date; the main `date` is still the one that is booked.
+    alt_date: Optional[str] = None
     date_formats: List[str] = field(
         default_factory=lambda: ["%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y"]
     )
@@ -144,6 +147,15 @@ def parse(path: str, colmap: ColumnMap, account: str, source: str) -> List[Txn]:
             )
             txn.legs.append(Leg(account, amount, currency))
 
+            raw_alt = row.get(colmap.alt_date) if colmap.alt_date else None
+            if raw_alt not in (None, ""):
+                try:
+                    alt = colmap.parse_date(raw_alt)
+                except ValueError:
+                    alt = None
+                if alt and alt != day:
+                    txn.alt_dates.append(alt)
+
             if colmap.fee:
                 fee = to_fraction(row.get(colmap.fee))
                 if fee:
@@ -174,6 +186,7 @@ PROFILES: Dict[str, Dict] = {
             amount="Importe",
             fixed_currency="EUR",
             reference="Observaciones",
+            alt_date="F.Valor",
             date_formats=["%d/%m/%Y", "%Y-%m-%d"],
             sheet="Informe BBVA",
             header_row=5,
