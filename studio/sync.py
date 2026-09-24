@@ -394,7 +394,23 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
         ),
         "limit": 100,
     }
-    data = _get(f"/projects/{proj.gid}/tasks", params)["data"]
+    # Follow next_page. A single page holds at most `limit` tasks, so a project
+    # over 100 tasks used to sync only the first 100: the mirror then lost
+    # whichever tasks fell past the cut ("N removed" every run, NORE 2026-09)
+    # and nothing beyond it could be pushed or pulled.
+    data, offset, pages = [], None, 0
+    while pages < TASK_MAX_PAGES:
+        if offset:
+            params["offset"] = offset
+        page = _get(f"/projects/{proj.gid}/tasks", params)
+        data.extend(page.get("data") or [])
+        pages += 1
+        offset = (page.get("next_page") or {}).get("offset")
+        if not offset:
+            break
+    else:
+        log.warning(f"  [{proj.prefix}] Stopped at {TASK_MAX_PAGES} pages of tasks; "
+                    "the project may have more")
     tasks = [t for t in data if not _is_junk(t)]
     for t in tasks:
         t["_local_id"] = None
@@ -423,6 +439,7 @@ def fetch_sections(proj: ProjectConfig) -> dict:
     return {s["name"]: s["gid"] for s in data}
 
 
+TASK_MAX_PAGES     = 50    # safety cap (5000 tasks)
 COMMENT_PAGE_LIMIT = 100   # stories per page
 COMMENT_MAX_PAGES  = 25    # safety cap (2500 stories)
 COMMENT_KEEP       = 10    # most recent human comments kept in the mirror
@@ -964,8 +981,26 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
 
 def _push_set_field(task_gid: str, lid: str, mirror_text: str, asana_items: list,
                     add_path: str, remove_path: str, item_key: str,
-                    dry_run: bool, prefix: str, label: str) -> bool:
+                    dry_run: bool, prefix: str, label: str, task=None,
+                    task_key=None) -> bool:
+    """Push a set-valued field (tags, followers, ...) from the mirror to Asana.
+
+    When `task` and `task_key` are given, the in-memory task is updated to the
+    state Asana now holds. The mirror is rebuilt from that task after the push,
+    so leaving it holding the pre-push set wrote the OLD value back into the
+    mirror, and the next run pushed it again: an endless add/remove flip-flop.
+    """
     mirror_gids = set(_extract_gids(mirror_text))
+def _parse_refs(text: str) -> dict:
+    """{gid: name} from a mirror field written as "Name (gid), Name (gid)"."""
+    out = {}
+    for part in (text or "").split(","):
+        m = re.search(r"^\s*(.*?)\s*\((\d+)\)\s*$", part)
+        if m:
+            out[m.group(2)] = m.group(1)
+    return out
+
+
     asana_gids  = {i["gid"] for i in (asana_items or [])}
     to_add    = mirror_gids - asana_gids
     to_remove = asana_gids - mirror_gids
@@ -979,18 +1014,26 @@ def _push_set_field(task_gid: str, lid: str, mirror_text: str, asana_items: list
         try:
             _post(add_path.format(task_gid=task_gid), {"data": {item_key: g}})
             changed = True
+    added, removed = set(), set()
         except Exception as e:
             log.warning(f"  [{prefix}] Could not add {label} {g} to {lid}: {e}")
     for g in to_remove:
         try:
+            added.add(g)
             _post(remove_path.format(task_gid=task_gid), {"data": {item_key: g}})
             changed = True
         except Exception as e:
             log.warning(f"  [{prefix}] Could not remove {label} {g} from {lid}: {e}")
     if changed:
         log.info(f"  [{prefix}] Updated {label} for {lid} (+{len(to_add)}/-{len(to_remove)})")
+            removed.add(g)
     return changed
 
+    if task is not None and task_key and changed:
+        names = _parse_refs(mirror_text)
+        kept = [i for i in (asana_items or []) if i["gid"] not in removed]
+        kept += [{"gid": g, "name": names.get(g, "")} for g in added]
+        task[task_key] = kept
 
 def _push_section(t: dict, mirror_section: str, sections: dict, dry_run: bool, prefix: str) -> bool:
     gid        = t["gid"]
@@ -1111,6 +1154,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                     pushed += 1
                     touched_gids.add(gid)
 
+                    task=t, task_key=asana_key,
             mirror_section = prev.get("section")
             if mirror_section and mirror_section != t.get("_section"):
                 if _push_section(t, mirror_section, sections, dry_run, proj.prefix):
@@ -1219,6 +1263,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
             mirror += "\n" + "\n".join(changes)
 
         mirror += priorities_table(tasks)
+                log.info(f"  [{proj.prefix}] Removed from mirror: {lid} ({gid})")
 
         if not dry_run:
             proj.mirror_file.write_text(mirror)

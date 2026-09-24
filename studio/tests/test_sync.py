@@ -818,3 +818,48 @@ def test_get_task_reports_http_error(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sync, "_get", boom)
     assert sync.get_task("123") == 1
     assert "HTTP 404" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# Pagination and follower flip-flop (NORE, 2026-09-24)
+# ---------------------------------------------------------------------------
+
+def test_fetch_tasks_follows_next_page(proj):
+    def page(n, more):
+        return {"data": [{"gid": f"{n}-{i}", "name": "t", "memberships": [],
+                          "custom_fields": []} for i in range(2)],
+                "next_page": {"offset": "o%d" % n} if more else None}
+    pages = [page(1, True), page(2, False)]
+    with patch("sync._get", side_effect=pages) as get:
+        tasks = fetch_tasks(proj, "field")
+    assert [t["gid"] for t in tasks] == ["1-0", "1-1", "2-0", "2-1"]
+    assert get.call_args_list[1].args[1]["offset"] == "o1"
+
+
+def test_push_set_field_updates_task_to_post_push_state():
+    """The mirror is rebuilt from the task after a push, so it must reflect it."""
+    task = {"followers": [{"gid": "1", "name": "Me"}, {"gid": "2", "name": "BainBot"}]}
+    with patch("sync._post"):
+        changed = _push_set_field(
+            "t", "T-1", "Me (1)", task["followers"], "/add", "/remove", "follower",
+            False, "T", "followers", task=task, task_key="followers")
+    assert changed
+    assert [f["gid"] for f in task["followers"]] == ["1"]
+
+
+def test_push_set_field_adds_carry_the_mirror_name():
+    task = {"followers": []}
+    with patch("sync._post"):
+        _push_set_field("t", "T-1", "BainBot (2)", [], "/add", "/remove",
+                        "follower", False, "T", "followers",
+                        task=task, task_key="followers")
+    assert task["followers"] == [{"gid": "2", "name": "BainBot"}]
+
+
+def test_push_set_field_failed_write_is_not_recorded():
+    task = {"followers": [{"gid": "2", "name": "BainBot"}]}
+    with patch("sync._post", side_effect=RuntimeError("no")):
+        _push_set_field("t", "T-1", "none", task["followers"], "/add",
+                        "/remove", "follower", False, "T", "followers",
+                        task=task, task_key="followers")
+    assert [f["gid"] for f in task["followers"]] == ["2"]
