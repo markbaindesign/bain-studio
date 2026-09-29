@@ -10,7 +10,7 @@ Requirements:
     pip install reportlab pillow markdown
 """
 
-import sys, os, re, argparse
+import sys, os, re, argparse, io
 from pathlib import Path
 from datetime import date
 
@@ -211,6 +211,45 @@ def _inline(text, F, bold=None, italic=None):
 
 # ─── Markdown → story ─────────────────────────────────────────────────────────
 
+def _is_block_start(line):
+    """True if `line` begins a non-paragraph block (so a running paragraph must stop)."""
+    if line.startswith('```'):
+        return True
+    if re.match(r'^[-*_]{3,}\s*$', line):
+        return True
+    if re.match(r'^#{1,6}\s+', line):
+        return True
+    if line.startswith('> '):
+        return True
+    if re.match(r'^[-*+]\s+', line):
+        return True
+    if re.match(r'^\d+\.\s+', line):
+        return True
+    if line.strip().lower() in ('---pagebreak---', '<!-- pagebreak -->'):
+        return True
+    if re.match(r'^!\[([^\]]*)\]\(([^)]+)\)\s*$', line):
+        return True
+    if '|' in line:
+        return True
+    return False
+
+
+def _join_wrapped(raw_lines, F):
+    """Join the source lines of one paragraph into a single marked-up string.
+
+    A newline is a soft wrap (a space) unless the line ends with two spaces or a
+    backslash, which is a hard break (<br/>) - address and signature blocks rely on it.
+    """
+    hard = [l.endswith('  ') or l.rstrip().endswith('\\') for l in raw_lines[:-1]]
+    if not any(hard):
+        return _inline(' '.join(l.strip() for l in raw_lines), F)
+    out = []
+    for l, br in zip(raw_lines, hard + [False]):
+        out.append(_inline(l.strip().rstrip('\\').rstrip(), F))
+        out.append('<br/>' if br else ' ')
+    return ''.join(out[:-1])
+
+
 def md_to_story(md_text, ST, F, skip_h1=False, base_dir=None):
     story = []
     lines = md_text.split('\n')
@@ -290,10 +329,16 @@ def md_to_story(md_text, ST, F, skip_h1=False, base_dir=None):
         # Unordered list
         if re.match(r'^[-*+]\s+', line):
             while i < len(lines) and re.match(r'^[-*+]\s+', lines[i]):
-                text = _inline(re.sub(r'^[-*+]\s+', '', lines[i]), F)
+                item_lines = [re.sub(r'^[-*+]\s+', '', lines[i])]
+                i += 1
+                while (i < len(lines) and lines[i].strip()
+                       and lines[i][:1].isspace()
+                       and not re.match(r'^[-*+]\s+', lines[i])):
+                    item_lines.append(lines[i].strip())
+                    i += 1
+                text = _inline(' '.join(item_lines), F)
                 bullet = f'<bullet><font color="#{CLAY_HEX}">•</font></bullet>'
                 story.append(Paragraph(bullet + text, ST['BListItem']))
-                i += 1
             story.append(Spacer(1, 2 * mm))
             continue
 
@@ -301,11 +346,17 @@ def md_to_story(md_text, ST, F, skip_h1=False, base_dir=None):
         if re.match(r'^\d+\.\s+', line):
             n = 1
             while i < len(lines) and re.match(r'^\d+\.\s+', lines[i]):
-                text = _inline(re.sub(r'^\d+\.\s+', '', lines[i]), F)
+                item_lines = [re.sub(r'^\d+\.\s+', '', lines[i])]
+                i += 1
+                while (i < len(lines) and lines[i].strip()
+                       and lines[i][:1].isspace()
+                       and not re.match(r'^\d+\.\s+', lines[i])):
+                    item_lines.append(lines[i].strip())
+                    i += 1
+                text = _inline(' '.join(item_lines), F)
                 bullet = ('<bullet><font color="#' + CLAY_HEX + '" name="' + F['Code'] + '">'
                           + str(n) + '.</font></bullet>')
                 story.append(Paragraph(bullet + text, ST['BListItem']))
-                i += 1
                 n += 1
             story.append(Spacer(1, 2 * mm))
             continue
@@ -360,7 +411,9 @@ def md_to_story(md_text, ST, F, skip_h1=False, base_dir=None):
                     max_w = TW
                     scale = min(max_w / iw, 60 * mm / ih, 1.0)
                     story.append(Spacer(1, 3 * mm))
-                    story.append(RLImage(str(img_path), width=iw * scale, height=ih * scale))
+                    rl_img = RLImage(str(img_path), width=iw * scale, height=ih * scale)
+                    rl_img.hAlign = 'LEFT'
+                    story.append(rl_img)
                     story.append(Spacer(1, 3 * mm))
                 except Exception as e:
                     story.append(Paragraph(f'[image: {img_path.name}]', ST['BCaption']))
@@ -371,7 +424,13 @@ def md_to_story(md_text, ST, F, skip_h1=False, base_dir=None):
 
         # Body paragraph
         if line.strip():
-            story.append(Paragraph(_inline(line, F), ST['BBody']))
+            para_lines = [line]
+            i += 1
+            while i < len(lines) and lines[i].strip() and not _is_block_start(lines[i]):
+                para_lines.append(lines[i])
+                i += 1
+            story.append(Paragraph(_join_wrapped(para_lines, F), ST['BBody']))
+            continue
         elif story and not isinstance(story[-1], Spacer):
             story.append(Spacer(1, 2 * mm))
 
@@ -435,7 +494,7 @@ def _cover(canvas, doc, title, subtitle, F):
     canvas.restoreState()
 
 
-def _header_footer(canvas, doc, title, F, version=''):
+def _header_footer(canvas, doc, title, F, version='', total_pages=None):
     if doc.page == 1:
         return
     canvas.saveState()
@@ -445,7 +504,8 @@ def _header_footer(canvas, doc, title, F, version=''):
     canvas.setFont(F['Code'], 8)
     canvas.setFillColor(PENCIL)
     canvas.drawString(18 * mm, H - 11 * mm, title)
-    canvas.drawRightString(W - 18 * mm, H - 11 * mm, str(doc.page))
+    page_label = f'{doc.page} of {total_pages}' if total_pages else str(doc.page)
+    canvas.drawRightString(W - 18 * mm, H - 11 * mm, page_label)
     canvas.line(18 * mm, 12 * mm, W - 18 * mm, 12 * mm)
     canvas.setFont(F['Code'], 7)
     canvas.drawString(18 * mm, 9 * mm, 'Bain Design  ·  mark@bain.design')
@@ -454,7 +514,7 @@ def _header_footer(canvas, doc, title, F, version=''):
     canvas.restoreState()
 
 
-def _one_pager_header(canvas, doc, title, F):
+def _one_pager_header(canvas, doc, title, F, total_pages=None):
     canvas.saveState()
     canvas.setFillColor(PAPER)
     canvas.rect(0, 0, W, H, fill=1, stroke=0)
@@ -488,6 +548,8 @@ def _one_pager_header(canvas, doc, title, F):
     canvas.setFillColor(PENCIL)
     today = date.today().strftime('%B %Y')
     canvas.drawString(14 * mm, 9 * mm, f'Bain Design  ·  mark@bain.design  ·  {today}')
+    if total_pages and total_pages > 1:
+        canvas.drawRightString(W - 14 * mm, 9 * mm, f'{doc.page} of {total_pages}')
     canvas.restoreState()
 
 
@@ -548,30 +610,56 @@ def build(input_path, output_path=None, one_pager=False):
     ST = build_styles(F)
 
     if one_pager:
-        doc = SimpleDocTemplate(
-            str(output_path),
-            pagesize=A4,
-            leftMargin=14 * mm, rightMargin=14 * mm,
-            topMargin=24 * mm,  bottomMargin=16 * mm,
-            title=title, author='Bain Design',
-        )
+        def _make_doc(target):
+            return SimpleDocTemplate(
+                target,
+                pagesize=A4,
+                leftMargin=14 * mm, rightMargin=14 * mm,
+                topMargin=24 * mm,  bottomMargin=16 * mm,
+                title=title, author='Bain Design',
+            )
+
+        # Pass 1: render to a scratch buffer just to learn the page count.
+        count_doc = _make_doc(io.BytesIO())
+        count_story = md_to_story(body_text, ST, F, skip_h1=True, base_dir=input_path.parent)
+        count_hf = lambda c, d: _one_pager_header(c, d, title, F)
+        count_doc.build(count_story, onFirstPage=count_hf, onLaterPages=count_hf)
+        total_pages = count_doc.page
+
+        # Pass 2: render for real, now that the total page count is known.
+        doc = _make_doc(str(output_path))
         story = md_to_story(body_text, ST, F, skip_h1=True, base_dir=input_path.parent)
-        hf = lambda c, d: _one_pager_header(c, d, title, F)
+        hf = lambda c, d: _one_pager_header(c, d, title, F, total_pages=total_pages)
         doc.build(story, onFirstPage=hf, onLaterPages=hf)
     else:
-        doc = SimpleDocTemplate(
-            str(output_path),
-            pagesize=A4,
-            leftMargin=18 * mm, rightMargin=18 * mm,
-            topMargin=20 * mm,  bottomMargin=18 * mm,
-            title=title, author='Bain Design',
+        def _make_doc(target):
+            return SimpleDocTemplate(
+                target,
+                pagesize=A4,
+                leftMargin=18 * mm, rightMargin=18 * mm,
+                topMargin=20 * mm,  bottomMargin=18 * mm,
+                title=title, author='Bain Design',
+            )
+
+        # Pass 1: render to a scratch buffer just to learn the page count.
+        count_doc = _make_doc(io.BytesIO())
+        count_story = [Spacer(1, 720)]
+        count_story.extend(md_to_story(body_text, ST, F, base_dir=input_path.parent))
+        count_doc.build(
+            count_story,
+            onFirstPage=lambda c, d: _cover(c, d, title, subtitle, F),
+            onLaterPages=lambda c, d: _header_footer(c, d, title, F, version=fm_version),
         )
+        total_pages = count_doc.page
+
+        # Pass 2: render for real, now that the total page count is known.
+        doc = _make_doc(str(output_path))
         story = [Spacer(1, 720)]   # fill cover page
         story.extend(md_to_story(body_text, ST, F, base_dir=input_path.parent))
         doc.build(
             story,
             onFirstPage=lambda c, d: _cover(c, d, title, subtitle, F),
-            onLaterPages=lambda c, d: _header_footer(c, d, title, F, version=fm_version),
+            onLaterPages=lambda c, d: _header_footer(c, d, title, F, version=fm_version, total_pages=total_pages),
         )
     print(f'\nDone → {output_path}')
     return output_path
