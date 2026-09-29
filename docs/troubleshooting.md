@@ -68,3 +68,24 @@ python3 studio/sync.py
 ```
 
 If tasks need to be seeded into a new project, use `/seed-tasks` or create them manually in Asana, then sync.
+
+## Obsidian: can't add a new vault via the UI
+
+**Symptom:** "Open folder as vault" / the folder browse dialog in Obsidian's vault manager
+doesn't let you select a directory — it behaves like a file picker instead, or does nothing.
+
+**Cause:** Upstream Electron 37+ bug — `dialog.showOpenDialog` with the `openDirectory`
+property shows a file picker instead of a directory picker on Linux. Affects Obsidian 1.9.x+
+regardless of install method (snap, deb, AppImage).
+
+**Fix:** Edit the vault list directly instead of going through the picker. Quit Obsidian
+first (`pgrep -f obsidian` to confirm nothing's still running), then add an entry to
+`~/.config/obsidian/obsidian.json`:
+
+```json
+{"vaults":{"existing-vault": {"path": "...", "ts": 123}, "new-vault-key": {"path": "/absolute/path/to/vault/folder", "ts": 1700000000000}}}
+```
+
+The vault folder must already exist. `ts` is just a millisecond timestamp used for sort
+order in the vault switcher — any value works. Relaunch Obsidian and the new vault appears
+in the vault list without touching the broken picker.
