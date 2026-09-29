@@ -142,6 +142,17 @@ ln -s /media/data/dev/bain-studio/.claude/skills/{name} ~/.claude/skills/{name}
 - `copywriter` — used for client copy
 - `notify` — Slack ping on task/script completion, works from any project
 
+## Claude settings
+
+`.claude/settings.json` is tracked and holds project **policy** only: `defaultMode`, the `deny` list,
+`disabledMcpjsonServers` (the Asana MCP guard) and generic tool allowances. **Machine-specific
+permissions never go in it** - absolute `Edit(//...)` paths, `additionalDirectories`, per-tool MCP
+approvals and Bash approvals belong in `.claude/settings.local.json`, which is gitignored. A tracked
+file that differs per machine blocks `studio/scripts/ops-deploy.sh` (it refuses to deploy over local
+changes to tracked files) and leaks local paths into a public repo. Never approve a command that
+embeds a credential (an `Authorization: Bearer ...` header, an API key) - the approval string is
+stored in plaintext.
+
 ## Project inboxes
 
 Each project can receive messages from other agents via `.claude/inbox/`. Run `/check-inbox` at the start of any session to process pending messages. Messages are written by `studio/postman.py` and archived to `.claude/inbox/processed/` once read.
