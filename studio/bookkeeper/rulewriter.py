@@ -31,8 +31,15 @@ def _next_top_level_key(lines, start: int) -> int:
 def append_rule(path: str, match: str, account: str, currency: Optional[str] = None,
                 direction: Optional[str] = None, date_from: Optional[str] = None,
                 date_to: Optional[str] = None, note: Optional[str] = None,
-                account_contains: Optional[str] = None) -> str:
-    """Add a rule to the end of the `rules:` block. Returns the text added."""
+                account_contains: Optional[str] = None,
+                replace: bool = False) -> str:
+    """Add a rule to the end of the `rules:` block. Returns the text added.
+
+    With `replace`, an existing rule of the identical scope is rewritten in
+    place instead of raising RuleExists. Keys the new call does not carry
+    (`regex`, `review`, ...) are dropped, so the old block is reported back in
+    the returned text for the operator to check.
+    """
     with open(path, "r", encoding="utf-8") as fh:
         content = fh.read()
 
@@ -44,17 +51,21 @@ def append_rule(path: str, match: str, account: str, currency: Optional[str] = N
              str(date_from) if date_from else None,
              str(date_to) if date_to else None)
     existing = yaml.safe_load(content) or {}
-    for rule in existing.get("rules") or []:
+    clash_index = None
+    for idx, rule in enumerate(existing.get("rules") or []):
         if (str(rule.get("match", "")).lower(),
                 rule.get("direction"), rule.get("account_contains"),
                 rule.get("currency"),
                 str(rule["from"]) if rule.get("from") else None,
                 str(rule["to"]) if rule.get("to") else None) == scope:
-            raise RuleExists(
-                "A rule for %r with this exact scope already exists, pointing "
-                "at %s. Edit it by hand if it needs to change."
-                % (match, rule.get("account"))
-            )
+            if not replace:
+                raise RuleExists(
+                    "A rule for %r with this exact scope already exists, "
+                    "pointing at %s. Re-run with --replace to change it."
+                    % (match, rule.get("account"))
+                )
+            clash_index = idx
+            break
 
     lines = content.splitlines(keepends=True)
     rules_at = next(
@@ -64,10 +75,24 @@ def append_rule(path: str, match: str, account: str, currency: Optional[str] = N
         raise SystemExit("No `rules:` block in %s" % path)
     insert_at = _next_top_level_key(lines, rules_at)
 
+    old_text = ""
+    if clash_index is not None:
+        # The k-th list item in the block is the k-th rule in the parsed YAML.
+        starts = [i for i in range(rules_at + 1, insert_at)
+                  if re.match(r"^\s*- ", lines[i])]
+        start = starts[clash_index]
+        end = start + 1
+        while end < insert_at and re.match(r"^\s{4,}\S", lines[end]) \
+                and not lines[end].lstrip().startswith("#"):
+            end += 1
+        old_text = "".join(lines[start:end])
+        del lines[start:end]
+        insert_at = start
+
     # Step back over trailing blank lines and any comment block introducing the
     # next section, so the new rule joins the list rather than splitting a
-    # comment from what it describes.
-    while insert_at > rules_at + 1 and (
+    # comment from what it describes. A replacement stays where the old rule was.
+    while clash_index is None and insert_at > rules_at + 1 and (
         lines[insert_at - 1].strip() == "" or lines[insert_at - 1].lstrip().startswith("#")
     ):
         insert_at -= 1
@@ -101,4 +126,7 @@ def append_rule(path: str, match: str, account: str, currency: Optional[str] = N
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write(new_content)
     os.replace(tmp, path)
-    return "".join(block)
+    added = "".join(block)
+    if old_text:
+        added += "  (replaced:)\n" + old_text
+    return added

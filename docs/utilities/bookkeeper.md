@@ -19,7 +19,8 @@ Playbook** (sections 3 and 4) for the accounting treatment it implements.
 ## Usage
 
 ```bash
-python3 -m studio.bookkeeper accounts                              # what's in the book
+python3 -m studio.bookkeeper accounts [--type EXPENSE,INCOME]      # what's in the book
+python3 -m studio.bookkeeper check-rules [--verbose]               # every rule resolves to a real account?
 python3 -m studio.bookkeeper pull   --source wise --from 2026-08-05
 python3 -m studio.bookkeeper import --source wise-csv --file x.csv --profile business
 python3 -m studio.bookkeeper add-rule --match "strand book" --account "Expenses:Books"
@@ -31,10 +32,13 @@ python3 -m studio.bookkeeper pull   --source wise --from 2026-08-05 --commit
 
 | Flag | Meaning |
 |---|---|
-| `--source` | `wise` (API), `wise-csv`, `harvest` (API), `bbva`, `upwork`, `stripe` |
+| `--source` | `wise` (API), `wise-csv`, `harvest` (API), `bbva`, `upwork`, `stripe` (rare; not a feed to chase) |
 | `--file` | CSV to import (required for every source but `wise`) |
-| `--from` / `--to` | Date range for an API pull |
-| `--profile` | `business` or `personal`; both if omitted |
+| `--from` / `--to` | Date range. Windows an API pull, and filters the rows of an `import` file (a whole-history export is otherwise read in full) |
+| `--profile` | `business` or `personal`; both if omitted. Warns when the other choice would match far more rows already in the book (see Wise profile below) |
+| `--acknowledge-duplicates` | Record this run's possible duplicates as already in the book, so they stop being listed |
+| `--type` | `accounts`: filter by type, comma-separated |
+| `--replace` | `add-rule`: overwrite an existing rule of the same scope |
 | `--account` | Override the target account path |
 | `--rules` | Rules file (defaults to `FINANCE_CONFIG_DIR/bookkeeper-rules.yaml`) |
 | `--book` | Book path (defaults to `GNUCASH_FILE`) |
@@ -201,8 +205,45 @@ python3 -m studio.bookkeeper add-rule --match "strand book" --account "Expenses:
 ```
 
 Appends to the `rules:` block by text insertion, so the file's comments survive — a YAML
-round-trip would strip them. Refuses a merchant that already has a rule, and refuses to
-save a file it cannot parse back.
+round-trip would strip them. Refuses a merchant that already has a rule of the same scope
+unless `--replace` is given, which rewrites that rule in place and prints the old block
+(keys the new call does not carry, such as `regex:`, are dropped). Refuses to save a file
+it cannot parse back.
+
+`check-rules` resolves every rule and fallback to a real leaf account and exits non-zero
+if any resolves in no currency. The same check runs as a warning at the start of every
+`pull` and `import`.
+
+### Harvest invoices
+
+`--source harvest` recognises income when an invoice is issued. With IVA and an IRPF
+retention it books four legs (`Dr AR` amount due, `Dr IRPF Retenido`, `Cr Client Income`
+pre-tax subtotal, `Cr IVA Repercutido`); with no tax, two. The subtotal is derived as
+`amount - tax - tax2`, so it holds whatever signs Harvest reports. A positive second tax
+is held for review rather than booked as a retention. Only EUR has `IVA Repercutido` and
+`IRPF Retenido` leaves, so a taxed non-EUR invoice is held back until they exist.
+
+### Possible duplicates
+
+A same-amount match a few days off is held back for a human. Two things keep this from
+being permanent noise:
+
+- BBVA rows carry both `Fecha` and `F.Valor`; a book entry on either date counts as
+  already booked.
+- `--acknowledge-duplicates` writes the confirmed ones to `bookkeeper-acknowledged.yaml`
+  beside the rules file (override with `BOOKKEEPER_ACK`), keyed by the bank transaction ID
+  (or, where a bank gives none, date + account + amount + description). They are then
+  counted as already in the book. It is deliberately not automatic for Wise: a one-day
+  gap is flagged in the reason as typical of UTC vs local dates, but auto-suppressing it
+  would absorb genuinely new identical fares.
+
+### Wise profile
+
+The Wise history is booked under the Wise **Personal** accounts, which currently hold
+business money, and the personal profile is treated as business (same rules as Wise
+Business). A `wise-csv` import with `--profile business` therefore maps to accounts the
+history is not under. The tool warns when the other choice matches far more rows already
+in the book; when in doubt, omit `--profile` and let it infer per row.
 
 ## Status
 
@@ -213,7 +254,7 @@ save a file it cannot parse back.
 | Wise CSV | VERIFIED | Checked against real business and personal exports |
 | BBVA | VERIFIED | .xlsx, sheet "Informe BBVA", headers row 5, dates dd/mm/yyyy from `Fecha` |
 | Upwork | VERIFIED | Drops scheduled rows — future-dated, no running balance |
-| Stripe | PROVISIONAL | Not yet seen a real export — verify before `--commit` |
+| Stripe | PROVISIONAL | Barely used, so not tracked as a feed and never counted against "books are current". Verify against a real export before `--commit` if a charge appears |
 
 ## Wise API: statements are not available
 

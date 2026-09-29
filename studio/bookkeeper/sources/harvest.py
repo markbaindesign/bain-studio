@@ -7,6 +7,15 @@ that happens before the money arrives:
     issue    DR Accounts Receivable (CCY)   CR Income:Client Income (CCY)
     payment  DR Bank                        CR Accounts Receivable (CCY)
 
+A Spanish invoice carries IVA and an IRPF retention, and is split (codex s.4):
+
+    DR Accounts Receivable   amount due (total, net of the IRPF)
+    DR IRPF Retenido         the retention
+    CR Client Income         the pre-tax subtotal
+    CR IVA Repercutido       the IVA
+
+An invoice with no tax keeps the two-leg form.
+
 The bank adapters book the second half. Without this one they clear receivables
 that were never raised, which drives Accounts Receivable negative and leaves the
 income unrecorded in the quarter it belongs to — exactly what happened to the
@@ -24,6 +33,8 @@ from ..model import Leg, Txn, to_fraction
 
 RECEIVABLE = "Assets:Future Assets:Accounts Receivable"
 INCOME = "Income:Client Income"
+IVA = "Liabilities:IVA Repercutido"
+IRPF = "Assets:Future Assets:IRPF Retenido"
 
 
 def _client():
@@ -41,6 +52,26 @@ def _client():
             "HARVEST_TOKEN and HARVEST_ACCOUNT_ID must be set in studio/.env"
         )
     return HarvestClient(token, account)
+
+
+def build_legs(amount, tax, tax2, currency: str, receivable: str = RECEIVABLE,
+               income: str = INCOME, iva: str = IVA, irpf: str = IRPF) -> List[Leg]:
+    """The legs for one invoice, given its total and its two tax amounts.
+
+    `tax2` is negative for a retention, so subtotal = amount - tax - tax2 holds
+    whatever the signs. The receivable stays at `amount`, which is what the
+    client actually owes and later pays.
+    """
+    if tax == 0 and tax2 == 0:
+        return [Leg(receivable, amount, currency), Leg(income, -amount, currency)]
+    subtotal = amount - tax - tax2
+    legs = [Leg(receivable, amount, currency)]
+    if tax2:
+        legs.append(Leg(irpf, -tax2, currency))
+    legs.append(Leg(income, -subtotal, currency))
+    if tax:
+        legs.append(Leg(iva, -tax, currency))
+    return legs
 
 
 def invoices(start: str, end: str, receivable: str = RECEIVABLE,
@@ -73,8 +104,14 @@ def invoices(start: str, end: str, receivable: str = RECEIVABLE,
         )
         # Receivable leads, so the dedupe signature keys on it — the same
         # account the bank adapters clear against.
-        txn.legs.append(Leg(receivable, amount, currency))
-        txn.legs.append(Leg(income, -amount, currency))
+        tax = to_fraction(inv.get("tax_amount") or 0)
+        tax2 = to_fraction(inv.get("tax2_amount") or 0)
+        txn.legs += build_legs(amount, tax, tax2, currency, receivable, income)
+        if tax2 > 0:
+            # A retention is negative. A positive second tax is something
+            # else, and books as a debit to IRPF Retenido, which would be wrong.
+            txn.needs_review = True
+            txn.review_reason = "Second tax on the invoice is positive, not a retention"
         txn.balanced_by_construction = True
         out.append(txn)
 

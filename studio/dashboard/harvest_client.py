@@ -58,6 +58,10 @@ class HarvestClient:
             'issue_date': inv.get('issue_date', ''),
             'currency':   inv.get('currency', 'EUR'),
             'state':      inv.get('state', ''),
+            # Tax as Harvest reports it. tax2 carries a negative rate for an
+            # IRPF retention, so its amount is negative. Used by the bookkeeper.
+            'tax_amount':  round(inv.get('tax_amount') or 0, 2),
+            'tax2_amount': round(inv.get('tax2_amount') or 0, 2),
         }
 
     def get_outstanding_invoices(self):

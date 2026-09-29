@@ -29,10 +29,12 @@ class Result:
         }
 
 
-def run(txns: List[Txn], book: Book, rules: Rules, date_tolerance: int = 3) -> Result:
+def run(txns: List[Txn], book: Book, rules: Rules, date_tolerance: int = 3,
+        acknowledged=None) -> Result:
     """Sort incoming transactions into ready / review / duplicate / unbalanced."""
     result = Result()
     claimed = set()
+    acknowledged = acknowledged or set()
 
     for txn in sorted(txns, key=lambda t: (t.date, t.description)):
         # Resolve every leg, the first included, BEFORE checking for a
@@ -65,6 +67,12 @@ def run(txns: List[Txn], book: Book, rules: Rules, date_tolerance: int = 3) -> R
             result.duplicates.append(txn)
             continue
 
+        # A near-match a human has already confirmed is not new. Checked before
+        # the near-duplicate test so it stops being re-listed on every run.
+        if txn.ack_key() in acknowledged:
+            result.duplicates.append(txn)
+            continue
+
         # Same amount, same account, a day or two apart. Almost always the same
         # transaction hand-entered on a different date — but N identical small
         # fares are genuinely ambiguous, so this is surfaced for a human rather
@@ -72,10 +80,14 @@ def run(txns: List[Txn], book: Book, rules: Rules, date_tolerance: int = 3) -> R
         near = book.near_duplicate(txn, date_tolerance, claimed)
         if near is not None:
             txn.needs_review = True
+            shift = (near - txn.date).days
             txn.review_reason = (
                 "Possible duplicate: same amount already in the book on %s (%+d days)"
-                % (near, (near - txn.date).days)
+                % (near, shift)
             )
+            if txn.source == "wise" and abs(shift) == 1:
+                # Wise stamps UTC; a hand entry carries the local date.
+                txn.review_reason += " - one day off is typical of Wise UTC vs local dates"
             result.possible_duplicates.append(txn)
             continue
 
@@ -123,8 +135,9 @@ def review_sheet(result: Result) -> str:
         lines += ["## Possible duplicates — held back", "",
                   "Same amount and account already in the book a few days either side. "
                   "Usually the same transaction entered by hand on a different date. "
-                  "Confirm each one, then re-run with `--date-tolerance 0` to write any "
-                  "that are genuinely new.", "",
+                  "Confirm each one. If it is already in the book, re-run with "
+                  "`--acknowledge-duplicates` to stop it being listed again; if it "
+                  "is genuinely new, re-run with `--date-tolerance 0` to write it.", "",
                   "| Date | Description | Amount | Already in book |",
                   "|---|---|---|---|"]
         for txn in result.possible_duplicates:
