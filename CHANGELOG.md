@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-29
+
+### Added
+- **algolia-pulse posts a Slack summary after every real run.** One message via the studio
+  notifier: a low-priority `N/N indices OK` line with a per-app breakdown, or a high-priority
+  alert listing each failed index. `--no-notify` skips it; `--dry-run` never posts.
+- **`docs/utilities/algolia-pulse.md`**, the tool's utility note, and a Claude usage optimization
+  guide under `docs/utilities/`.
+
+### Changed
+- **algolia-pulse now runs weekly** (Mondays 07:00) instead of daily. SKILL.md and the utility
+  note describe the weekly schedule and note that a search-only key can be used in the
+  `admin_api_key` field.
+
 ## [1.6.3] - 2026-09-29
 
 ### Fixed
