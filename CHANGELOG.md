@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-29
+
+### Changed
+- **The tracked `.claude/settings.json` now holds project policy only** (`defaultMode`, the `deny`
+  list, `disabledMcpjsonServers`, generic tool allowances). Machine-specific permissions - absolute
+  `Edit(//...)` paths, `additionalDirectories`, MCP approvals - live in the gitignored
+  `.claude/settings.local.json`. A tracked file that differed per machine made
+  `ops-deploy.sh` refuse to deploy, and leaked local paths into a public repo.
+  `Bash(*)` is no longer allowed by the tracked file.
+- `CLAUDE.md` documents the rule, including never approving a command that embeds a credential
+  (the approval string is stored in plaintext).
+
 ## [1.7.0] - 2026-09-29
 
 ### Added
