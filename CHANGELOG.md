@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-09-29
+
+### Fixed
+- **algolia-pulse broke on the algoliasearch v4 SDK.** v4 removed the `algoliasearch.search_client`
+  module the script imported, so every pulse run (including the daily cron) failed with an import
+  error. The script now uses the v4 client and search call.
+
 ## [1.6.2] - 2026-09-17
 
 ### Fixed
