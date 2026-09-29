@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-09-29
+
+### Added
+- **`sync.py --create-subtask`** adds subtasks under an existing Asana task via bainbot, in the order
+  given, and prints their GIDs (`--task-gid` with repeatable `--subtask-name`). Tests and
+  `docs/utilities/new-subtask.md`.
+- **algolia-pulse refuses a config file that group or others can read** (it holds live API keys) and
+  posts a Slack alert on any config error, so a broken weekly cron does not fail unseen.
+- **Bookkeeper tooling fixes** from the 2026-09-23 catch-up: date filter on import,
+  `add-rule --replace`, `check-rules`, all account types in `accounts`, BBVA value-date and
+  acknowledged-duplicate dedupe, and a profile-mismatch warning. Harvest invoices are split into
+  IVA/IRPF, and Stripe and PayPal are no longer treated as feeds.
+
+### Fixed
+- **The task mirror lost tasks in any Asana project over 100 tasks.** `fetch_tasks` read only the
+  first page; it now paginates.
+- **Follower add/remove flip-flop.** Set-field pushes now update the in-memory task, so the rebuilt
+  mirror stops writing the pre-push followers back. Removed tasks are logged by ID.
+- **A newly assigned Local ID could collide with an adopted one.** `assign_ids` now moves the counter
+  past every ID already in use for the prefix before assigning any.
+
 ## [1.8.0] - 2026-09-29
 
 ### Changed
