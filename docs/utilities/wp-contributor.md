@@ -8,7 +8,7 @@ description: Research report on AI-assisted WordPress contribution - issue feeds
 
 **Researched:** 2026-06-23  
 **Task:** BSTD-024  
-**Project spec:** ~/Dropbox/Work/Studio/context/specs/drafts/wp-contributor-spec.md
+**Project spec:** /media/data/Dropbox/Work/Studio/context/specs/drafts/wp-contributor-spec.md
 
 ---
 

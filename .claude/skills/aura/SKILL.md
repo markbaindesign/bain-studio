@@ -50,7 +50,7 @@ If no audit exists, offer to run one now via `/seo-audit`, then continue when it
 
 Check for Ahrefs CSV exports:
 ```bash
-ls ~/Dropbox/Studio/context/*/SEO/ 2>/dev/null
+ls /media/data/Dropbox/Work/Projects/Client/*/SEO/ 2>/dev/null
 ```
 
 Ahrefs exports to look for:
@@ -180,5 +180,5 @@ Offer to create Asana tasks for Priority 1 and 2 items via studio-pm.
 - Aura interprets — seo-audit measures. Run `/seo-audit` first to get fresh data, then `/aura` to act on it.
 - GSC API integration is roadmapped (GOOGLE_API_KEY enables it). For now, use manual CSV exports from Search Console.
 - Ahrefs CSVs live in Dropbox under the project SEO folder. If not there, ask Mark to export them.
-- For NORE: audit data is at `~/Dropbox/Studio/context/portfolio/nore/SEO/`. Ahrefs health: 75. 177 4XX pages, 250 orphans, redirect chain /field-notes/ → /articles/ → /blog/ with 1,706 inlinks.
+- For NORE: audit data is at `/media/data/Dropbox/Work/Projects/Client/NORE/SEO/`. Ahrefs health: 75. 177 4XX pages, 250 orphans, redirect chain /field-notes/ → /articles/ → /blog/ with 1,706 inlinks.
 - Model: Sonnet (strategy requires reasoning, not just mechanical checks).

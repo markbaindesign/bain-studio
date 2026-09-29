@@ -108,4 +108,4 @@ prevents indexing, and it requires the page to be crawlable.
   Auth makes that readable by anyone with the URL. Acceptable for a copy of a public site;
   reconsider for any project handling personal or confidential data.
 - `~/.netrc` becomes part of the workstation rebuild record
-  (`Studio KB/internal/workstation-rebuild.md`).
+  (`context/internal/workstation-rebuild.md`).

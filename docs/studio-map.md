@@ -125,7 +125,7 @@ graph TD
 | Utility        | Implementation                                               | Status                           |
 | -------------- | ------------------------------------------------------------ | -------------------------------- |
 | Copywriter     | `/copywriter` skill                                          | ✓ Built                          |
-| Mnemosyne      | `mnemosyne` agent · `context/portfolio/project-database.csv` | ✓ Built                          |
+| Mnemosyne      | `mnemosyne` agent · `upwork-proposals/context/portfolio/projects/` | ✓ Built                          |
 | The Memory     | Auto-memory system in `~/.claude/projects/…/memory/`         | ✓ Built                          |
 | Web Researcher | `/web-researcher` skill                                      | ✓ Built                          |
 | Notifier       | `studio/notifier.py` · Slack webhook                         | ✓ Built — [[utilities/notifier]] |
@@ -174,7 +174,7 @@ SIGNAL → QUALIFICATION → ESTIMATION → PRICING → [PROPOSAL GATE]
 | Project registry | `studio/projects.json` |
 | Asana mirror | `asana-mirror.md` |
 | Notifier | `studio/notifier.py` |
-| Project database | `~/Dropbox/Studio/context/portfolio/project-database.csv` |
+| Project database | `/media/data/dev/misc/upwork-proposals/context/portfolio/projects/` (one file per project) |
 | Studio skills | `.claude/skills/` (symlinked to `~/.claude/skills/`) |
 | Studio memory | `~/.claude/projects/-media-data-dev-bain-studio/memory/` |
 | Idea pipeline spec | `context/internal/greenhouse-feature-pipeline.md` |

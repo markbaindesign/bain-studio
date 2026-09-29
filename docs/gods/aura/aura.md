@@ -76,7 +76,7 @@ Zero impressions + indexed             → orphan/thin → cull or consolidate
 
 ## Reference
 
-- NORE first audit: 2026-06-17. Health 75. 177 4XX pages, 250 orphans, redirect chain /field-notes/ → /articles/ → /blog/ (1,706 inlinks). Ahrefs CSVs at `~/Dropbox/Studio/context/portfolio/nore/SEO/`.
+- NORE first audit: 2026-06-17. Health 75. 177 4XX pages, 250 orphans, redirect chain /field-notes/ → /articles/ → /blog/ (1,706 inlinks). Ahrefs CSVs at `/media/data/Dropbox/Work/Projects/Client/NORE/SEO/`.
 
 ## See also
 
