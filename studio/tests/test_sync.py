@@ -19,6 +19,7 @@ from sync import (
     _push_section,
     _task_lines,
     build_mirror,
+    create_subtasks,
     fetch_sections,
     fetch_tasks,
     parse_existing_mirror,
@@ -818,3 +819,66 @@ def test_get_task_reports_http_error(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sync, "_get", boom)
     assert sync.get_task("123") == 1
     assert "HTTP 404" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# create_subtasks
+# ---------------------------------------------------------------------------
+
+def test_create_subtasks_posts_in_order_and_returns_gids():
+    with patch("sync._post") as mock_post:
+        mock_post.side_effect = [{"data": {"gid": "s1"}}, {"data": {"gid": "s2"}}, {"data": {"gid": "s3"}}]
+        gids = create_subtasks("parent_gid", ["first", "second", "third"])
+    assert gids == ["s1", "s2", "s3"]
+    assert [c[0][0] for c in mock_post.call_args_list] == ["/tasks/parent_gid/subtasks"] * 3
+    assert [c[0][1] for c in mock_post.call_args_list] == [
+        {"data": {"name": "first"}}, {"data": {"name": "second"}}, {"data": {"name": "third"}},
+    ]
+
+
+def test_create_subtasks_dry_run_posts_nothing():
+    with patch("sync._post") as mock_post:
+        gids = create_subtasks("parent_gid", ["a", "b"], dry_run=True)
+    mock_post.assert_not_called()
+    assert len(gids) == 2
+
+
+def test_create_subtasks_no_names_posts_nothing():
+    with patch("sync._post") as mock_post:
+        assert create_subtasks("parent_gid", []) == []
+    mock_post.assert_not_called()
+
+
+def _run_main(monkeypatch, *argv):
+    # main() bails with exit 2 before reaching any command if the Asana settings are
+    # missing, so give it dummies - otherwise these tests depend on the developer's .env
+    monkeypatch.setattr(sync, "ASANA_PAT", "pat")
+    monkeypatch.setattr(sync, "WORKSPACE_GID", "ws_gid")
+    monkeypatch.setattr(sync, "BAINBOT_GID", "bot_gid")
+    with patch("sys.argv", ["sync.py", *argv]):
+        with pytest.raises(SystemExit) as exc:
+            sync.main()
+    return exc.value.code
+
+
+def test_cli_create_subtask_requires_task_gid(monkeypatch, capsys):
+    with patch("sync.create_subtasks") as mock_create:
+        assert _run_main(monkeypatch, "--create-subtask", "--subtask-name", "A") == 2
+    assert "--create-subtask requires --task-gid" in capsys.readouterr().err
+    mock_create.assert_not_called()
+
+
+def test_cli_create_subtask_requires_a_name(monkeypatch, capsys):
+    with patch("sync.create_subtasks") as mock_create:
+        assert _run_main(monkeypatch, "--create-subtask", "--task-gid", "123") == 2
+    assert "--create-subtask requires at least one --subtask-name" in capsys.readouterr().err
+    mock_create.assert_not_called()
+
+
+def test_cli_create_subtask_passes_names_in_order_and_prints_gids(monkeypatch, capsys):
+    with patch("sync.create_subtasks", return_value=["s1", "s2"]) as mock_create:
+        code = _run_main(monkeypatch, "--create-subtask", "--task-gid", "123",
+                         "--subtask-name", "B", "--subtask-name", "A")
+    assert code == 0
+    mock_create.assert_called_once_with("123", ["B", "A"], dry_run=False)
+    assert capsys.readouterr().out.split() == ["s1", "s2"]

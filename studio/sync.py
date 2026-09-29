@@ -1320,6 +1320,25 @@ def update_task(task_gid: str, name: str = None, notes: str = None,
     log.info(f"  Task {task_gid} updated: {', '.join(sorted(data))}")
 
 
+def create_subtasks(parent_gid: str, names: list, dry_run: bool = False) -> list:
+    """
+    Create subtasks under an existing Asana task via bainbot, in the order given.
+    Subtasks are not added to any project, so they stay out of the task mirror.
+    Returns the list of new subtask GIDs.
+    """
+    gids = []
+    for name in names:
+        if dry_run:
+            log.info(f"  [DRY-RUN] Would create subtask: {name!r}")
+            gids.append("dry-run-gid")
+            continue
+        resp = _post(f"/tasks/{parent_gid}/subtasks", {"data": {"name": name}})
+        new_gid = resp["data"]["gid"]
+        log.info(f"  Subtask created: {name!r} ({new_gid})")
+        gids.append(new_gid)
+    return gids
+
+
 def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT UP",
                      notes: str = "", due: str = "", dry_run: bool = False) -> str:
     """
@@ -1717,6 +1736,12 @@ def main():
                         help="Update an existing task's name and/or notes "
                              "(requires --task-gid; notes cannot be pushed "
                              "from the mirror)")
+
+
+    parser.add_argument("--create-subtask", action="store_true",
+                        help="Create subtasks under an existing task (use with --task-gid and --subtask-name)")
+    parser.add_argument("--subtask-name", metavar="NAME", action="append", default=[],
+                        help="Subtask name (repeatable; created in the order given)")
     parser.add_argument("--comment", action="store_true",
                         help="Post a comment to an Asana task via bainbot (use with --task-gid and --comment-text)")
     parser.add_argument("--task-gid", metavar="GID", default="",
@@ -1770,6 +1795,16 @@ def main():
             dry_run=args.dry_run,
             yes=args.yes,
         )
+        sys.exit(0)
+
+    if args.create_subtask:
+        if not args.task_gid:
+            parser.error("--create-subtask requires --task-gid")
+        if not args.subtask_name:
+            parser.error("--create-subtask requires at least one --subtask-name")
+        gids = create_subtasks(args.task_gid, args.subtask_name, dry_run=args.dry_run)
+        for gid in gids:
+            print(gid)
         sys.exit(0)
 
     if args.create_task:
