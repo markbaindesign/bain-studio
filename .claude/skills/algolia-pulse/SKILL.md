@@ -80,12 +80,13 @@ This validates the config and shows which queries would be run without actually 
 ## Invoke
 
 ```bash
-/algolia-pulse --config /path/to/pulse-config.json [--dry-run] [--verbose]
+/algolia-pulse --config /path/to/pulse-config.json [--dry-run] [--verbose] [--no-notify]
 ```
 
 **Arguments:**
 - `--config PATH` (required): Path to the JSON config file
 - `--dry-run`: Validate config and show what would be queried without running
+- `--no-notify`: Skip the Slack summary posted after each real run
 - `--verbose`: Show detailed output for each query
 
 ---
@@ -106,8 +107,8 @@ Run the script directly - no need to shell out through Claude. Studio cron jobs 
 `main`-tracked ops checkout, not the dev working copy:
 
 ```bash
-# Daily at 07:00
-0 7 * * * python3 /home/bain/ops/bain-studio/.claude/skills/algolia-pulse/algolia_pulse.py --config $HOME/.algolia/pulse-config.json >> $HOME/.algolia/pulse-cron.log 2>&1
+# Weekly, Mondays at 07:00
+0 7 * * 1 python3 /home/bain/ops/bain-studio/.claude/skills/algolia-pulse/algolia_pulse.py --config $HOME/.algolia/pulse-config.json >> $HOME/.algolia/pulse-cron.log 2>&1
 ```
 
 Because that checkout tracks `main`, any future fix to this script needs a `hotfix/x.y.z`

@@ -5,6 +5,7 @@ Prevents auto-closure of inactive search indices.
 """
 
 import json
+import subprocess
 import sys
 import time
 import logging
@@ -63,6 +64,35 @@ def load_config(config_path: str) -> Dict[str, Any]:
     return config
 
 
+NOTIFIER = Path(__file__).resolve().parents[3] / "studio" / "notifier.py"
+
+
+def notify_slack(results: List[Dict[str, Any]], total: int, failed: int) -> None:
+    """Post the run summary to Slack via the studio notifier. Never raises."""
+    ok = total - failed
+    lines = []
+    for r in results:
+        mark = "OK  " if not r["failed"] else "FAIL"
+        lines.append(f"{mark} {r['name']}: {r['ok']}/{r['total']}")
+        for idx in r["failed"]:
+            lines.append(f"       missing/failed: {idx}")
+    if failed:
+        message = f"Algolia Pulse: {failed} of {total} indices FAILED"
+        priority = "high"
+    else:
+        message = f"Algolia Pulse: {ok}/{total} indices OK across {len(results)} apps"
+        priority = "low"
+    try:
+        subprocess.run(
+            [sys.executable, str(NOTIFIER), message, "--project", "BSTD",
+             "--priority", priority, "--sender", "algolia-pulse",
+             "--details", "\n".join(lines)],
+            check=False, timeout=30,
+        )
+    except Exception as e:
+        print(f"WARNING: Slack notification failed: {e}", file=sys.stderr)
+
+
 def query_index(client: "SearchClientSync", index_name: str, query: str, logger: logging.Logger) -> bool:
     """Query a single index. Returns True if successful."""
     try:
@@ -80,7 +110,7 @@ def query_index(client: "SearchClientSync", index_name: str, query: str, logger:
         return False
 
 
-def pulse(config_path: str, dry_run: bool = False, verbose: bool = False) -> int:
+def pulse(config_path: str, dry_run: bool = False, verbose: bool = False, notify: bool = True) -> int:
     """Main pulse function. Returns exit code."""
     logger = setup_logging()
 
@@ -109,11 +139,14 @@ def pulse(config_path: str, dry_run: bool = False, verbose: bool = False) -> int
 
     successful = 0
     failed = 0
+    results: List[Dict[str, Any]] = []
 
     for app in apps:
         app_id = app["app_id"]
         api_key = app["admin_api_key"]
         app_name = app["name"]
+        result = {"name": app_name, "total": len(app["indices"]), "ok": 0, "failed": []}
+        results.append(result)
 
         try:
             client = SearchClientSync(app_id, api_key)
@@ -123,21 +156,27 @@ def pulse(config_path: str, dry_run: bool = False, verbose: bool = False) -> int
             for idx in app["indices"]:
                 if query_index(client, idx["name"], idx["query"], logger):
                     successful += 1
+                    result["ok"] += 1
                     if verbose:
                         print(f"    ✓ {idx['name']}")
                 else:
                     failed += 1
+                    result["failed"].append(idx["name"])
                     if verbose:
                         print(f"    ✗ {idx['name']}")
 
         except Exception as e:
             logger.error(f"App '{app_name}' connection failed: {e}")
             failed += len(app["indices"])
+            result["failed"] = [i["name"] for i in app["indices"]]
             print(f"  ✗ {app_name}: {e}")
 
     # Summary
     logger.info(f"Pulse complete: {successful} succeeded, {failed} failed")
     print(f"\nPulse complete: {successful}/{total_queries} indices queried successfully")
+
+    if notify:
+        notify_slack(results, total_queries, failed)
 
     return 0 if failed == 0 else 1
 
@@ -149,7 +188,8 @@ if __name__ == "__main__":
     parser.add_argument("--config", required=True, help="Path to pulse-config.json")
     parser.add_argument("--dry-run", action="store_true", help="Validate config without querying")
     parser.add_argument("--verbose", action="store_true", help="Detailed output")
+    parser.add_argument("--no-notify", action="store_true", help="Skip the Slack summary")
 
     args = parser.parse_args()
 
-    sys.exit(pulse(args.config, dry_run=args.dry_run, verbose=args.verbose))
+    sys.exit(pulse(args.config, dry_run=args.dry_run, verbose=args.verbose, notify=not args.no_notify))
