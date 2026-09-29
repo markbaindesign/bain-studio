@@ -5,6 +5,7 @@ Prevents auto-closure of inactive search indices.
 """
 
 import json
+import stat
 import subprocess
 import sys
 import time
@@ -42,6 +43,14 @@ def load_config(config_path: str) -> Dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
+    # The file holds live API keys: refuse to use it if anyone but the owner can read it
+    mode = path.stat().st_mode
+    if mode & (stat.S_IRWXG | stat.S_IRWXO):
+        raise ValueError(
+            f"{path} is readable by other users (mode {stat.S_IMODE(mode):o}). "
+            f"Run: chmod 600 {path}"
+        )
+
     with open(path) as f:
         config = json.load(f)
 
@@ -67,6 +76,19 @@ def load_config(config_path: str) -> Dict[str, Any]:
 NOTIFIER = Path(__file__).resolve().parents[3] / "studio" / "notifier.py"
 
 
+def _send_slack(message: str, details: str, priority: str) -> None:
+    """Post to Slack via the studio notifier. Never raises."""
+    try:
+        subprocess.run(
+            [sys.executable, str(NOTIFIER), message, "--project", "BSTD",
+             "--priority", priority, "--sender", "algolia-pulse",
+             "--details", details],
+            check=False, timeout=30,
+        )
+    except Exception as e:
+        print(f"WARNING: Slack notification failed: {e}", file=sys.stderr)
+
+
 def notify_slack(results: List[Dict[str, Any]], total: int, failed: int) -> None:
     """Post the run summary to Slack via the studio notifier. Never raises."""
     ok = total - failed
@@ -82,15 +104,7 @@ def notify_slack(results: List[Dict[str, Any]], total: int, failed: int) -> None
     else:
         message = f"Algolia Pulse: {ok}/{total} indices OK across {len(results)} apps"
         priority = "low"
-    try:
-        subprocess.run(
-            [sys.executable, str(NOTIFIER), message, "--project", "BSTD",
-             "--priority", priority, "--sender", "algolia-pulse",
-             "--details", "\n".join(lines)],
-            check=False, timeout=30,
-        )
-    except Exception as e:
-        print(f"WARNING: Slack notification failed: {e}", file=sys.stderr)
+    _send_slack(message, "\n".join(lines), priority)
 
 
 def query_index(client: "SearchClientSync", index_name: str, query: str, logger: logging.Logger) -> bool:
@@ -120,6 +134,9 @@ def pulse(config_path: str, dry_run: bool = False, verbose: bool = False, notify
     except (FileNotFoundError, ValueError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         logger.error(f"Config error: {e}")
+        # A cron run that dies on its config would otherwise fail unseen
+        if notify and not dry_run:
+            _send_slack("Algolia Pulse cannot run", str(e), "high")
         return 1
 
     apps = config.get("apps", [])

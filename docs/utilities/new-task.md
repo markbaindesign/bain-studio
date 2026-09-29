@@ -68,3 +68,4 @@ To see sections for a project, check its mirror or Asana board. The `--task-sect
 - All tasks are assigned to bainbot (not Mark) - consistent with the mirror workflow
 - The mirror entry will be overwritten on the next full sync with fresh data from Asana, but the task GID and local ID are preserved
 - Use `--dry-run` to preview what would be created without hitting Asana
+- To add subtasks under an existing task, see [new-subtask](new-subtask.md)

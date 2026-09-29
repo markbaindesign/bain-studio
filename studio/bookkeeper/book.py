@@ -161,7 +161,7 @@ class Book:
 
     def contains(self, txn) -> bool:
         """True if a transaction with this signature is already in the book."""
-        return txn.signature() in self.signatures
+        return any(sig in self.signatures for sig in txn.signatures())
 
     def near_duplicate(self, txn, days: int = 3, claimed=None):
         """Find a book entry with the same amount within `days` of this one.
@@ -180,13 +180,18 @@ class Book:
             return None
         key = (leg.account, leg.amount, leg.currency)
         claimed = claimed if claimed is not None else set()
+        mine = [txn.date] + list(txn.alt_dates)
+
+        def gap(d):
+            return min(abs((d - m).days) for m in mine)
+
         candidates = [
             d for d in self.by_amount.get(key, [])
-            if (key, d) not in claimed and 0 < abs((d - txn.date).days) <= days
+            if (key, d) not in claimed and 0 < gap(d) <= days
         ]
         if not candidates:
             return None
-        best = min(candidates, key=lambda d: abs((d - txn.date).days))
+        best = min(candidates, key=gap)
         claimed.add((key, best))
         return best
 

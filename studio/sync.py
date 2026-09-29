@@ -394,7 +394,23 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
         ),
         "limit": 100,
     }
-    data = _get(f"/projects/{proj.gid}/tasks", params)["data"]
+    # Follow next_page. A single page holds at most `limit` tasks, so a project
+    # over 100 tasks used to sync only the first 100: the mirror then lost
+    # whichever tasks fell past the cut ("N removed" every run, NORE 2026-09)
+    # and nothing beyond it could be pushed or pulled.
+    data, offset, pages = [], None, 0
+    while pages < TASK_MAX_PAGES:
+        if offset:
+            params["offset"] = offset
+        page = _get(f"/projects/{proj.gid}/tasks", params)
+        data.extend(page.get("data") or [])
+        pages += 1
+        offset = (page.get("next_page") or {}).get("offset")
+        if not offset:
+            break
+    else:
+        log.warning(f"  [{proj.prefix}] Stopped at {TASK_MAX_PAGES} pages of tasks; "
+                    "the project may have more")
     tasks = [t for t in data if not _is_junk(t)]
     for t in tasks:
         t["_local_id"] = None
@@ -423,6 +439,7 @@ def fetch_sections(proj: ProjectConfig) -> dict:
     return {s["name"]: s["gid"] for s in data}
 
 
+TASK_MAX_PAGES     = 50    # safety cap (5000 tasks)
 COMMENT_PAGE_LIMIT = 100   # stories per page
 COMMENT_MAX_PAGES  = 25    # safety cap (2500 stories)
 COMMENT_KEEP       = 10    # most recent human comments kept in the mirror
@@ -588,6 +605,12 @@ def _is_junk(task) -> bool:
 def assign_ids(proj: ProjectConfig, tasks: list, state: dict, field_gid: str, dry_run=False) -> dict:
     assigned = 0
     rehomed = 0
+    # Keep the counter ahead of every ID already in use for this prefix *before* assigning any,
+    # or a new task listed ahead of an adopted ID is handed the same one.
+    for t in tasks:
+        m = re.fullmatch(rf"{re.escape(proj.prefix)}-(\d+)", t["_local_id"] or "")
+        if m and int(m.group(1)) >= state["next_seq"]:
+            state["next_seq"] = int(m.group(1)) + 1
     for t in tasks:
         gid = t["gid"]
         existing = t["_local_id"]
@@ -962,9 +985,27 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
         return False
 
 
+def _parse_refs(text: str) -> dict:
+    """{gid: name} from a mirror field written as "Name (gid), Name (gid)"."""
+    out = {}
+    for part in (text or "").split(","):
+        m = re.search(r"^\s*(.*?)\s*\((\d+)\)\s*$", part)
+        if m:
+            out[m.group(2)] = m.group(1)
+    return out
+
+
 def _push_set_field(task_gid: str, lid: str, mirror_text: str, asana_items: list,
                     add_path: str, remove_path: str, item_key: str,
-                    dry_run: bool, prefix: str, label: str) -> bool:
+                    dry_run: bool, prefix: str, label: str, task=None,
+                    task_key=None) -> bool:
+    """Push a set-valued field (tags, followers, ...) from the mirror to Asana.
+
+    When `task` and `task_key` are given, the in-memory task is updated to the
+    state Asana now holds. The mirror is rebuilt from that task after the push,
+    so leaving it holding the pre-push set wrote the OLD value back into the
+    mirror, and the next run pushed it again: an endless add/remove flip-flop.
+    """
     mirror_gids = set(_extract_gids(mirror_text))
     asana_gids  = {i["gid"] for i in (asana_items or [])}
     to_add    = mirror_gids - asana_gids
@@ -975,18 +1016,26 @@ def _push_set_field(task_gid: str, lid: str, mirror_text: str, asana_items: list
         log.info(f"    [DRY-RUN] Would update {label} for {lid}: +{to_add} -{to_remove}")
         return False
     changed = False
+    added, removed = set(), set()
     for g in to_add:
         try:
             _post(add_path.format(task_gid=task_gid), {"data": {item_key: g}})
             changed = True
+            added.add(g)
         except Exception as e:
             log.warning(f"  [{prefix}] Could not add {label} {g} to {lid}: {e}")
     for g in to_remove:
         try:
             _post(remove_path.format(task_gid=task_gid), {"data": {item_key: g}})
             changed = True
+            removed.add(g)
         except Exception as e:
             log.warning(f"  [{prefix}] Could not remove {label} {g} from {lid}: {e}")
+    if task is not None and task_key and changed:
+        names = _parse_refs(mirror_text)
+        kept = [i for i in (asana_items or []) if i["gid"] not in removed]
+        kept += [{"gid": g, "name": names.get(g, "")} for g in added]
+        task[task_key] = kept
     if changed:
         log.info(f"  [{prefix}] Updated {label} for {lid} (+{len(to_add)}/-{len(to_remove)})")
     return changed
@@ -1107,6 +1156,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                     prev.get(mirror_key), t.get(asana_key, []),
                     add_path, remove_path, item_key,
                     dry_run, proj.prefix, label,
+                    task=t, task_key=asana_key,
                 ):
                     pushed += 1
                     touched_gids.add(gid)
@@ -1215,6 +1265,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                 changes.append(f"- NEW: {t.get('_local_id','?')} — {t['name']}")
             for gid in removed_gids:
                 lid = state["tasks"].get(gid, gid)
+                log.info(f"  [{proj.prefix}] Removed from mirror: {lid} ({gid})")
                 changes.append(f"- REMOVED (likely completed): {lid}")
             mirror += "\n" + "\n".join(changes)
 
@@ -1318,6 +1369,25 @@ def update_task(task_gid: str, name: str = None, notes: str = None,
 
     _put(f"/tasks/{task_gid}", {"data": data})
     log.info(f"  Task {task_gid} updated: {', '.join(sorted(data))}")
+
+
+def create_subtasks(parent_gid: str, names: list, dry_run: bool = False) -> list:
+    """
+    Create subtasks under an existing Asana task via bainbot, in the order given.
+    Subtasks are not added to any project, so they stay out of the task mirror.
+    Returns the list of new subtask GIDs.
+    """
+    gids = []
+    for name in names:
+        if dry_run:
+            log.info(f"  [DRY-RUN] Would create subtask: {name!r}")
+            gids.append("dry-run-gid")
+            continue
+        resp = _post(f"/tasks/{parent_gid}/subtasks", {"data": {"name": name}})
+        new_gid = resp["data"]["gid"]
+        log.info(f"  Subtask created: {name!r} ({new_gid})")
+        gids.append(new_gid)
+    return gids
 
 
 def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT UP",
@@ -1717,6 +1787,12 @@ def main():
                         help="Update an existing task's name and/or notes "
                              "(requires --task-gid; notes cannot be pushed "
                              "from the mirror)")
+
+
+    parser.add_argument("--create-subtask", action="store_true",
+                        help="Create subtasks under an existing task (use with --task-gid and --subtask-name)")
+    parser.add_argument("--subtask-name", metavar="NAME", action="append", default=[],
+                        help="Subtask name (repeatable; created in the order given)")
     parser.add_argument("--comment", action="store_true",
                         help="Post a comment to an Asana task via bainbot (use with --task-gid and --comment-text)")
     parser.add_argument("--task-gid", metavar="GID", default="",
@@ -1770,6 +1846,16 @@ def main():
             dry_run=args.dry_run,
             yes=args.yes,
         )
+        sys.exit(0)
+
+    if args.create_subtask:
+        if not args.task_gid:
+            parser.error("--create-subtask requires --task-gid")
+        if not args.subtask_name:
+            parser.error("--create-subtask requires at least one --subtask-name")
+        gids = create_subtasks(args.task_gid, args.subtask_name, dry_run=args.dry_run)
+        for gid in gids:
+            print(gid)
         sys.exit(0)
 
     if args.create_task:

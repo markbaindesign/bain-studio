@@ -781,3 +781,122 @@ def test_a_paid_invoice_is_still_income_in_its_own_quarter(book, rules):
     result = run([_invoice("887", "1000.00", date(2026, 7, 31))], book, rules)
     assert result.counts["ready"] == 1
     assert result.ready[0].date == date(2026, 7, 31)
+
+
+# ------------------------------------------- tooling fixes, 2026-09-24
+
+def test_add_rule_replace_rewrites_in_place_and_keeps_neighbours(tmp_path):
+    import yaml
+    from studio.bookkeeper.rulewriter import RuleExists, append_rule
+    path = str(tmp_path / "rules.yaml")
+    open(path, "w").write(
+        'rules:\n  - match: "anthropic"\n    account: "Expenses:Software"\n'
+        '    regex: true\n'
+        '  # keep me\n  - match: "strand"\n    account: "Expenses:Books"\n\n'
+        '# section\nfallbacks: []\n'
+    )
+    with pytest.raises(RuleExists):
+        append_rule(path, "anthropic", "Expenses:Computer")
+    out = append_rule(path, "anthropic", "Expenses:Computer", replace=True)
+    assert "regex" in out                      # old block reported back
+    text = open(path).read()
+    parsed = yaml.safe_load(text)
+    assert [r["match"] for r in parsed["rules"]] == ["anthropic", "strand"]
+    assert parsed["rules"][0]["account"] == "Expenses:Computer"
+    assert "regex" not in parsed["rules"][0]
+    assert "# keep me" in text and "# section" in text
+
+
+def test_check_rules_flags_a_rule_with_no_leaf(book, rules):
+    from studio.bookkeeper.categorise import check_rules
+    broken, partial = check_rules(rules, book)
+    assert [b[1] for b in broken] == ["nowhere"]
+    # Software has a USD leaf and a EUR-less parent: resolves for some only.
+    assert any(p[1] == "anthropic" for p in partial)
+
+
+def test_bbva_value_date_matches_an_existing_entry(book_path, book, rules):
+    """A hand entry dated the value date is already in the book, not new."""
+    rules.rules.insert(0, {"match": "mta", "account": "Expenses:Software"})
+    commit(book_path, run([_spend(date(2026, 9, 3))], book, rules).ready, book)
+    incoming = _spend(date(2026, 9, 1))
+    incoming.alt_dates = [date(2026, 9, 3)]
+    result = run([incoming], Book(book_path), rules)
+    assert result.counts["duplicates"] == 1
+    assert result.counts["possible_duplicates"] == 0
+
+
+def test_acknowledged_possible_duplicate_is_not_listed_again(book_path, book, rules):
+    rules.rules.insert(0, {"match": "mta", "account": "Expenses:Software"})
+    commit(book_path, run([_spend(date(2026, 9, 1))], book, rules).ready, book)
+    later = _spend(date(2026, 9, 2))
+    later.source, later.source_id = "wise", "TX-1"
+    first = run([later], Book(book_path), rules)
+    assert first.counts["possible_duplicates"] == 1
+    assert "UTC" in first.possible_duplicates[0].review_reason
+
+    again = _spend(date(2026, 9, 2))
+    again.source, again.source_id = "wise", "TX-1"
+    second = run([again], Book(book_path), rules, acknowledged={"wise:TX-1"})
+    assert second.counts["possible_duplicates"] == 0
+    assert second.counts["duplicates"] == 1
+
+
+def test_ack_file_round_trips(tmp_path):
+    from studio.bookkeeper import ack
+    path = str(tmp_path / "ack.yaml")
+    assert ack.add(path, ["a", "b"]) == 2
+    assert ack.add(path, ["b", "c"]) == 1
+    assert ack.load(path) == {"a", "b", "c"}
+
+
+def test_import_window_and_future_rows_in_csv_source(tmp_path):
+    from studio.bookkeeper.sources import csv_source
+    path = str(tmp_path / "up.csv")
+    open(path, "w").write(
+        "Date,Amount $,Current balance $\n"
+        "2020-01-05,10.00,10.00\n"
+        "2026-09-01,20.00,30.00\n"
+        "2999-09-30,30.00,\n"
+    )
+    cm = csv_source.ColumnMap(date="Date", description="Amount $",
+                              amount="Amount $", fixed_currency="USD",
+                              require="Current balance $")
+    txns = csv_source.parse(path, cm, "Assets:X", "upwork")
+    assert [str(t.date) for t in txns] == ["2020-01-05", "2026-09-01"]
+
+
+def test_csv_alt_date_is_captured(tmp_path):
+    from studio.bookkeeper.sources import csv_source
+    path = str(tmp_path / "b.csv")
+    open(path, "w").write("Fecha,F.Valor,Concepto,Importe\n"
+                          "2026-09-01,2026-09-03,x,-5.00\n")
+    cm = csv_source.ColumnMap(date="Fecha", alt_date="F.Valor",
+                              description="Concepto", amount="Importe",
+                              fixed_currency="EUR")
+    t = csv_source.parse(path, cm, "Assets:X", "bbva")[0]
+    assert t.date == date(2026, 9, 1) and t.alt_dates == [date(2026, 9, 3)]
+
+
+# ------------------------------------------------ Harvest tax split
+
+def test_harvest_spanish_invoice_splits_iva_and_irpf():
+    from studio.bookkeeper.sources.harvest import build_legs
+    # subtotal 1000, IVA 21% = 210, IRPF -15% = -150, amount due 1060
+    legs = build_legs(Fraction(1060), Fraction(210), Fraction(-150), "EUR")
+    by = {l.account.split(":")[-1]: l.amount for l in legs}
+    assert by == {"Accounts Receivable": 1060, "IRPF Retenido": 150,
+                  "Client Income": -1000, "IVA Repercutido": -210}
+    assert sum(l.amount for l in legs) == 0
+
+
+def test_harvest_untaxed_invoice_keeps_two_legs():
+    from studio.bookkeeper.sources.harvest import build_legs
+    legs = build_legs(Fraction(500), Fraction(0), Fraction(0), "USD")
+    assert [l.amount for l in legs] == [500, -500]
+
+
+def test_harvest_iva_only_invoice_balances():
+    from studio.bookkeeper.sources.harvest import build_legs
+    legs = build_legs(Fraction(121), Fraction(21), Fraction(0), "EUR")
+    assert sum(l.amount for l in legs) == 0 and len(legs) == 3
