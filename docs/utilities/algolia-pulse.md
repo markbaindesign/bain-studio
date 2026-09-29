@@ -41,6 +41,10 @@ Every real run (not `--dry-run`) posts one message to the studio Slack channel v
   per-app breakdown
 - any failure: a high-priority `N of M indices FAILED`, listing each failed index by app
 
+A config that cannot be loaded (missing, bad JSON, or readable by other users) also posts a
+high-priority `Algolia Pulse cannot run` alert with the reason, so a broken weekly cron does not fail
+unseen. `--dry-run` and `--no-notify` suppress it.
+
 The notifier never raises, so a Slack outage cannot fail the pulse or change its exit code.
 
 ## Scheduling
@@ -58,13 +62,25 @@ so it reaches the ops checkout without waiting for a full release cycle.
 
 ## Config
 
-Lives at `~/.algolia/pulse-config.json` (mode 600, gitignored path, contains live admin API
-keys - never commit it). Pulse only runs search queries, so the `admin_api_key` field can
+Lives at `~/.algolia/pulse-config.json` (contains live API keys - never commit it). **It must be
+mode 600**: pulse refuses to run, and alerts Slack, if group or others can read it
+(`chmod 600 ~/.algolia/pulse-config.json`). Pulse only runs search queries, so the `admin_api_key` field can
 hold a **search-only** key (it is just the field name the script reads); prefer that for apps
 where you have one, since it limits the damage if the file leaks. One entry per app, each with its indices and a search query
 (`"*"` is fine - the point is just to register activity, not to validate results).
 
+## Why weekly
+
+Algolia's free plan pauses, then deletes, an application with no operations for a while. The
+`feature/algolia-keepalive` branch (folded into this tool and deleted) recorded that the studio's own
+Algolia emails warned an application (KF Local, September 2026) at 22 days of inactivity and paused it
+at about 30, against the two months in Algolia's support article. That is a single source and has not
+been independently confirmed, but it is why the cadence is weekly rather than monthly.
+
 ## Known gaps
+
+- If `algoliasearch` is missing or the wrong major version, the script exits at import time, before
+  it can alert Slack, so that failure is visible only in `pulse-cron.log`.
 
 - Credentials for client Algolia apps are scattered across each WordPress project's
   `wp-config.php` (`ALGOLIA_APPLICATION_ID` / `ALGOLIA_API_KEY` per environment) - there is no
