@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Dict, List, Any
 
 try:
-    from algoliasearch.search_client import SearchClient
+    from algoliasearch.search.client import SearchClientSync
 except ImportError:
     print("ERROR: algoliasearch not installed. Install with: pip3 install algoliasearch")
     sys.exit(1)
@@ -63,12 +63,17 @@ def load_config(config_path: str) -> Dict[str, Any]:
     return config
 
 
-def query_index(client: SearchClient, index_name: str, query: str, logger: logging.Logger) -> bool:
+def query_index(client: "SearchClientSync", index_name: str, query: str, logger: logging.Logger) -> bool:
     """Query a single index. Returns True if successful."""
     try:
-        index = client.init_index(index_name)
-        result = index.search(query, {"hitsPerPage": 1})
-        logger.info(f"✓ Index '{index_name}' queried: {result['nbHits']} hits")
+        result = client.search_single_index(
+            index_name=index_name,
+            search_params={"query": query, "hitsPerPage": 1},
+        )
+        n_hits = getattr(result, "nb_hits", None)
+        if n_hits is None:
+            n_hits = len(getattr(result, "hits", []))
+        logger.info(f"✓ Index '{index_name}' queried: {n_hits} hits")
         return True
     except Exception as e:
         logger.error(f"✗ Index '{index_name}' query failed: {e}")
@@ -111,7 +116,7 @@ def pulse(config_path: str, dry_run: bool = False, verbose: bool = False) -> int
         app_name = app["name"]
 
         try:
-            client = SearchClient.create(app_id, api_key)
+            client = SearchClientSync(app_id, api_key)
             if verbose:
                 print(f"\n  App: {app_name}")
 
