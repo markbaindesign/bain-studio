@@ -9,6 +9,7 @@ import pytest
 import sync
 from sync import (
     ProjectConfig,
+    assign_ids,
     _fmt_refs,
     _fmt_task_refs,
     _extract_gids,
@@ -227,6 +228,43 @@ def test_next_lid_increments():
 def test_next_lid_zero_pads():
     state = {"next_seq": 9}
     assert _next_lid(state, "TEST") == "TEST-009"
+
+
+# ---------------------------------------------------------------------------
+# assign_ids - adopted IDs and the counter
+# ---------------------------------------------------------------------------
+
+def _task(gid, local_id=""):
+    return {"gid": gid, "name": f"task {gid}", "_local_id": local_id}
+
+
+def test_assign_ids_adopted_id_moves_counter_past_it(proj):
+    state = {"next_seq": 1, "tasks": {}}
+    tasks = [_task("1", "TEST-012")]
+    assign_ids(proj, tasks, state, "field_gid", dry_run=True)
+    assert state["tasks"]["1"] == "TEST-012"
+    assert state["next_seq"] == 13
+
+
+def test_assign_ids_new_task_after_adopted_id_does_not_collide(proj):
+    state = {"next_seq": 1, "tasks": {}}
+    tasks = [_task("1", "TEST-005"), _task("2")]
+    assign_ids(proj, tasks, state, "field_gid", dry_run=True)
+    assert tasks[1]["_local_id"] == "TEST-006"
+
+
+def test_assign_ids_adopted_id_below_counter_leaves_it_alone(proj):
+    state = {"next_seq": 20, "tasks": {}}
+    assign_ids(proj, [_task("1", "TEST-003")], state, "field_gid", dry_run=True)
+    assert state["next_seq"] == 20
+
+
+def test_assign_ids_new_task_listed_before_adopted_id_does_not_collide(proj):
+    state = {"next_seq": 1, "tasks": {}}
+    tasks = [_task("2"), _task("1", "TEST-001")]
+    assign_ids(proj, tasks, state, "field_gid", dry_run=True)
+    ids = [t["_local_id"] for t in tasks]
+    assert len(set(ids)) == 2, ids
 
 
 # ---------------------------------------------------------------------------
