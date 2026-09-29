@@ -634,6 +634,10 @@ def assign_ids(proj: ProjectConfig, tasks: list, state: dict, field_gid: str, dr
         if existing:
             if gid not in state["tasks"]:
                 state["tasks"][gid] = existing
+            # Keep the counter ahead of adopted IDs, or the next new task collides with one
+            m = re.fullmatch(rf"{re.escape(proj.prefix)}-(\d+)", existing)
+            if m and int(m.group(1)) >= state["next_seq"]:
+                state["next_seq"] = int(m.group(1)) + 1
             continue
 
         lid = state["tasks"].get(gid) or _next_lid(state, proj.prefix)
