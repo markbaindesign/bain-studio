@@ -102,21 +102,17 @@ This validates the config and shows which queries would be run without actually 
 
 ## Scheduling with cron
 
-To keep indices alive, run Algolia Pulse daily or hourly:
+Run the script directly - no need to shell out through Claude. Studio cron jobs run from the
+`main`-tracked ops checkout, not the dev working copy:
 
 ```bash
-# Daily at 09:00
-0 9 * * * /usr/bin/python3 -c "import subprocess; subprocess.run(['claude', '--dangerously-skip-permissions', '-p', '/algolia-pulse --config ~/.algolia/pulse-config.json'], cwd='/media/data/dev/bain-studio')"
-
-# Hourly
-0 * * * * /usr/bin/python3 -c "import subprocess; subprocess.run(['claude', '--dangerously-skip-permissions', '-p', '/algolia-pulse --config ~/.algolia/pulse-config.json'], cwd='/media/data/dev/bain-studio')"
+# Daily at 07:00
+0 7 * * * python3 /home/bain/ops/bain-studio/.claude/skills/algolia-pulse/algolia_pulse.py --config $HOME/.algolia/pulse-config.json >> $HOME/.algolia/pulse-cron.log 2>&1
 ```
 
-Or use the `/schedule` skill to set up a recurring run:
-
-```bash
-/schedule --cron "0 9 * * *" --command "/algolia-pulse --config ~/.algolia/pulse-config.json"
-```
+Because that checkout tracks `main`, any future fix to this script needs a `hotfix/x.y.z`
+branch (per the studio's git flow) to reach it - a `feature`/`bugfix` branch off `develop`
+won't land there until the next release.
 
 ---
 
