@@ -9,6 +9,7 @@ import pytest
 import sync
 from sync import (
     ProjectConfig,
+    assign_ids,
     _fmt_refs,
     _fmt_task_refs,
     _extract_gids,
@@ -228,6 +229,43 @@ def test_next_lid_increments():
 def test_next_lid_zero_pads():
     state = {"next_seq": 9}
     assert _next_lid(state, "TEST") == "TEST-009"
+
+
+# ---------------------------------------------------------------------------
+# assign_ids - adopted IDs and the counter
+# ---------------------------------------------------------------------------
+
+def _task(gid, local_id=""):
+    return {"gid": gid, "name": f"task {gid}", "_local_id": local_id}
+
+
+def test_assign_ids_adopted_id_moves_counter_past_it(proj):
+    state = {"next_seq": 1, "tasks": {}}
+    tasks = [_task("1", "TEST-012")]
+    assign_ids(proj, tasks, state, "field_gid", dry_run=True)
+    assert state["tasks"]["1"] == "TEST-012"
+    assert state["next_seq"] == 13
+
+
+def test_assign_ids_new_task_after_adopted_id_does_not_collide(proj):
+    state = {"next_seq": 1, "tasks": {}}
+    tasks = [_task("1", "TEST-005"), _task("2")]
+    assign_ids(proj, tasks, state, "field_gid", dry_run=True)
+    assert tasks[1]["_local_id"] == "TEST-006"
+
+
+def test_assign_ids_adopted_id_below_counter_leaves_it_alone(proj):
+    state = {"next_seq": 20, "tasks": {}}
+    assign_ids(proj, [_task("1", "TEST-003")], state, "field_gid", dry_run=True)
+    assert state["next_seq"] == 20
+
+
+def test_assign_ids_new_task_listed_before_adopted_id_does_not_collide(proj):
+    state = {"next_seq": 1, "tasks": {}}
+    tasks = [_task("2"), _task("1", "TEST-001")]
+    assign_ids(proj, tasks, state, "field_gid", dry_run=True)
+    ids = [t["_local_id"] for t in tasks]
+    assert len(set(ids)) == 2, ids
 
 
 # ---------------------------------------------------------------------------
@@ -882,3 +920,48 @@ def test_cli_create_subtask_passes_names_in_order_and_prints_gids(monkeypatch, c
     assert code == 0
     mock_create.assert_called_once_with("123", ["B", "A"], dry_run=False)
     assert capsys.readouterr().out.split() == ["s1", "s2"]
+
+
+# ---------------------------------------------------------------------------
+# Pagination and follower flip-flop (NORE, 2026-09-24)
+# ---------------------------------------------------------------------------
+
+def test_fetch_tasks_follows_next_page(proj):
+    def page(n, more):
+        return {"data": [{"gid": f"{n}-{i}", "name": "t", "memberships": [],
+                          "custom_fields": []} for i in range(2)],
+                "next_page": {"offset": "o%d" % n} if more else None}
+    pages = [page(1, True), page(2, False)]
+    with patch("sync._get", side_effect=pages) as get:
+        tasks = fetch_tasks(proj, "field")
+    assert [t["gid"] for t in tasks] == ["1-0", "1-1", "2-0", "2-1"]
+    assert get.call_args_list[1].args[1]["offset"] == "o1"
+
+
+def test_push_set_field_updates_task_to_post_push_state():
+    """The mirror is rebuilt from the task after a push, so it must reflect it."""
+    task = {"followers": [{"gid": "1", "name": "Me"}, {"gid": "2", "name": "BainBot"}]}
+    with patch("sync._post"):
+        changed = _push_set_field(
+            "t", "T-1", "Me (1)", task["followers"], "/add", "/remove", "follower",
+            False, "T", "followers", task=task, task_key="followers")
+    assert changed
+    assert [f["gid"] for f in task["followers"]] == ["1"]
+
+
+def test_push_set_field_adds_carry_the_mirror_name():
+    task = {"followers": []}
+    with patch("sync._post"):
+        _push_set_field("t", "T-1", "BainBot (2)", [], "/add", "/remove",
+                        "follower", False, "T", "followers",
+                        task=task, task_key="followers")
+    assert task["followers"] == [{"gid": "2", "name": "BainBot"}]
+
+
+def test_push_set_field_failed_write_is_not_recorded():
+    task = {"followers": [{"gid": "2", "name": "BainBot"}]}
+    with patch("sync._post", side_effect=RuntimeError("no")):
+        _push_set_field("t", "T-1", "none", task["followers"], "/add",
+                        "/remove", "follower", False, "T", "followers",
+                        task=task, task_key="followers")
+    assert [f["gid"] for f in task["followers"]] == ["2"]
