@@ -2,7 +2,7 @@
 tags: [skill, analytics, reporting, client-deliverable, ga4]
 god: hermes
 invoke: /ga-report
-description: Pull GA4 data for a client project and compile a branded benchmark report with action points. Authenticates via service account, fetches standard metrics (sessions, users, channels, pages, devices), generates period-over-period comparisons, writes a client-ready markdown report, and outputs a branded PDF via brand-doc.
+description: Pull GA4 data for a client project and compile a branded benchmark report with action points. Authenticates via service account, fetches standard metrics (sessions, users, channels, pages, devices), generates period-over-period comparisons, writes a client-ready markdown report, and outputs a branded PDF via brand-doc, saved to the client's Dropbox folder.
 ---
 
 # GA Report
@@ -42,14 +42,17 @@ Recommended key location: `~/.config/bain-studio/google-sa.json`
 
 ## Data source
 
+`studio/collectors/ga4_charts.py` draws the trend, channel and country charts from that JSON for embedding in the report.
+
 `studio/collectors/ga4_report.py` — authenticates via service account JWT (uses `cryptography` lib), calls the GA4 Data API, and returns structured JSON.
 
 ## Output location
 
-`$STUDIO_CONTENT_DIR/reports/{project-slug}/ga-benchmark-YYYY-MM-DD.md`
+`{client_docs}/analytics/ga-benchmark-YYYY-MM-DD.md`, where `client_docs:` is set in the project file (`docs/projects/{slug}.md`). Client reports are stored with the client in Dropbox, never in the studio.
 
 ## Known project property IDs
 
 | Project | GA4 Property ID |
 |---------|----------------|
 | NORE | 542141660 |
+| KF-WEB | 341883333 |
