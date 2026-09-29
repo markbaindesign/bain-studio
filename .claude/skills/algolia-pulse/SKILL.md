@@ -14,7 +14,7 @@ Algolia automatically closes free-tier indices after extended inactivity. **Algo
 
 ### 1. Create the config file
 
-Create a JSON file with your Algolia app credentials. Suggested location:
+Create a JSON file with your Algolia app credentials, and `chmod 600` it: pulse refuses to run (and alerts Slack) if anyone but you can read it. Suggested location:
 ```
 ~/.algolia/pulse-config.json
 ```
