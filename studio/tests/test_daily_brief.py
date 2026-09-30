@@ -142,6 +142,20 @@ def test_first_seen_never_changes_severity_and_prunes_resolved():
     assert new_state == {"a": "2026-09-01", "c": "2026-09-17"}
 
 
+def test_a_job_failing_now_outranks_older_rot():
+    failing = b.finding("f", "Operations", "high", "F", acute=True)        # age 0
+    ancient = b.finding("a", "Projects", "high", "A", age_days=476)
+    failing["raised_days"] = ancient["raised_days"] = 0
+    assert [f["key"] for f in sorted([ancient, failing], key=b.rank)] == ["f", "a"]
+
+
+def test_acute_does_not_outrank_a_higher_severity():
+    failing = b.finding("f", "Operations", "high", "F", acute=True)
+    money = b.finding("m", "Finance", "critical", "M")
+    failing["raised_days"] = money["raised_days"] = 0
+    assert [f["key"] for f in sorted([failing, money], key=b.rank)] == ["m", "f"]
+
+
 def test_rank_puts_the_older_problem_above_the_older_report():
     worse = b.finding("w", "Projects", "high", "W", age_days=90)
     worse["raised_days"] = 0

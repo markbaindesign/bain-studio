@@ -64,8 +64,15 @@ Re-running the same data after the fix: 1 critical.
 raised, but only to print "raised N days ago" and to break ties in ranking. Resolved findings drop
 out of the state.
 
-**Today** lists up to 8 critical/high findings, ranked by severity, then by the age of the problem,
-then by how long it has been reported. Each area follows with every finding, grouped by project.
+**Today** lists up to 8 critical/high findings, ranked by severity, then **acute before chronic**,
+then by the age of the problem, then by how long it has been reported. Each area follows with every
+finding, grouped by project.
+
+An *acute* finding is something erroring right now rather than rotting slowly: a cron job whose last
+run failed, a transcription failing repeatedly, a crashed check, an unreadable GnuCash book or
+finance snapshot. Age alone cannot express this, because a job that broke on its last run has an age
+of zero and would sort below a task 476 days overdue. Pass `acute=True` to `finding()` when adding a
+check that detects live breakage.
 
 ## Tuning
 

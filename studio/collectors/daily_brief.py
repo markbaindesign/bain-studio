@@ -84,9 +84,15 @@ ISO_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 # Findings
 # ---------------------------------------------------------------------------
 
-def finding(key, area, severity, title, detail="", url="", age_days=None, group=""):
-    return {"key": key, "area": area, "severity": severity, "title": title,
-            "detail": detail, "url": url, "age_days": age_days, "group": group}
+def finding(key, area, severity, title, detail="", url="", age_days=None, group="", acute=False):
+    """acute: something is erroring right now, as opposed to rotting slowly.
+
+    Ranking by age alone cannot express this. A job that failed on its last run has an age of
+    zero and would sort below a task 476 days overdue, though only one of them is actually
+    broken. Acute findings sort above chronic ones of the same severity.
+    """
+    return {"key": key, "area": area, "severity": severity, "title": title, "detail": detail,
+            "url": url, "age_days": age_days, "group": group, "acute": acute}
 
 
 def _days_since(iso, today):
@@ -273,7 +279,8 @@ def check_books(today):
     path = os.getenv("GNUCASH_FILE")
     if not path or not Path(path).exists():
         return [finding("finance:gnucash-missing", "Finance", "high",
-                        "GnuCash book not found", "GNUCASH_FILE is unset or points nowhere")]
+                        "GnuCash book not found", "GNUCASH_FILE is unset or points nowhere",
+                        acute=True)]
     try:
         import gzip
         import xml.etree.ElementTree as ET
@@ -306,7 +313,7 @@ def check_books(today):
                     balance[a.text] = balance.get(a.text, 0.0) + (float(Fraction(q.text)) if q is not None else 0.0)
     except Exception as e:
         return [finding("finance:gnucash-unreadable", "Finance", "high",
-                        "Could not read the GnuCash book", str(e)[:200])]
+                        "Could not read the GnuCash book", str(e)[:200], acute=True)]
 
     # Only accounts in real use: holding money, or busy in the 90 days before their last entry.
     # Closed or dormant accounts (zero balance, a handful of entries) would otherwise read as stale.
@@ -336,7 +343,7 @@ def check_snapshot(today):
         data = json.loads(path.read_text())
     except (OSError, ValueError) as e:
         return [finding("ops:snapshot-missing", "Operations", "high",
-                        "Finance snapshot (accounts.json) unreadable", str(e)[:200])]
+                        "Finance snapshot (accounts.json) unreadable", str(e)[:200], acute=True)]
     out = []
     age = _days_since(data.get("generated_at", ""), today)
     if age is None or age > 2:
@@ -465,7 +472,7 @@ def check_cron(today, crontab_text=None, now=None):
         if err:
             last = next((l for l in reversed(tail) if l.strip()), "")
             out.append(finding(key, "Operations", "high", f"Scheduled job {job} is failing",
-                               f"latest run ends: {last.strip()[:180]}"))
+                               f"latest run ends: {last.strip()[:180]}", acute=True))
     return out
 
 
@@ -549,7 +556,8 @@ def check_voice_notes(today):
                                "(Scarlett gain, or Obsidian using the webcam mic)"))
         elif entry.get("status") == "failed" and entry.get("attempts", 0) >= 3:
             out.append(finding(f"voice:failed:{Path(path).name}", "Operations", "high",
-                               f"Could not transcribe {Path(path).name}", entry.get("error", "")[:160]))
+                               f"Could not transcribe {Path(path).name}", entry.get("error", "")[:160],
+                               acute=True))
     return out
 
 
@@ -576,8 +584,10 @@ def stamp_first_seen(findings, state, today):
 
 
 def rank(f):
-    """Severity, then the age of the problem itself, then how long we have been reporting it."""
-    return (-SEVERITIES.index(f["severity"]), -(f.get("age_days") or 0), -(f.get("raised_days") or 0))
+    """Severity, then failing-now ahead of rotting, then the age of the problem, then how long
+    we have been reporting it."""
+    return (-SEVERITIES.index(f["severity"]), -int(f.get("acute", False)),
+            -(f.get("age_days") or 0), -(f.get("raised_days") or 0))
 
 
 def _line(f):
@@ -651,7 +661,7 @@ def collect(today):
             findings += check()
         except Exception as e:  # one broken check must not sink the brief
             findings.append(finding(f"ops:brief-check-error:{len(findings)}", "Operations", "high",
-                                    "A Daily Brief check crashed", repr(e)[:200]))
+                                    "A Daily Brief check crashed", repr(e)[:200], acute=True))
     return findings
 
 

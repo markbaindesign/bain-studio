@@ -15,9 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check already derives severity from the thing's own age, that clock was also counting age twice.
   `ESCALATE_AFTER_DAYS` is gone, `apply_escalation` is now `stamp_first_seen` and only records when
   a finding was first raised. Same day's data re-run: 1 critical instead of 50.
-- **Today is ranked by severity, then the age of the problem, then how long it has been reported.**
-  Previously a newly raised critical could never reach Today, because findings raised earlier
-  outranked it regardless of how bad they were.
+- **Today is ranked by severity, then acute before chronic, then the age of the problem, then how
+  long it has been reported.** Previously a newly raised critical could never reach Today, because
+  findings raised earlier outranked it regardless of how bad they were. Ranking on age alone then
+  had the opposite flaw: a cron job that failed on its last run has an age of zero, so live
+  breakage sorted below a task 476 days overdue. Findings that represent something erroring right
+  now are marked `acute=True` (failing cron job, repeated transcription failure, crashed check,
+  unreadable GnuCash book or finance snapshot) and sort above chronic ones of equal severity.
 - **Checks that had no age rule got one**: untouched tasks and their per-project rollup go `high`
   past 180 days (`UNTOUCHED_HIGH_DAYS`), a silent active project past 90 (`PROJECT_STALE_HIGH_DAYS`),
   and a quiet cron job once it has missed 3 of its own cycles (`QUIET_CYCLES_HIGH`) rather than
