@@ -3,7 +3,7 @@ tags:
 - studio-project
 prefix: BFF
 name: Buddhist Film Foundation
-status: active
+status: paused
 client: Buddhist Film Foundation
 type: client
 sector: Non-profit · Film
