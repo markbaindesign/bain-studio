@@ -61,6 +61,9 @@ BOOKS_STALE_DAYS = 14
 BUSY_ACCOUNT_ENTRIES = 10
 DORMANT_AFTER_DAYS = 180  # untouched this long: a dormant account, not a books backlog
 OVERDUE_ROLLUP = 5  # more overdue tasks than this in one project: one summary finding instead
+UNTOUCHED_AFTER_DAYS = 60  # an open task nobody has touched this long has been dropped
+UNTOUCHED_ROLLUP = 5  # as OVERDUE_ROLLUP, for untouched tasks
+VOICE_NOTE_STALE_DAYS = 7  # an untriaged voice note is not urgent before this
 
 # Jobs whose cron log is not where they report: check this file's freshness instead.
 QUIET_JOB_LOGS = {
@@ -210,17 +213,15 @@ def check_tasks(projects, today):
                                        age_days=age, **base))
                 continue
 
-            if overdue is not None and -14 <= overdue <= 0 and area == "Finance":
-                out.append(finding(f"task:{t['lid']}:due-soon", "Finance",
-                                   "high" if overdue >= -7 else "normal", label,
-                                   f"due in {-overdue} day(s) ({t['due']})",
-                                   age_days=overdue, **base))
-                continue
-
             if area == "Clients" and mod_age is not None and mod_age > 14:
                 out.append(finding(f"task:{t['lid']}:client", "Clients",
                                    "high" if mod_age > 30 else "normal", label,
                                    f"waiting on the client, no movement for {mod_age} days",
+                                   age_days=mod_age, **base))
+            elif mod_age is not None and mod_age > UNTOUCHED_AFTER_DAYS:
+                # No due date, not blocked, not in review: nothing else would ever surface it.
+                out.append(finding(f"task:{t['lid']}:untouched", area, "normal", label,
+                                   f"open and untouched for {mod_age} days",
                                    age_days=mod_age, **base))
 
         overdue_here = [f for f in out if f["group"] == prefix and f["key"].endswith(":overdue")]
@@ -232,6 +233,18 @@ def check_tasks(projects, today):
                                f"{prefix}: {len(overdue_here)} overdue tasks, oldest {oldest} days",
                                "the plan no longer matches reality. Reschedule, pause the project, "
                                "or close what's dead. Tasks listed below.",
+                               age_days=oldest, group=prefix))
+
+        untouched_here = [f for f in out if f["group"] == prefix and f["key"].endswith(":untouched")]
+        if len(untouched_here) > UNTOUCHED_ROLLUP:
+            oldest = max(f["age_days"] for f in untouched_here)
+            for f in untouched_here:
+                f["today"] = False
+            out.append(finding(f"project:{prefix}:untouched-pile", "Projects", "normal",
+                               f"{prefix}: {len(untouched_here)} tasks untouched for over "
+                               f"{UNTOUCHED_AFTER_DAYS} days, oldest {oldest}",
+                               "nothing else surfaces these. Close what's dead or pick one up. "
+                               "Tasks listed below.",
                                age_days=oldest, group=prefix))
 
         if proj["status"] == "active" and proj["tasks"] and last_activity is not None and last_activity > 30:
@@ -513,7 +526,8 @@ def check_voice_notes(today):
         tasks = tasks.group(1).strip() if tasks else ""
         about = re.search(r"^\*\*About:\*\*\s*(.+)$", note.read_text(errors="replace"), re.M)
         detail = about.group(1)[:140] if about else (f"tasks: {tasks}" if tasks else "no task attached")
-        out.append(finding(f"voice:{note.stem}", "Voice notes", "high" if (age or 0) > 3 else "normal",
+        out.append(finding(f"voice:{note.stem}", "Voice notes",
+                           "high" if (age or 0) > VOICE_NOTE_STALE_DAYS else "normal",
                            note.stem, detail, url=obsidian_uri(note), age_days=age))
     try:
         state = json.loads((COLLECTORS_DIR / "audio_notes_state.json").read_text())
@@ -536,15 +550,21 @@ def check_voice_notes(today):
 # ---------------------------------------------------------------------------
 
 def apply_escalation(findings, state, today):
-    """Stamp first_seen, bump severity for findings ignored past ESCALATE_AFTER_DAYS."""
+    """Stamp first_seen; bump normal findings ignored past ESCALATE_AFTER_DAYS up to high.
+
+    Escalation stops at high on purpose. `critical` means a money or statutory consequence that
+    is irreversible if ignored, and only a check can decide that. Letting age promote anything to
+    critical made it meaningless: on 2026-09-30, 57 of the 58 criticals in the brief had been put
+    there by this function rather than by any check.
+    """
     new_state = {}
     for f in findings:
         first = state.get(f["key"], today.isoformat())
         new_state[f["key"]] = first
         ignored = _days_since(first, today) or 0
         f["raised_days"] = ignored
-        if ignored >= ESCALATE_AFTER_DAYS and f["severity"] != "critical" and f.get("today", True):
-            f["severity"] = SEVERITIES[SEVERITIES.index(f["severity"]) + 1]
+        if ignored >= ESCALATE_AFTER_DAYS and f["severity"] == "normal" and f.get("today", True):
+            f["severity"] = "high"
             f["escalated"] = True
     return new_state
 

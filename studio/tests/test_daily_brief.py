@@ -92,7 +92,8 @@ def test_check_tasks_classifies_each_kind_once():
     assert found["task:TST-001:overdue"]["detail"].startswith("47 day(s) overdue")
     assert found["task:TST-001:overdue"]["severity"] == "high"
     assert found["task:TST-002:blocked"]["age_days"] == 28
-    assert found["task:TST-003:due-soon"]["area"] == "Finance"
+    # TST-003 is an invoice due in 3 days: on schedule, so not a finding at all
+    assert not any(k.startswith("task:TST-003:") for k in found)
     assert found["task:TST-004:client"]["area"] == "Clients"
     assert found["task:TST-005:review"]["age_days"] == 16
     assert not any("TST-006" in k for k in found)
@@ -108,6 +109,33 @@ def test_many_overdue_tasks_roll_up_and_leave_today():
     assert all(f["severity"] == "normal" and f["today"] is False for f in singles)
     _, _, top = b.render(found, TODAY)
     assert [f["key"] for f in top] == ["project:TST:overdue-pile"]
+
+
+def test_untouched_task_is_flagged_when_nothing_else_would():
+    base = b.parse_mirror(MIRROR)[2]
+    task = dict(base, lid="TST-010", name="Tidy the footer", due="none",
+                modified="2026-06-01T10:00:00")
+    found = {f["key"]: f for f in b.check_tasks(_projects([task]), TODAY)}
+    f = found["task:TST-010:untouched"]
+    assert f["severity"] == "normal" and f["age_days"] == 108
+    assert "untouched for 108 days" in f["detail"]
+
+
+def test_many_untouched_tasks_roll_up():
+    base = b.parse_mirror(MIRROR)[2]
+    tasks = [dict(base, lid=f"TST-{i:03d}", name="Tidy the footer", due="none",
+                  modified="2026-06-01T10:00:00") for i in range(20, 27)]
+    found = b.check_tasks(_projects(tasks), TODAY)
+    pile = [f for f in found if f["key"] == "project:TST:untouched-pile"]
+    assert len(pile) == 1
+    singles = [f for f in found if f["key"].endswith(":untouched")]
+    assert len(singles) == 7 and all(f["today"] is False for f in singles)
+
+
+def test_escalation_stops_at_high_so_only_a_check_can_say_critical():
+    fs = [b.finding("h", "Finance", "high", "H")]
+    b.apply_escalation(fs, {"h": "2026-09-01"}, TODAY)
+    assert fs[0]["severity"] == "high" and not fs[0].get("escalated")
 
 
 def test_escalation_bumps_ignored_findings_and_prunes_resolved():

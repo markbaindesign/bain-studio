@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Daily Brief escalation stops at `high`.** Ageing used to promote findings all the way to
+  `critical`, which emptied the word of meaning: on 2026-09-30 the brief carried 58 criticals and
+  57 of them had been put there by the escalation clock rather than by a check. `critical` is now
+  set only by `check_books`, `check_snapshot` and `check_tax`, all money or statutory. Same day's
+  data re-run: 1 critical instead of 50.
+- **An untriaged voice note is `normal` until 7 days**, not 3 (`VOICE_NOTE_STALE_DAYS`).
+
+### Added
+- **Daily Brief flags open tasks untouched for 60+ days** (`UNTOUCHED_AFTER_DAYS`), rolled up into
+  one summary per project past 5 (`UNTOUCHED_ROLLUP`). Nothing previously caught a task that had
+  no due date, was not blocked and was not in review, so a dropped task could sit indefinitely.
+  Found while investigating two Algolia suspension warnings that sat unread in Asana for 12 weeks
+  until the applications were deleted.
+
+### Removed
+- **The Daily Brief no longer reports finance tasks that are merely due soon.** The brief is a
+  safety net for work that has been missed; a task on schedule has not been missed and Asana
+  already shows it. A routine invoice due that day was being ranked `critical`.
+
 ## [1.9.0] - 2026-09-29
 
 ### Added
