@@ -12,6 +12,8 @@ stack: WordPress · Custom Theme · 15 custom plugins · VVV · WP Engine
 path: /media/data/dev/vvv/clients/www/kf-21
 asana: "yes"
 qa: "no"
+ga4_property: "341883333"
+client_docs: "/media/data/Dropbox/Work/Projects/Client/Khyentse Foundation/New KF Website/Docs"
 inbox: "no"
 open_tasks: 0
 current_focus: ""
