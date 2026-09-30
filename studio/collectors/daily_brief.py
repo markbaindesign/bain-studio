@@ -56,12 +56,14 @@ PROJECTS_FILE = STUDIO_DIR / "projects.json"
 LOG_PREFIX = "[daily_brief]"
 
 SEVERITIES = ["normal", "high", "critical"]
-ESCALATE_AFTER_DAYS = 7
 BOOKS_STALE_DAYS = 14
 BUSY_ACCOUNT_ENTRIES = 10
 DORMANT_AFTER_DAYS = 180  # untouched this long: a dormant account, not a books backlog
 OVERDUE_ROLLUP = 5  # more overdue tasks than this in one project: one summary finding instead
 UNTOUCHED_AFTER_DAYS = 60  # an open task nobody has touched this long has been dropped
+UNTOUCHED_HIGH_DAYS = 180  # ...and this long means it is not coming back on its own
+PROJECT_STALE_HIGH_DAYS = 90  # a registered active project silent this long
+QUIET_CYCLES_HIGH = 3  # a job silent for this many of its own cycles is dead, not late
 UNTOUCHED_ROLLUP = 5  # as OVERDUE_ROLLUP, for untouched tasks
 VOICE_NOTE_STALE_DAYS = 7  # an untriaged voice note is not urgent before this
 
@@ -220,7 +222,8 @@ def check_tasks(projects, today):
                                    age_days=mod_age, **base))
             elif mod_age is not None and mod_age > UNTOUCHED_AFTER_DAYS:
                 # No due date, not blocked, not in review: nothing else would ever surface it.
-                out.append(finding(f"task:{t['lid']}:untouched", area, "normal", label,
+                out.append(finding(f"task:{t['lid']}:untouched", area,
+                                   "high" if mod_age > UNTOUCHED_HIGH_DAYS else "normal", label,
                                    f"open and untouched for {mod_age} days",
                                    age_days=mod_age, **base))
 
@@ -240,7 +243,8 @@ def check_tasks(projects, today):
             oldest = max(f["age_days"] for f in untouched_here)
             for f in untouched_here:
                 f["today"] = False
-            out.append(finding(f"project:{prefix}:untouched-pile", "Projects", "normal",
+            out.append(finding(f"project:{prefix}:untouched-pile", "Projects",
+                               "high" if oldest > UNTOUCHED_HIGH_DAYS else "normal",
                                f"{prefix}: {len(untouched_here)} tasks untouched for over "
                                f"{UNTOUCHED_AFTER_DAYS} days, oldest {oldest}",
                                "nothing else surfaces these. Close what's dead or pick one up. "
@@ -248,7 +252,8 @@ def check_tasks(projects, today):
                                age_days=oldest, group=prefix))
 
         if proj["status"] == "active" and proj["tasks"] and last_activity is not None and last_activity > 30:
-            out.append(finding(f"project:{prefix}:stale", "Projects", "normal",
+            out.append(finding(f"project:{prefix}:stale", "Projects",
+                               "high" if last_activity > PROJECT_STALE_HIGH_DAYS else "normal",
                                f"{prefix} has had no task activity for {last_activity} days",
                                f"{len(proj['tasks'])} open task(s); close, pause or pick it up",
                                age_days=last_activity, group="Stale projects"))
@@ -445,7 +450,10 @@ def check_cron(today, crontab_text=None, now=None):
             continue
         hours = (now - dt.datetime.fromtimestamp(watched.stat().st_mtime)).total_seconds() / 3600
         if hours > max_age:
-            out.append(finding(key, "Operations", "normal", f"Scheduled job {job} has gone quiet",
+            # Silent for several of its own cycles is a dead job, not a late one.
+            out.append(finding(key, "Operations",
+                               "high" if hours > max_age * QUIET_CYCLES_HIGH else "normal",
+                               f"Scheduled job {job} has gone quiet",
                                f"{watched.name} last written {hours / 24:.0f} day(s) ago, expected every "
                                f"~{max_age}h. Either it isn't running or it logs nothing on success",
                                age_days=int(hours // 24)))
@@ -549,28 +557,27 @@ def check_voice_notes(today):
 # State, ranking, rendering
 # ---------------------------------------------------------------------------
 
-def apply_escalation(findings, state, today):
-    """Stamp first_seen; bump normal findings ignored past ESCALATE_AFTER_DAYS up to high.
+def stamp_first_seen(findings, state, today):
+    """Record when each finding was first raised. Severity is not touched here.
 
-    Escalation stops at high on purpose. `critical` means a money or statutory consequence that
-    is irreversible if ignored, and only a check can decide that. Letting age promote anything to
-    critical made it meaningless: on 2026-09-30, 57 of the 58 criticals in the brief had been put
-    there by this function rather than by any check.
+    Severity belongs to the thing itself: how many days a task is overdue, how long a job has
+    been silent, how far behind the books are. Every check derives it from that age already, so
+    a second bump based on how long a finding had sat on the list counted age twice and, worse,
+    ratcheted: on 2026-09-30 the brief carried 58 criticals, 57 of them promoted by the clock
+    rather than by any check. first_seen now only feeds the "raised N days ago" line and breaks
+    ties in ranking.
     """
     new_state = {}
     for f in findings:
         first = state.get(f["key"], today.isoformat())
         new_state[f["key"]] = first
-        ignored = _days_since(first, today) or 0
-        f["raised_days"] = ignored
-        if ignored >= ESCALATE_AFTER_DAYS and f["severity"] == "normal" and f.get("today", True):
-            f["severity"] = "high"
-            f["escalated"] = True
+        f["raised_days"] = _days_since(first, today) or 0
     return new_state
 
 
 def rank(f):
-    return (-SEVERITIES.index(f["severity"]), -(f.get("raised_days") or 0), -(f.get("age_days") or 0))
+    """Severity, then the age of the problem itself, then how long we have been reporting it."""
+    return (-SEVERITIES.index(f["severity"]), -(f.get("age_days") or 0), -(f.get("raised_days") or 0))
 
 
 def _line(f):
@@ -579,7 +586,7 @@ def _line(f):
     if f["detail"]:
         bits.append(f"- {f['detail']}")
     if f.get("raised_days"):
-        bits.append(f"*(raised {f['raised_days']} day(s) ago{', escalated' if f.get('escalated') else ''})*")
+        bits.append(f"*(raised {f['raised_days']} day(s) ago)*")
     return "- " + " ".join(bits)
 
 
@@ -660,7 +667,7 @@ def main():
         state = json.loads(STATE_FILE.read_text())
     except (OSError, ValueError):
         state = {}
-    new_state = apply_escalation(findings, state, today)
+    new_state = stamp_first_seen(findings, state, today)
     note, counts, top = render(findings, today)
 
     if args.dry_run:

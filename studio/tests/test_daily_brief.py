@@ -132,19 +132,33 @@ def test_many_untouched_tasks_roll_up():
     assert len(singles) == 7 and all(f["today"] is False for f in singles)
 
 
-def test_escalation_stops_at_high_so_only_a_check_can_say_critical():
-    fs = [b.finding("h", "Finance", "high", "H")]
-    b.apply_escalation(fs, {"h": "2026-09-01"}, TODAY)
-    assert fs[0]["severity"] == "high" and not fs[0].get("escalated")
-
-
-def test_escalation_bumps_ignored_findings_and_prunes_resolved():
+def test_first_seen_never_changes_severity_and_prunes_resolved():
     fs = [b.finding("a", "Finance", "normal", "A"), b.finding("c", "Finance", "critical", "C")]
     state = {"a": "2026-09-01", "gone": "2026-08-01"}
-    new_state = b.apply_escalation(fs, state, TODAY)
-    assert fs[0]["severity"] == "high" and fs[0]["escalated"] and fs[0]["raised_days"] == 16
+    new_state = b.stamp_first_seen(fs, state, TODAY)
+    # sitting on the list for 16 days must not promote anything
+    assert fs[0]["severity"] == "normal" and fs[0]["raised_days"] == 16
     assert fs[1]["severity"] == "critical" and fs[1]["raised_days"] == 0
     assert new_state == {"a": "2026-09-01", "c": "2026-09-17"}
+
+
+def test_rank_puts_the_older_problem_above_the_older_report():
+    worse = b.finding("w", "Projects", "high", "W", age_days=90)
+    worse["raised_days"] = 0
+    stale_report = b.finding("s", "Projects", "high", "S", age_days=10)
+    stale_report["raised_days"] = 60
+    assert sorted([stale_report, worse], key=b.rank)[0]["key"] == "w"
+
+
+def test_untouched_severity_rises_with_the_age_of_the_task():
+    base = b.parse_mirror(MIRROR)[2]
+    young = dict(base, lid="TST-020", name="Tidy the footer", due="none",
+                 modified="2026-06-01T10:00:00")          # 108 days
+    ancient = dict(base, lid="TST-021", name="Tidy the footer", due="none",
+                   modified="2025-01-01T10:00:00")        # 624 days
+    found = {f["key"]: f for f in b.check_tasks(_projects([young, ancient]), TODAY)}
+    assert found["task:TST-020:untouched"]["severity"] == "normal"
+    assert found["task:TST-021:untouched"]["severity"] == "high"
 
 
 def test_check_cron_flags_failing_quiet_and_ignores_old_errors(tmp_path):
@@ -152,20 +166,29 @@ def test_check_cron_flags_failing_quiet_and_ignores_old_errors(tmp_path):
     ok.write_text("Traceback (most recent call last):\nboom\n" + "fine\n" * 10)
     bad = tmp_path / "bad.log"
     bad.write_text("run\nTraceback (most recent call last):\nFileNotFoundError: x\n")
-    quiet = tmp_path / "quiet.log"
-    quiet.write_text("done\n")
-    old = dt.datetime.now().timestamp() - 5 * 86400
     import os
-    os.utime(quiet, (old, old))
+    # daily job (max_age 30h): 5 days silent is several cycles dead
+    dead = tmp_path / "dead.log"
+    dead.write_text("done\n")
+    ts = dt.datetime.now().timestamp() - 5 * 86400
+    os.utime(dead, (ts, ts))
+    # ...while one missed cycle is merely late
+    late = tmp_path / "late.log"
+    late.write_text("done\n")
+    ts = dt.datetime.now().timestamp() - 2 * 86400
+    os.utime(late, (ts, ts))
     crontab = (f"MAILTO=\"\"\n"
                f"0 8 * * * cd {tmp_path} && python3 ok.py >> ok.log 2>&1\n"
                f"0 8 * * * cd {tmp_path} && python3 bad.py >> bad.log 2>&1\n"
-               f"0 8 * * * cd {tmp_path} && python3 quiet.py >> quiet.log 2>&1\n"
+               f"0 8 * * * cd {tmp_path} && python3 dead.py >> dead.log 2>&1\n"
+               f"0 8 * * * cd {tmp_path} && python3 late.py >> late.log 2>&1\n"
                f"0 8 * * * cd {tmp_path} && python3 missing.py >> missing.log 2>&1\n")
     found = {f["key"]: f for f in b.check_cron(TODAY, crontab_text=crontab)}
     assert "ops:cron:ok.py" not in found
     assert found["ops:cron:bad.py"]["title"].endswith("is failing")
-    assert found["ops:cron:quiet.py"]["severity"] == "normal"
+    assert found["ops:cron:dead.py"]["severity"] == "high"
+    assert found["ops:cron:dead.py"]["age_days"] == 5
+    assert found["ops:cron:late.py"]["severity"] == "normal"
     assert "no log" in found["ops:cron:missing.py"]["title"]
 
 

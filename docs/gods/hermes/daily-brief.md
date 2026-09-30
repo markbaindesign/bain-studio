@@ -34,7 +34,7 @@ Cron (ops worktree, after sync, Hermes and the GnuCash collector):
 | Area | Checks |
 |---|---|
 | Finance | GnuCash accounts in real use not updated for 14+ days; BBVA shortfall and negative liquid cash (from `accounts.json`); every closed month recently below break-even; next quarterly filing within 45 days unless logged as filed in `aletheia-codex.md`; money tasks (invoice, budget, tax, renewal...) that are **overdue**. A task merely due soon is not a finding: it is on schedule, and Asana already shows it |
-| Operations | Every crontab job with a `>>` log: failing (error in the last lines of its log) or quiet (log not written within its schedule); `accounts.json` stale; uncommitted changes older than a week in registered repos; feature/release/hotfix branches unmerged for 2+ weeks |
+| Operations | Every crontab job with a `>>` log: failing (error in the last lines of its log) or quiet (log not written within its schedule; `high` once silent for 3 of its own cycles, `QUIET_CYCLES_HIGH`); `accounts.json` stale; uncommitted changes older than a week in registered repos; feature/release/hotfix branches unmerged for 2+ weeks |
 | Projects | Overdue tasks; looper tasks Blocked on Mark; tasks in Review for 7+ days; open tasks untouched for 60+ days (`UNTOUCHED_AFTER_DAYS`, rolled up past 5 per project); active projects with no task activity for 30 days. A project with more than 5 overdue tasks gets one summary finding instead of flooding Today |
 | Clients | Chase / sign-off / client-action / follow-up tasks with no movement for 14+ days |
 
@@ -50,22 +50,30 @@ Severity means:
 | `high` | real work dropped and costing something: a client waiting, a job dead for weeks |
 | `normal` | should be picked up, no consequence yet |
 
-`studio/collectors/daily_brief_state.json` (gitignored) records when each finding was first
-raised. After 7 days a still-open `normal` finding is promoted to `high` and the note marks it
-escalated, the way a CFO asks again rather than repeating the same email. Resolved findings drop
-out of the state. **Today** lists up to 8 critical/high findings, most severe and longest-ignored
-first; each area follows with every finding, grouped by project.
+**Severity belongs to the problem, not to the report.** Each check derives it from the age of the
+thing itself: how many days a task is overdue, how long a job has been silent, how far behind the
+books are. Nothing is promoted for having been on the list a while.
 
-**Escalation stops at `high`.** It used to promote `high` to `critical` as well, which made the
-top severity meaningless: on 2026-09-30 the brief carried 58 criticals, of which 57 had been put
-there by ageing rather than by any check deciding something was critical. Only `check_books`,
-`check_snapshot` and `check_tax` set `critical`, and all of them are money or statutory.
+That used to be otherwise, and it was the single biggest fault in the brief. A finding unresolved
+for 7 days was bumped a level every run, so on 2026-09-30 the brief carried 58 criticals of which
+**57 had been put there by the clock** rather than by a check. Because the state file had been
+seeded on one day, they all escalated together and the same eight items sat in Today indefinitely.
+Re-running the same data after the fix: 1 critical.
+
+`studio/collectors/daily_brief_state.json` (gitignored) still records when each finding was first
+raised, but only to print "raised N days ago" and to break ties in ranking. Resolved findings drop
+out of the state.
+
+**Today** lists up to 8 critical/high findings, ranked by severity, then by the age of the problem,
+then by how long it has been reported. Each area follows with every finding, grouped by project.
 
 ## Tuning
 
-Thresholds are constants at the top of the script (`ESCALATE_AFTER_DAYS`, `OVERDUE_ROLLUP`,
-`UNTOUCHED_AFTER_DAYS`, `UNTOUCHED_ROLLUP`, `VOICE_NOTE_STALE_DAYS`, `BOOKS_STALE_DAYS`,
-`BUSY_ACCOUNT_ENTRIES`, `DORMANT_AFTER_DAYS`). Jobs that log somewhere other than
+Thresholds are constants at the top of the script (`OVERDUE_ROLLUP`, `UNTOUCHED_AFTER_DAYS`,
+`UNTOUCHED_HIGH_DAYS`, `UNTOUCHED_ROLLUP`, `PROJECT_STALE_HIGH_DAYS`, `QUIET_CYCLES_HIGH`,
+`VOICE_NOTE_STALE_DAYS`,
+`BOOKS_STALE_DAYS`, `BUSY_ACCOUNT_ENTRIES`, `DORMANT_AFTER_DAYS`). Adding a check means giving it
+an age-based severity rule of its own, since nothing else will raise it later. Jobs that log somewhere other than
 their cron `>>` file go in `QUIET_JOB_LOGS`. Output folder: `DAILY_BRIEF_DIR`, else
 `$OBSIDIAN_VAULT/Daily Brief`.
 
