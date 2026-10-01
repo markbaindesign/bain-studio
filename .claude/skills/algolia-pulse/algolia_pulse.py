@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Algolia Pulse — keeps free-tier Algolia indices alive by querying them regularly.
-Prevents auto-closure of inactive search indices.
+Algolia Pulse — keeps free-tier Algolia apps alive by querying one index in each.
+Prevents auto-closure of inactive applications. Per Algolia's own support
+documentation, inactivity is measured per application, not per index, so a single
+query against one index keeps the whole app alive.
 """
 
 import json
@@ -201,7 +203,7 @@ def pulse(config_path: str, dry_run: bool = False, verbose: bool = False, notify
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Keep Algolia free-tier indices alive")
+    parser = argparse.ArgumentParser(description="Keep Algolia free-tier apps alive")
     parser.add_argument("--config", required=True, help="Path to pulse-config.json")
     parser.add_argument("--dry-run", action="store_true", help="Validate config without querying")
     parser.add_argument("--verbose", action="store_true", help="Detailed output")
