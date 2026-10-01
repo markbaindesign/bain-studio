@@ -13,6 +13,7 @@ path: /home/bain/code/vvv/clients/www/nore
 asana: "yes"
 qa: "yes"
 ga4_property: "542141660"
+client_docs: "/media/data/Dropbox/Work/Projects/Client/NORE/Client Docs"
 inbox: "yes"
 open_tasks: 9
 current_focus: SEO, user registration flow, and staging hardening

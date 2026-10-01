@@ -65,7 +65,7 @@ Only changes to tools or their docs need the git flow.
 
 Studio output (specs, finance, pipeline, portfolio, briefs, research) lives in Dropbox, not this repo:
 
-- **Root:** `~/Dropbox/Studio/context/` (set via `STUDIO_CONTENT_DIR` in `studio/.env`)
+- **Root:** `/media/data/Dropbox/Work/Studio/context/` (set via `STUDIO_CONTENT_DIR` in `studio/.env`)
 - Case studies: `$STUDIO_CONTENT_DIR/portfolio/{project-slug}/`
 - Internal briefs: `$STUDIO_CONTENT_DIR/internal/`
 - Specs nursery: `$STUDIO_CONTENT_DIR/specs/`

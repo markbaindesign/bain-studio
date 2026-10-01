@@ -1,6 +1,6 @@
 ---
 name: ga-report
-description: Pull Google Analytics 4 data for a client project and compile a branded benchmark report with action points. Authenticates via service account, fetches sessions/users/channels/pages/devices, writes a markdown report, and outputs a branded PDF via brand-doc.
+description: Pull Google Analytics 4 data for a client project and compile a branded benchmark report with action points. Authenticates via service account, fetches sessions/users/channels/pages/devices, draws charts, writes a markdown report to the client's Dropbox folder, and outputs a branded PDF via brand-doc.
 allowed-tools: [Read, Bash, Write]
 ---
 
@@ -19,7 +19,7 @@ Pull GA4 data and compile a client-ready benchmark report.
 
 Arguments:
 - `PROJECT` — project prefix (required). Used to look up client name and output path.
-- `--property ID` — GA4 property ID (numeric). If omitted, reads from project CLAUDE.md or prompts.
+- `--property ID` — GA4 property ID (numeric). If omitted, reads `ga4_property:` from the project file or prompts.
 - `--days N` — reporting period in days (default: 90).
 
 ---
@@ -50,7 +50,8 @@ Extract `PROJECT`, `--property`, and `--days` from the invocation. Uppercase the
 
 Read the project file from `docs/projects/{slug}.md` (match by prefix). Extract:
 - `name:` — client/project name for the report title
-- Any GA property ID if noted
+- `ga4_property:` — GA4 property ID
+- `client_docs:` — the client's Dropbox docs folder (where the report is saved, see step 7)
 
 If `--property` was not supplied and no property ID is found in the project file, ask for it.
 
@@ -69,12 +70,22 @@ If `GOOGLE_SA_JSON` is empty or the file does not exist, stop and explain the on
 python3 /media/data/dev/bain-studio/studio/collectors/ga4_report.py \
   --property {PROPERTY_ID} \
   --sa-json {GOOGLE_SA_JSON} \
-  --days {DAYS}
+  --days {DAYS} > {SCRATCH}/ga.json
 ```
+
+Save the output to a file in the scratchpad: the chart step (7) reads it.
 
 If this fails with a permission error, the service account likely hasn't been added to the GA4 property. Show the service account email from the JSON file and instruct Mark to add it in GA4 → Admin → Property Access Management.
 
 Capture the JSON output into a variable for analysis.
+
+By default the collector excludes sessions whose landing page is "(not set)" from
+every figure (`"excludes_not_set_landing": true`). They have no page view, usually
+because a visitor returned to an idle tab after GA4's 30-minute session timeout, so
+they add bounces but tell you nothing about pages. They are not bots: GA4 already
+drops known bots. Their session count is in `not_set.current` and
+`not_set.previous`. Pass `--include-not-set` only when raw GA4 totals are needed,
+for example to match figures in the GA4 interface.
 
 ### 5. Analyse the data
 
@@ -116,13 +127,37 @@ Label each: **[HIGH]**, **[MEDIUM]**, or **[LOW]** based on impact.
 
 ### 7. Write the report
 
-Determine output path:
+Client reports are stored with the client, **never in the studio**. Do not
+write to `$STUDIO_CONTENT_DIR/reports/`.
+
+Determine the output path from the project file's `client_docs:` field:
 ```bash
-source /media/data/dev/bain-studio/studio/.env
-REPORT_DIR="$STUDIO_CONTENT_DIR/reports/{project-slug}"
+CLIENT_DOCS="{client_docs from the project file}"
+REPORT_DIR="$CLIENT_DOCS/analytics"
 mkdir -p "$REPORT_DIR"
 REPORT_PATH="$REPORT_DIR/ga-benchmark-$(date +%Y-%m-%d).md"
 ```
+
+If `client_docs:` is missing, do not guess it from `client:`: the Dropbox folder
+names don't reliably match (NORE's client is "Suze", but its folder is `NORE/`).
+Look in `/media/data/Dropbox/Work/Projects/Client/` for the client's folder and
+read its `CLAUDE.md`, which says where docs belong. The standard layout from
+`/onboard-client` is `{Client}/Docs/`, but some clients keep docs deeper (KF uses
+`Khyentse Foundation/New KF Website/Docs/`). Confirm the folder with Mark, then add
+`client_docs:` to the project file so the next run doesn't need to ask.
+
+Draw the charts into a folder next to the report:
+```bash
+CHARTS="ga-benchmark-$(date +%Y-%m-%d)-charts"
+python3 /media/data/dev/bain-studio/studio/collectors/ga4_charts.py {SCRATCH}/ga.json "$REPORT_DIR/$CHARTS"
+```
+This writes `trend.png` (daily sessions, 7-day average, this period against the
+previous one), `channels.png` and `countries.png`, sized to brand-doc's text width
+on its white body page. Embed them with paths relative to the report, as in the
+template below. Look at the trend chart before writing: a peak or dip usually has a
+cause worth one caption line (a campaign, a story launch, an outage). Find it with a
+landing-page query for those dates rather than guessing. Keep the tables: they are
+the accessible version of each chart.
 
 Write a markdown report with this structure:
 
@@ -153,7 +188,17 @@ rate — a gap that warrants investigation."}
 | Avg. Session Duration | {m:ss} | {m:ss} | {±%} |
 | Bounce Rate | {x}% | {x}% | {±pp} |
 
+![Daily sessions, this period vs previous]({CHARTS}/trend.png)
+
+{One caption line: what the trend shows, naming the cause of any peak or dip.}
+
+{Note under the table: "Excludes {n} sessions with no recorded landing page
+({n} in the previous period). These are visitors returning to idle tabs, not
+bots." Omit if `excludes_not_set_landing` is false.}
+
 ## Traffic by Channel
+
+![Sessions by channel]({CHARTS}/channels.png)
 
 | Channel | Sessions | Share | Users | Engagement |
 |---------|----------|-------|-------|------------|
@@ -174,6 +219,8 @@ rate — a gap that warrants investigation."}
 {rows}
 
 ### Top Countries
+
+![Sessions by country]({CHARTS}/countries.png)
 
 | Country | Sessions | Users |
 |---------|----------|-------|
@@ -219,6 +266,6 @@ Sessions: {n} ({change})
 ## Notes
 
 - The service account email must be added to the GA4 property **before** running. Google shows an error 403 if not.
-- Reports are written to `$STUDIO_CONTENT_DIR/reports/{project-slug}/` — Dropbox-synced, gitignored.
+- Reports are written to `{client_docs}/analytics/` in the client's Dropbox folder, never to the studio's `$STUDIO_CONTENT_DIR/reports/`.
 - The `--days 90` default is a good benchmark period. Use `--days 30` for monthly reports.
 - If the property has no data (new site), the report will note it and suggest baseline setup actions instead.

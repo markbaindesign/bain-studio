@@ -48,6 +48,8 @@ Default is 4GB. Resize via API (`POST /v2/server/scale`) - ~5-10 min downtime. S
 
 ### Staging workflow
 
+> Amended by [ADR 019](019-separate-staging-apps-for-code-projects.md): this workflow applies to content-only sites. Projects with custom code in git use a standalone staging app and scripted sync.
+
 Cloudways offers two cloning modes:
 
 - **Create Staging** - linked clone. Push/pull changes between staging and live. Incremental or full overwrite, files and/or DB separately. This is the standard dev workflow.

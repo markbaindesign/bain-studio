@@ -184,12 +184,27 @@ ssh {client-slug} "rm /tmp/source-YYYYMMDD.sql"
 
 ## 6. Set up staging
 
+Which kind of staging depends on the project (see [ADR 019](../adr/019-separate-staging-apps-for-code-projects.md)).
+
+### 6a. Code projects (custom theme/plugin in git) — standalone staging app
+
+Platform → Application → Clone App (same server), or Add Application for a fresh install.
+
+- Record the staging app ID and URL in the project's `deploy.config.sh`, separately from production. Never assume they share an ID.
+- Keep the staging app password-protected and set "Discourage search engines" in WordPress.
+- The project needs scripts for both directions before the first release:
+  - local → staging: code via git + rsync (+ `chown` to the app user), DB via WP-CLI export/import with search-replace
+  - production → staging: DB + uploads with search-replace, preserving staging-only options (SMTP, OAuth tokens) and disabling anything that emails or books real people
+- Do not use Staging Management Push/Pull on these apps.
+
+### 6b. Content-only sites — linked staging
+
 Platform → Application → Staging Management → Create Staging
 
 This creates a linked clone. After creation:
 
 - Staging URL: shown in Application → Staging Management
-- Push live → staging: syncs DB and/or files from live to staging
+- Pull live → staging: syncs DB and/or files from live to staging
 - Push staging → live: deploys staging work to live
 
 **Pull-first convention:** At the start of every dev session, Pull live → staging to sync any client uploads or content edits before working.

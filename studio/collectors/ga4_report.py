@@ -5,7 +5,13 @@ Authenticates via service account JSON, pulls standard metrics,
 and outputs JSON for the /ga-report skill to compile into a report.
 
 Usage:
-    python3 ga4_report.py --property 542141660 --sa-json /path/to/sa.json [--days 90]
+    python3 ga4_report.py --property 542141660 --sa-json /path/to/sa.json [--days 90] [--include-not-set]
+
+Sessions with a "(not set)" landing page are excluded from every figure by
+default. They have no page_view, usually because a visitor came back to an idle
+tab after the 30-minute session timeout, so they add bounces but no page data.
+Their count is reported separately under "not_set". Pass --include-not-set to
+get the unfiltered GA4 totals.
 
 Auth setup:
     1. Create a service account in Google Cloud Console
@@ -22,6 +28,9 @@ import base64
 import urllib.request
 import urllib.error
 from datetime import date, timedelta
+
+LANDING_NOT_SET = {"filter": {"fieldName": "landingPage", "stringFilter": {"value": "(not set)"}}}
+EXCLUDE_NOT_SET = {"notExpression": LANDING_NOT_SET}
 
 
 def get_access_token(sa_json_path: str) -> str:
@@ -91,7 +100,8 @@ def get_access_token(sa_json_path: str) -> str:
         sys.exit(f"Token exchange failed ({e.code}): {e.read().decode()}")
 
 
-def run_report(token: str, property_id: str, date_ranges: list, metrics: list, dimensions: list, limit: int = 20) -> dict:
+def run_report(token: str, property_id: str, date_ranges: list, metrics: list, dimensions: list, limit: int = 20,
+               dimension_filter: dict = None) -> dict:
     url = f"https://analyticsdata.googleapis.com/v1beta/properties/{property_id}:runReport"
     payload = {
         "dateRanges": date_ranges,
@@ -100,6 +110,8 @@ def run_report(token: str, property_id: str, date_ranges: list, metrics: list, d
     }
     if dimensions:
         payload["dimensions"] = [{"name": d} for d in dimensions]
+    if dimension_filter:
+        payload["dimensionFilter"] = dimension_filter
 
     req = urllib.request.Request(
         url,
@@ -130,13 +142,14 @@ def parse_rows(report: dict, metrics: list, dimensions: list) -> list:
     return rows
 
 
-def fetch_overview(token: str, property_id: str, start: str, end: str) -> dict:
+def fetch_overview(token: str, property_id: str, start: str, end: str, dimension_filter: dict = None) -> dict:
     metrics = [
         "sessions", "totalUsers", "newUsers", "screenPageViews",
         "engagementRate", "averageSessionDuration", "bounceRate",
         "sessionsPerUser",
     ]
-    r = run_report(token, property_id, [{"startDate": start, "endDate": end}], metrics, [])
+    r = run_report(token, property_id, [{"startDate": start, "endDate": end}], metrics, [],
+                   dimension_filter=dimension_filter)
     result = {}
     for row in r.get("rows", []):
         for i, m in enumerate(metrics):
@@ -150,6 +163,8 @@ def main():
     parser.add_argument("--property", required=True, help="GA4 property ID (numeric)")
     parser.add_argument("--sa-json", required=True, help="Path to service account JSON")
     parser.add_argument("--days", type=int, default=90, help="Reporting period in days (default: 90)")
+    parser.add_argument("--include-not-set", action="store_true",
+                        help='Keep sessions with a "(not set)" landing page in all figures')
     args = parser.parse_args()
 
     today = date.today()
@@ -159,16 +174,37 @@ def main():
     prev_start = prev_end - timedelta(days=args.days - 1)
 
     token = get_access_token(args.sa_json)
+    flt = None if args.include_not_set else EXCLUDE_NOT_SET
 
     output = {
         "property_id": args.property,
         "period": {"start": str(start), "end": str(end), "days": args.days},
         "prev_period": {"start": str(prev_start), "end": str(prev_end)},
+        "excludes_not_set_landing": flt is not None,
     }
 
     # Overview — current and previous periods
-    output["current"] = fetch_overview(token, args.property, str(start), str(end))
-    output["previous"] = fetch_overview(token, args.property, str(prev_start), str(prev_end))
+    output["current"] = fetch_overview(token, args.property, str(start), str(end), flt)
+    output["previous"] = fetch_overview(token, args.property, str(prev_start), str(prev_end), flt)
+
+    # "(not set)" landing sessions, reported separately whether or not they are excluded
+    output["not_set"] = {
+        "current": fetch_overview(token, args.property, str(start), str(end), LANDING_NOT_SET),
+        "previous": fetch_overview(token, args.property, str(prev_start), str(prev_end), LANDING_NOT_SET),
+    }
+
+    # Daily sessions, current and previous period, for the trend chart
+    output["trend"] = {}
+    for key, (a, b) in (("current", (start, end)), ("previous", (prev_start, prev_end))):
+        daily = run_report(
+            token, args.property,
+            [{"startDate": str(a), "endDate": str(b)}],
+            ["sessions"],
+            ["date"],
+            limit=400,
+            dimension_filter=flt,
+        )
+        output["trend"][key] = sorted(parse_rows(daily, ["sessions"], ["date"]), key=lambda r: r["date"])
 
     # Traffic by channel
     channels = run_report(
@@ -176,6 +212,7 @@ def main():
         [{"startDate": str(start), "endDate": str(end)}],
         ["sessions", "totalUsers", "engagementRate", "bounceRate"],
         ["sessionDefaultChannelGroup"],
+        dimension_filter=flt,
     )
     output["channels"] = parse_rows(
         channels, ["sessions", "totalUsers", "engagementRate", "bounceRate"],
@@ -189,6 +226,7 @@ def main():
         ["sessions", "screenPageViews", "averageSessionDuration", "bounceRate", "engagementRate"],
         ["pagePath", "pageTitle"],
         limit=10,
+        dimension_filter=flt,
     )
     output["top_pages"] = parse_rows(
         pages,
@@ -202,6 +240,7 @@ def main():
         [{"startDate": str(start), "endDate": str(end)}],
         ["sessions", "totalUsers", "engagementRate"],
         ["deviceCategory"],
+        dimension_filter=flt,
     )
     output["devices"] = parse_rows(
         devices, ["sessions", "totalUsers", "engagementRate"], ["deviceCategory"]
@@ -214,6 +253,7 @@ def main():
         ["sessions", "totalUsers"],
         ["country"],
         limit=8,
+        dimension_filter=flt,
     )
     output["countries"] = parse_rows(
         countries, ["sessions", "totalUsers"], ["country"]
@@ -227,6 +267,7 @@ def main():
             [{"startDate": str(start), "endDate": str(end)}],
             ["eventCount", "totalUsers"],
             ["eventName"],
+            dimension_filter=flt,
         )
         output["events"] = [
             e for e in parse_rows(events, ["eventCount", "totalUsers"], ["eventName"])
@@ -242,6 +283,7 @@ def main():
         ["sessions", "bounceRate", "engagementRate"],
         ["landingPage"],
         limit=10,
+        dimension_filter=flt,
     )
     output["landing_pages"] = parse_rows(
         landing, ["sessions", "bounceRate", "engagementRate"], ["landingPage"]

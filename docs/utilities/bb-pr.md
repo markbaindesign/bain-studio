@@ -9,7 +9,7 @@ tags:
 # bb-pr — Create a Bitbucket Pull Request
 
 Creates a PR on Bitbucket Cloud from the current branch via the API.
-Credentials: Atlassian scoped API token in `~/.config/bb-pr`, shared with
+Credentials: Atlassian scoped API token as `BITBUCKET_USER` / `BITBUCKET_APP_PASSWORD` in `studio/.env` (fallback `~/.config/bb-pr`), shared with
 [repo-create](repo-create.md).
 
 ## Usage

@@ -13,15 +13,22 @@ path: /media/data/dev/bain-theme-factory
 asana: "yes"
 qa: "no"
 inbox: "no"
-open_tasks: 1
-current_focus: Slipstream shipped; CSS foundation spec still a draft
-next_action: "BTF-001 — Review WordPress Playground + GitHub for block theme development"
+open_tasks: 19
+current_focus: Slipstream shipped; defining the MVP free theme for WordPress.org
+next_action: "BTF-014 — Decide what the MVP theme is"
 ---
 
 # Bain Theme Factory (BTF)
 
 Internal project. Produces WordPress FSE block themes and holds the studio CSS
 foundation spec they are built against.
+
+Goal includes a portfolio of simple, useful **free themes on WordPress.org** that
+promote the studio's custom theme work. Publishing to the directory itself is
+wp-repo-factory's job (plugins first, themes later), not a second pipeline here.
+
+Absorbed `wp-theme-factory` (WTF) on 2026-09-14: its idea generation pipeline
+moved to `pipeline/` and its open tasks became BTF-009 to BTF-014.
 
 Themes produced here are **separate repositories** — a theme has to clone into
 `wp-content/themes` under its own slug, so it cannot be nested. `/themes/` is
@@ -31,6 +38,9 @@ gitignored in this repo and each theme is registered on its own.
 
 - `css-foundation-spec.md` — the portable CSS foundation (tokens, fluid scales,
   flow primitive, layer contract). Status: draft, not started.
+- `pipeline/` — theme idea generation: `fetch-inspiration.py` pulls new
+  WordPress.org and GitHub themes into `inspiration-feed.json`;
+  `idea-generation.md` lists the manual inspiration sources
 - `CLAUDE.md` — project context and Asana wiring
 
 ## Themes produced
@@ -53,4 +63,9 @@ is now behind the practice.
 
 ## Open tasks (active)
 
-- BTF-001 — Streamlining block theme development with WordPress Playground and GitHub
+- BTF-014 — Decide what the MVP theme is
+- BTF-009 — Create theme repo pipeline & skillset
+- BTF-010 — A11Y.md (github.com/fecarrico/A11Y.md)
+- BTF-011 — Plan demo site creation pipeline
+- BTF-034 — Functional testing of wordpress theme test data
+- BTF-035 — Automate visual testing?

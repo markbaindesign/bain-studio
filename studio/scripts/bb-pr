@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # bb-pr — create a Bitbucket pull request from the current branch
 #
-# Credentials are read from ~/.config/bb-pr (created on first run),
+# Credentials are read from BITBUCKET_USER / BITBUCKET_APP_PASSWORD in studio/.env,
+# then ~/.config/bb-pr (created on first run),
 # or from BITBUCKET_USER / BITBUCKET_APP_PASSWORD env vars.
 #
 # Usage:
@@ -46,6 +47,13 @@ EOF
 # ── load credentials ──────────────────────────────────────────────────────────
 load_credentials() {
   # env vars take precedence over config file
+  if [[ -z "${BITBUCKET_USER:-}" || -z "${BITBUCKET_APP_PASSWORD:-}" ]]; then
+    _env="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.env"
+    if [[ -f "$_env" ]]; then
+      BITBUCKET_USER=${BITBUCKET_USER:-$(grep -m1 '^BITBUCKET_USER=' "$_env" | cut -d= -f2-)}
+      BITBUCKET_APP_PASSWORD=${BITBUCKET_APP_PASSWORD:-$(grep -m1 '^BITBUCKET_APP_PASSWORD=' "$_env" | cut -d= -f2-)}
+    fi
+  fi
   if [[ -z "${BITBUCKET_USER:-}" || -z "${BITBUCKET_APP_PASSWORD:-}" ]]; then
     if [[ -f "$CONFIG_FILE" ]]; then
       # shellcheck source=/dev/null
