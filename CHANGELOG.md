@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-10-01
+
+### Fixed
+- **algolia-pulse docs said "indices" where they meant "apps".** Per Algolia's own support
+  documentation, free-plan inactivity is measured per application, not per index, so one query
+  against a single index keeps the whole app alive. The skill, its `SKILL.md` and
+  `docs/utilities/algolia-pulse.md` all described it as keeping individual indices alive, which
+  would suggest every index needs its own config entry. Also records that local apps are the ones
+  most at risk, since they get no traffic. Docs only; no behaviour change. (Originally drafted as
+  1.9.1; renumbered because 1.10.0 had already shipped.)
+
 ## [1.10.0] - 2026-10-01
 
 ### Added
@@ -308,7 +319,8 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.10.0...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.10.1...develop
+[1.10.1]: https://github.com/markbaindesign/bain-studio/compare/1.10.0...1.10.1
 [1.10.0]: https://github.com/markbaindesign/bain-studio/compare/1.9.0...1.10.0
 [1.6.2]: https://github.com/markbaindesign/bain-studio/compare/1.6.1...1.6.2
 [1.6.1]: https://github.com/markbaindesign/bain-studio/compare/1.6.0...1.6.1
