@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-10-01
+
+### Added
+- **Studio dashboard Highlights tab** is the new home page: a ranked act/watch/info list drawn from
+  the other tabs (missed scheduled jobs, BBVA shortfall, overdue invoices, payments due within 7
+  days, uninvoiced time, KF pace, high-score briefs).
+- **Claude usage on the dashboard**, weekly and 5-hour, each with a pace check (weekly budgets 20%
+  per work day, Mon-Fri; the 5-hour window is straight-line). `~/.claude/hooks/statusline.py` now
+  also writes `weekly_pct` and `weekly_reset_ts` to `ratelimit-current.json`.
+- **Dashboard Ops tab** compares every crontab entry with its log file and flags missed runs,
+  with per-job log links. Built after a late boot silently skipped the 08:xx collectors.
+- **`studio/scripts/dashboard-app.sh`** opens the dashboard as a standalone Chromium app window,
+  starting the server if needed. `docs/utilities/studio-dashboard.md`.
+- **ga-report** draws charts, excludes `(not set)`, and writes into the client folder.
+- **brand-doc** reflows wrapped text and list items and numbers pages "N of M".
+- **bb-pr** reads Bitbucket credentials from `studio/.env`.
+
+### Documentation
+- ADR 019 (code projects use a standalone staging app, Proposed), Obsidian-on-Linux
+  troubleshooting entry, corrected Dropbox and project-database paths, refreshed project notes.
+
 ## [1.9.0] - 2026-09-29
 
 ### Added
@@ -287,7 +308,8 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.6.2...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.10.0...develop
+[1.10.0]: https://github.com/markbaindesign/bain-studio/compare/1.9.0...1.10.0
 [1.6.2]: https://github.com/markbaindesign/bain-studio/compare/1.6.1...1.6.2
 [1.6.1]: https://github.com/markbaindesign/bain-studio/compare/1.6.0...1.6.1
 [1.6.0]: https://github.com/markbaindesign/bain-studio/compare/1.5.1...1.6.0
