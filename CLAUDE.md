@@ -107,6 +107,7 @@ Quick reference (paths only — see project file for full details):
 | SL | `/media/data/dev/bain-studio/studio/looper` |
 | SLT | `/media/data/dev/bain-studio/studio/looper-test` |
 | BTF | `/media/data/dev/bain-theme-factory` |
+| MWE | `/media/data/dev/vvv/clients/www/middlewayeducation` |
 
 SL (Studio Looper) is not a codebase — it is the cross-project queue. Tasks are multi-homed into
 it from their home projects and keep their home prefix, so a task listed there is mirrored twice
