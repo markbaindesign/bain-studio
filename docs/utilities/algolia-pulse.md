@@ -3,7 +3,7 @@ tags: [tool, collector, devops]
 god: hermes
 invoke: .claude/skills/algolia-pulse/algolia_pulse.py
 command: /algolia-pulse
-description: Keeps Algolia free-tier search indices alive by querying them weekly via cron and posting a Slack summary, preventing auto-closure of inactive apps
+description: Keeps Algolia free-tier apps alive by querying one index in each weekly via cron and posting a Slack summary, preventing auto-closure of inactive applications
 ---
 
 # algolia-pulse

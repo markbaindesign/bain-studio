@@ -1,12 +1,12 @@
 ---
 name: algolia-pulse
-description: Keeps Algolia free-tier search indices alive by querying them periodically. Prevents auto-closure of inactive indices. Configure via JSON file with app credentials, attach to cron for automated runs.
+description: Keeps Algolia free-tier apps alive by querying one index in each periodically. Prevents auto-closure of inactive applications. Configure via JSON file with app credentials, attach to cron for automated runs.
 allowed-tools: [Bash, Read, Write]
 ---
 
 # Algolia Pulse
 
-Algolia automatically closes free-tier indices after extended inactivity. **Algolia Pulse** keeps indices alive by performing regular search queries. It's lightweight, cheap (counts toward API quota but not metered), and can be scheduled to run daily or hourly via cron.
+Algolia blocks a free-plan application that receives no searches and no indexing operations for around two months, and deletes it several weeks after that. Inactivity is measured **per application, not per index**, so one query against a single index keeps the whole app alive. **Algolia Pulse** keeps apps alive by performing a regular search query against one index in each. It's lightweight, cheap (counts toward API quota but not metered), and can be scheduled to run daily or hourly via cron.
 
 ---
 
@@ -170,5 +170,7 @@ tail -f ~/.algolia/pulse.log
 
 - **Free tier**: Algolia free plans have a monthly API call quota. Pulse queries count toward this. A daily query per index ≈ 30 calls/month — well within free limits.
 - **Response time**: Each query is fast (<100ms on most indices). Pulse adds minimal overhead.
-- **Inactive threshold**: Algolia's closure threshold varies by plan; free-tier indices can close after weeks/months without queries. Running Pulse daily keeps them alive indefinitely.
+- **Inactive threshold**: Algolia's closure threshold varies by plan; free-tier apps can close after weeks/months without queries. Running Pulse regularly keeps them alive indefinitely.
+- **Local apps matter most**: production and staging apps get real traffic, so they rarely lapse. A local dev app gets none, and is the one that dies while a project is parked.
+- **Source for the per-application rule**: [Algolia support: preventing deletion of an inactive free-plan application](https://support.algolia.com/hc/en-us/articles/26409293431185-How-can-I-prevent-my-inactive-application-on-a-free-plan-from-being-deleted) and [Why is my Free application blocked](https://support.algolia.com/hc/en-us/articles/13646265384977-Why-is-my-Free-application-blocked). Both are Algolia's own pages; no independent source was found confirming the timeline, so treat the exact weeks as Algolia's stated policy rather than independently verified.
 - **No write operations**: Pulse only performs searches, never modifies data. Safe to run anytime.
