@@ -237,6 +237,9 @@ header h1::before {
   padding: 8px 0; border-bottom: 1px solid var(--rule-soft);
 }
 .upcoming-row:last-child { border-bottom: none; }
+.ops-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ops-table th { text-align: left; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #999; padding: 6px 10px 6px 0; border-bottom: 1px solid #e5e5df; }
+.ops-table td { padding: 7px 10px 7px 0; border-bottom: 1px solid #f0f0ea; vertical-align: middle; }
 .badge {
   font-size: 10px; font-weight: 700;
   padding: 2px 7px; border-radius: 0;
@@ -594,9 +597,11 @@ header h1::before {
 <header>
   <h1>Bain Design</h1>
   <nav class="tabs">
-    <button class="tab-btn active" id="tab-finance" onclick="switchTab('finance')">Financial</button>
+    <button class="tab-btn active" id="tab-highlights" onclick="switchTab('highlights')">Highlights</button>
+    <button class="tab-btn" id="tab-finance" onclick="switchTab('finance')">Financial</button>
     <button class="tab-btn" id="tab-kf" onclick="switchTab('kf')">KF Time Budget</button>
     <button class="tab-btn" id="tab-pipeline" onclick="switchTab('pipeline')">Pipeline</button>
+    <button class="tab-btn" id="tab-ops" onclick="switchTab('ops')">Ops</button>
   </nav>
   <span class="updated" id="updatedAt">Loading…</span>
   <button class="refresh-btn" id="refreshBtn" onclick="refreshCurrent()">
@@ -609,8 +614,15 @@ header h1::before {
 
 <div id="errorBanner" class="error-banner"></div>
 
+<!-- Highlights page -->
+<div id="page-highlights">
+  <div class="grid" id="highlightsGrid">
+    <div class="card col-12"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
+  </div>
+</div>
+
 <!-- Financial page -->
-<div id="page-finance">
+<div id="page-finance" style="display:none">
   <div class="grid" id="mainGrid">
     <!-- KPI row skeleton -->
     <div class="card col-3"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
@@ -626,6 +638,13 @@ header h1::before {
     <div class="card col-4"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
     <div class="card col-4"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
     <div class="card col-4"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
+  </div>
+</div>
+
+<!-- Ops page -->
+<div id="page-ops" style="display:none">
+  <div class="grid" id="opsGrid">
+    <div class="card col-12"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
   </div>
 </div>
 
@@ -647,14 +666,14 @@ let pipelineDays = 7;
 // Routing
 // ---------------------------------------------------------------------------
 
-const TABS = ['finance', 'kf', 'pipeline'];
+const TABS = ['highlights', 'finance', 'kf', 'pipeline', 'ops'];
 
 function parseHash() {
-  const raw = location.hash.replace(/^#/, '') || 'finance';
+  const raw = location.hash.replace(/^#/, '') || 'highlights';
   const [tab, qs] = raw.split('?');
   const params = {};
   if (qs) new URLSearchParams(qs).forEach((v, k) => { params[k] = v; });
-  return { tab: TABS.includes(tab) ? tab : 'finance', params };
+  return { tab: TABS.includes(tab) ? tab : 'highlights', params };
 }
 
 function buildHash(tab, params) {
@@ -687,8 +706,12 @@ function onHashChange() {
     document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
   });
 
-  if (tab === 'kf') {
+  if (tab === 'highlights') {
+    loadHighlights();
+  } else if (tab === 'kf') {
     loadKF();
+  } else if (tab === 'ops') {
+    loadOps();
   } else if (tab === 'pipeline') {
     const needFetch = prevTab !== 'pipeline' || pipelineDays !== prevDays || !_pipelineBriefs.length;
     if (needFetch) {
@@ -710,7 +733,9 @@ function switchTab(tab) { navigate(tab); }
 
 function refreshCurrent() {
   const { tab } = parseHash();
-  if (tab === 'kf') loadKF();
+  if (tab === 'highlights') loadHighlights();
+  else if (tab === 'kf') loadKF();
+  else if (tab === 'ops') loadOps();
   else if (tab === 'pipeline') loadPipeline();
   else loadData();
 }
@@ -1298,6 +1323,221 @@ async function loadKF() {
     renderKFPage(d);
   } catch (err) {
     document.getElementById('kfGrid').innerHTML = `
+      <div class="card col-12">
+        <div class="not-configured" style="color:#c0392b;">${err.message}</div>
+      </div>`;
+    document.getElementById('updatedAt').textContent = 'Error';
+  } finally {
+    btn.classList.remove('spinning');
+  }
+}
+
+// Weekly quota budget: 5 work days (Mon-Fri) at 20% each, weekends budget nothing.
+// Elapsed budget counts whole work days since the window opened plus today's fraction.
+function weeklyPace(resetTs, pct, now = new Date()) {
+  const start = new Date((resetTs - 7 * 86400) * 1000);
+  let days = 0;
+  for (let d = new Date(start); d < now; d = new Date(d.getTime() + 86400000)) {
+    const end = new Date(Math.min(d.getTime() + 86400000, now.getTime()));
+    const dow = d.getDay();
+    if (dow >= 1 && dow <= 5) days += (end - d) / 86400000;
+  }
+  const expected = Math.min(100, days * 20);
+  const over = pct - expected;
+  const state = over > 15 ? 'fast' : over > 5 ? 'slightly-fast' : 'ok';
+  return { expected, over, state };
+}
+
+// 5-hour window: budget is linear, 20% per hour from the moment the window opened.
+function windowPace(resetTs, pct, now = new Date()) {
+  const elapsed = Math.min(5 * 3600, Math.max(0, now.getTime() / 1000 - (resetTs - 5 * 3600)));
+  const expected = elapsed / (5 * 3600) * 100;
+  const over = pct - expected;
+  return { expected, over, state: over > 15 ? 'fast' : over > 5 ? 'slightly-fast' : 'ok' };
+}
+
+// ── Highlights: what needs attention, drawn from the other tabs ──────────
+async function loadHighlights() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning');
+  const get = u => fetch(u).then(r => r.json().then(j => { if (!r.ok || j.error) throw new Error(j.error || r.status); return j; }));
+  const [fin, kf, ops, briefs, claude] = await Promise.allSettled([
+    get('/api/data'), get('/api/kf'), get('/api/ops'), get('/api/pipeline/briefs'), get('/api/claude'),
+  ]);
+  const items = [];   // { sev: 0 urgent | 1 watch | 2 info, tab, text }
+  const add = (sev, tab, text) => items.push({ sev, tab, text });
+
+  if (ops.status === 'fulfilled') {
+    const o = ops.value;
+    const bad = o.jobs.filter(j => j.status === 'missed');
+    if (o.cron !== 'active') add(0, 'ops', `Cron service is ${o.cron}`);
+    if (bad.length) add(0, 'ops', `${bad.length} scheduled job${bad.length > 1 ? 's' : ''} missed their last run: ${bad.slice(0, 4).map(j => j.name).join(', ')}${bad.length > 4 ? '…' : ''}`);
+  } else add(1, 'ops', 'Ops status unavailable: ' + ops.reason.message);
+
+  if (fin.status === 'fulfilled') {
+    const g = fin.value.gnucash || {}, h = fin.value.harvest || {};
+    const bf = g.bbva_forecast;
+    if (bf && bf.shortfall) add(0, 'finance', `BBVA shortfall: ${fmt(bf.balance)} now, ${fmtSigned(bf.balance_after_30d)} after 30 days (${fmt(bf.due_30d)} due, ${fmt(bf.income_30d)} income expected)`);
+    const today = new Date().toISOString().slice(0, 10);
+    (h.invoices || []).filter(i => i.state === 'open' && i.due_date && i.due_date < today)
+      .forEach(i => add(0, 'finance', `Invoice ${i.number} to ${i.client} overdue: ${fmtNative(i.due_amount, i.currency)} due ${i.due_date}`));
+    const soon = (g.upcoming || []).filter(u => u.days <= 7);
+    if (soon.length) add(1, 'finance', `${soon.length} payment${soon.length > 1 ? 's' : ''} in the next 7 days, ${fmt(soon.reduce((a, u) => a + (u.currency === 'EUR' ? u.amount : 0), 0))} EUR: ${soon.slice(0, 3).map(u => u.label).join(', ')}`);
+    if (h.uninvoiced && h.uninvoiced.total_eur > 0) add(1, 'finance', `${fmt(h.uninvoiced.total_eur)} tracked but not yet invoiced`);
+    add(2, 'finance', `Liquid cash ${fmt(g.liquid_eur)}`);
+    (fin.value.errors || []).forEach(e => add(1, 'finance', `${e.source}: ${e.message}`));
+  } else add(1, 'finance', 'Financial data unavailable: ' + fin.reason.message);
+
+  if (kf.status === 'fulfilled') {
+    const k = kf.value, v = k.year_variance;
+    add(Math.abs(v) > 10 ? 0 : v < 0 ? 1 : 2, 'kf', `KF is ${fmtHours(Math.abs(v))} ${v < 0 ? 'behind' : 'ahead of'} pace for ${k.year} (${fmtHours(k.year_hours_logged)} logged)`);
+  } else add(1, 'kf', 'KF data unavailable: ' + kf.reason.message);
+
+  if (briefs.status === 'fulfilled') {
+    const open = briefs.value.filter(b => ['pending', 'nudged'].includes(b.status));
+    const hot = open.filter(b => b.score >= 8);
+    if (hot.length) add(1, 'pipeline', `${hot.length} high-score brief${hot.length > 1 ? 's' : ''} (8+) awaiting a decision`);
+    add(2, 'pipeline', `${open.length} brief${open.length === 1 ? '' : 's'} pending in total`);
+  } else add(1, 'pipeline', 'Pipeline API unreachable: ' + briefs.reason.message);
+
+  if (claude.status === 'fulfilled' && claude.value.weekly_pct != null && claude.value.weekly_reset_ts) {
+    const c = claude.value, p = weeklyPace(c.weekly_reset_ts, c.weekly_pct);
+    if (p.state !== 'ok') add(p.state === 'fast' ? 0 : 1, 'highlights', `Claude weekly quota burning ${p.state === 'fast' ? 'too fast' : 'slightly fast'}: ${c.weekly_pct}% used vs ${Math.round(p.expected)}% budgeted (5 work days at 20%)`);
+  }
+
+  if (claude.status === 'fulfilled' && claude.value.reset_ts) {
+    const c = claude.value, p = windowPace(c.reset_ts, c.pct);
+    if (p.state !== 'ok') add(p.state === 'fast' ? 1 : 2, 'highlights', `Claude 5-hour window burning ${p.state === 'fast' ? 'too fast' : 'slightly fast'}: ${c.pct}% used vs ${Math.round(p.expected)}% budgeted`);
+  }
+
+  items.sort((a, b) => a.sev - b.sev);
+  const sevCls = ['badge-urgent', 'badge-soon', 'badge-later'], sevLbl = ['act', 'watch', 'info'];
+  const tabName = { highlights: 'Highlights', ops: 'Ops', finance: 'Financial', kf: 'KF Time Budget', pipeline: 'Pipeline' };
+  const urgent = items.filter(i => i.sev === 0).length;
+
+  let claudeCard = '';
+  if (claude.status === 'fulfilled') {
+    const c = claude.value;
+    const when = ts => new Date(ts * 1000).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const colour = p => p >= 80 ? 'negative' : p >= 50 ? 'warning' : 'positive';
+    const bar = p => `<div class="kf-progress-track" style="margin-top:8px;"><div class="kf-progress-fill" style="width:${Math.min(p, 100)}%"></div></div>`;
+    let weekly;
+    if (c.weekly_pct != null) {
+      const pace = c.weekly_reset_ts ? weeklyPace(c.weekly_reset_ts, c.weekly_pct) : null;
+      const cls = !pace ? colour(c.weekly_pct) : pace.state === 'fast' ? 'negative' : pace.state === 'slightly-fast' ? 'warning' : 'positive';
+      const verdict = !pace ? '' : pace.state === 'ok'
+        ? `On pace: ${Math.round(pace.expected)}% budgeted so far, ${Math.abs(Math.round(pace.over))} pts ${pace.over <= 0 ? 'under' : 'over'}`
+        : `Burning too fast: ${Math.round(pace.over)} pts over the ${Math.round(pace.expected)}% budgeted so far`;
+      const marker = pace ? `<div style="position:absolute;top:-4px;left:${pace.expected}%;width:2px;height:16px;background:#555;" title="Budgeted pace ${Math.round(pace.expected)}%"></div>` : '';
+      weekly = `<div class="stat-value ${cls}">${c.weekly_pct}%</div>
+         <div class="stat-label">this week${c.weekly_reset_ts ? ' · resets ' + when(c.weekly_reset_ts) : ''}</div>
+         <div style="position:relative;"><div class="kf-progress-track" style="margin-top:8px;"><div class="kf-progress-fill" style="width:${Math.min(c.weekly_pct, 100)}%"></div></div>${marker}</div>
+         <div class="stat-label ${pace && pace.state !== 'ok' ? cls : ''}" style="margin-top:8px;">${verdict}</div>`;
+    } else {
+      weekly = `<div class="stat-label">Weekly figure appears once a session refreshes the status line</div>`;
+    }
+    let five;
+    {
+      const pace = c.reset_ts ? windowPace(c.reset_ts, c.pct) : null;
+      const cls = !pace ? colour(c.pct) : pace.state === 'fast' ? 'negative' : pace.state === 'slightly-fast' ? 'warning' : 'positive';
+      const verdict = !pace ? '' : pace.state === 'ok'
+        ? `On pace: ${Math.round(pace.expected)}% budgeted so far, ${Math.abs(Math.round(pace.over))} pts ${pace.over <= 0 ? 'under' : 'over'}`
+        : `Burning too fast: ${Math.round(pace.over)} pts over the ${Math.round(pace.expected)}% budgeted so far`;
+      const marker = pace ? `<div style="position:absolute;top:-4px;left:${pace.expected}%;width:2px;height:16px;background:#555;" title="Budgeted pace ${Math.round(pace.expected)}%"></div>` : '';
+      five = `<div class="stat-value ${cls}">${c.pct}%</div>
+         <div class="stat-label">current window${c.reset_ts ? ' · resets ' + when(c.reset_ts) : ''}</div>
+         <div style="position:relative;"><div class="kf-progress-track" style="margin-top:8px;"><div class="kf-progress-fill" style="width:${Math.min(c.pct, 100)}%"></div></div>${marker}</div>
+         <div class="stat-label ${pace && pace.state !== 'ok' ? cls : ''}" style="margin-top:8px;">${verdict}</div>`;
+    }
+    claudeCard = `
+      <div class="card col-3">
+        <div class="card-title">Claude usage · weekly</div>${weekly}
+      </div>
+      <div class="card col-3">
+        <div class="card-title">Claude usage · 5-hour</div>${five}
+      </div>`;
+  } else {
+    claudeCard = `<div class="card col-6"><div class="card-title">Claude usage</div><div class="stat-label">${claude.reason.message}</div></div>`;
+  }
+
+  document.getElementById('highlightsGrid').innerHTML = `
+    <div class="card col-3">
+      <div class="card-title">Needs action</div>
+      <div class="stat-value ${urgent ? 'negative' : 'positive'}">${urgent}</div>
+      <div class="stat-label">${urgent ? 'item' + (urgent > 1 ? 's' : '') + ' flagged across the studio' : 'nothing urgent'}</div>
+    </div>
+    ${claudeCard}
+    <div class="card col-12">
+      <div class="card-title">Highlights</div>
+      <table class="ops-table"><tbody>
+        ${items.map(i => `<tr>
+          <td style="width:60px;"><span class="badge ${sevCls[i.sev]}">${sevLbl[i.sev]}</span></td>
+          <td>${i.text}</td>
+          <td style="text-align:right;"><a href="#${i.tab}" style="color:#999;font-size:11px;">${tabName[i.tab]} →</a></td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>`;
+  document.getElementById('updatedAt').textContent = 'Checked ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  btn.classList.remove('spinning');
+}
+
+function opsWhen(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderOpsPage(d) {
+  const missed = d.jobs.filter(j => j.status === 'missed' || j.status === 'no-log');
+  const okCount = d.jobs.filter(j => j.status === 'ok').length;
+  const cls = { ok: 'badge-later', missed: 'badge-urgent', 'no-log': 'badge-soon', unknown: 'badge-soon' };
+  const label = { ok: 'ran', missed: 'missed', 'no-log': 'no log', unknown: '?' };
+  const rows = d.jobs.map(j => `
+    <tr>
+      <td><strong>${j.log ? `<a href="/ops/log/${encodeURIComponent(j.name)}" target="_blank" style="color:inherit;">${j.name}</a>` : j.name}</strong></td>
+      <td><code>${j.schedule}</code></td>
+      <td>${opsWhen(j.expected)}</td>
+      <td>${opsWhen(j.last_activity)}</td>
+      <td><span class="badge ${cls[j.status]}">${label[j.status]}</span></td>
+      <td style="color:#888;font-size:11px;max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(j.last_line || '').replace(/"/g, '&quot;')}">${j.last_line || ''}</td>
+    </tr>`).join('');
+  document.getElementById('opsGrid').innerHTML = `
+    <div class="card col-3">
+      <div class="card-title">Scheduled jobs</div>
+      <div class="stat-value ${missed.length ? 'negative' : 'positive'}">${okCount}/${d.jobs.length}</div>
+      <div class="stat-label">${missed.length} missed or unlogged since last expected run</div>
+    </div>
+    <div class="card col-3">
+      <div class="card-title">Cron service</div>
+      <div class="stat-value ${d.cron === 'active' ? 'positive' : 'negative'}">${d.cron}</div>
+      <div class="stat-label">Machine booted ${opsWhen(d.booted)}</div>
+    </div>
+    <div class="card col-3">
+      <div class="card-title">Ops worktree</div>
+      <div class="stat-value">${d.ops_tag || 'detached'}</div>
+      <div class="stat-label">${d.ops_head || ''} at /home/bain/ops/bain-studio</div>
+    </div>
+    <div class="card col-12">
+      <div class="card-title">Crontab vs log activity</div>
+      <table class="ops-table">
+        <thead><tr><th>Job</th><th>Schedule</th><th>Last expected</th><th>Log last written</th><th>Status</th><th>Last log line</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="stat-label" style="margin-top:10px;">Status is inferred from log file modification time, so a job that runs but writes nothing shows as missed. Cron does not catch up on runs missed while the machine was off.</div>
+    </div>`;
+  document.getElementById('updatedAt').textContent = 'Checked ' + opsWhen(d.now);
+}
+
+async function loadOps() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning');
+  try {
+    const res = await fetch('/api/ops');
+    const d = await res.json();
+    if (!res.ok || d.error) throw new Error(d.error || `Server error ${res.status}`);
+    renderOpsPage(d);
+  } catch (err) {
+    document.getElementById('opsGrid').innerHTML = `
       <div class="card col-12">
         <div class="not-configured" style="color:#c0392b;">${err.message}</div>
       </div>`;

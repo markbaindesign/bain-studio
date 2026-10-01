@@ -15,6 +15,7 @@ load_dotenv(HERE.parent / '.env')  # studio/.env — single source, no local ove
 
 sys.path.insert(0, str(HERE))
 import gnucash_parser
+import ops_status
 from harvest_client import HarvestClient
 
 app = Flask(__name__)
@@ -71,6 +72,43 @@ def api_kf():
     import json
     data = json.loads(KF_SNAPSHOT.read_text())
     return jsonify(data)
+
+
+@app.route('/api/ops')
+def api_ops():
+    try:
+        return jsonify(ops_status.summary())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/claude')
+def api_claude():
+    f = Path.home() / '.claude' / 'ratelimit-current.json'
+    if not f.exists():
+        return jsonify({'error': 'No rate-limit data at ~/.claude/ratelimit-current.json'}), 404
+    import json
+    d = json.loads(f.read_text())
+    return jsonify({
+        'pct': d.get('current_pct'),
+        'reset_ts': d.get('reset_ts'),
+        'weekly_pct': d.get('weekly_pct'),
+        'weekly_reset_ts': d.get('weekly_reset_ts'),
+        'read_at': datetime.fromtimestamp(f.stat().st_mtime, timezone.utc).isoformat(),
+    })
+
+
+@app.route('/ops/log/<path:name>')
+def ops_log(name):
+    # Only logs that a crontab entry writes to are served, looked up by job name.
+    job = next((j for j in ops_status.jobs() if j['name'] == name and j['log']), None)
+    if not job or not Path(job['log']).is_file():
+        return 'No log for that job', 404
+    lines = Path(job['log']).read_text(errors='replace').splitlines()
+    tail = int(request.args.get('lines', 500))
+    body = '\n'.join(lines[-tail:]) if tail > 0 else '\n'.join(lines)
+    header = f"# {job['log']} (last {min(tail, len(lines))} of {len(lines)} lines; ?lines=0 for all)\n\n"
+    return header + body + '\n', 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
 
 @app.route('/api/pipeline')
