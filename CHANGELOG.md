@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-10-01
+
 ### Changed
 - **Daily Brief severity now comes from the age of the problem, never from how long the finding
   has been reported.** Ageing on the list used to promote findings a level at a time, all the way
@@ -39,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The Daily Brief no longer reports finance tasks that are merely due soon.** The brief is a
   safety net for work that has been missed; a task on schedule has not been missed and Asana
   already shows it. A routine invoice due that day was being ranked `critical`.
+
+### Documentation
+- MWE (Middle Way Education) registered in the project table and `docs/projects/`. ADR 021, studio
+  state and the registry leave the repo.
 
 ## [1.10.1] - 2026-10-01
 
@@ -352,7 +358,8 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.10.1...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.11.0...develop
+[1.11.0]: https://github.com/markbaindesign/bain-studio/compare/1.10.1...1.11.0
 [1.10.1]: https://github.com/markbaindesign/bain-studio/compare/1.10.0...1.10.1
 [1.10.0]: https://github.com/markbaindesign/bain-studio/compare/1.9.0...1.10.0
 [1.6.2]: https://github.com/markbaindesign/bain-studio/compare/1.6.1...1.6.2
