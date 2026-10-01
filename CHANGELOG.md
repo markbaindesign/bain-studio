@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Daily Brief severity now comes from the age of the problem, never from how long the finding
+  has been reported.** Ageing on the list used to promote findings a level at a time, all the way
+  to `critical`, which emptied the word of meaning: on 2026-09-30 the brief carried 58 criticals
+  and 57 of them had been put there by the escalation clock rather than by a check. Since every
+  check already derives severity from the thing's own age, that clock was also counting age twice.
+  `ESCALATE_AFTER_DAYS` is gone, `apply_escalation` is now `stamp_first_seen` and only records when
+  a finding was first raised. Same day's data re-run: 1 critical instead of 50.
+- **Today is ranked by severity, then acute before chronic, then the age of the problem, then how
+  long it has been reported.** Previously a newly raised critical could never reach Today, because
+  findings raised earlier outranked it regardless of how bad they were. Ranking on age alone then
+  had the opposite flaw: a cron job that failed on its last run has an age of zero, so live
+  breakage sorted below a task 476 days overdue. Findings that represent something erroring right
+  now are marked `acute=True` (failing cron job, repeated transcription failure, crashed check,
+  unreadable GnuCash book or finance snapshot) and sort above chronic ones of equal severity.
+- **Checks that had no age rule got one**: untouched tasks and their per-project rollup go `high`
+  past 180 days (`UNTOUCHED_HIGH_DAYS`), a silent active project past 90 (`PROJECT_STALE_HIGH_DAYS`),
+  and a quiet cron job once it has missed 3 of its own cycles (`QUIET_CYCLES_HIGH`) rather than
+  staying `normal` however long it has been dead. `report.py`, silent for 89 days, was `normal`.
+- **An untriaged voice note is `normal` until 7 days**, not 3 (`VOICE_NOTE_STALE_DAYS`).
+
+### Added
+- **Daily Brief flags open tasks untouched for 60+ days** (`UNTOUCHED_AFTER_DAYS`), rolled up into
+  one summary per project past 5 (`UNTOUCHED_ROLLUP`). Nothing previously caught a task that had
+  no due date, was not blocked and was not in review, so a dropped task could sit indefinitely.
+  Found while investigating two Algolia suspension warnings that sat unread in Asana for 12 weeks
+  until the applications were deleted.
+
+### Removed
+- **The Daily Brief no longer reports finance tasks that are merely due soon.** The brief is a
+  safety net for work that has been missed; a task on schedule has not been missed and Asana
+  already shows it. A routine invoice due that day was being ranked `critical`.
+
 ## [1.10.1] - 2026-10-01
 
 ### Fixed

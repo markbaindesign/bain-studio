@@ -56,11 +56,16 @@ PROJECTS_FILE = STUDIO_DIR / "projects.json"
 LOG_PREFIX = "[daily_brief]"
 
 SEVERITIES = ["normal", "high", "critical"]
-ESCALATE_AFTER_DAYS = 7
 BOOKS_STALE_DAYS = 14
 BUSY_ACCOUNT_ENTRIES = 10
 DORMANT_AFTER_DAYS = 180  # untouched this long: a dormant account, not a books backlog
 OVERDUE_ROLLUP = 5  # more overdue tasks than this in one project: one summary finding instead
+UNTOUCHED_AFTER_DAYS = 60  # an open task nobody has touched this long has been dropped
+UNTOUCHED_HIGH_DAYS = 180  # ...and this long means it is not coming back on its own
+PROJECT_STALE_HIGH_DAYS = 90  # a registered active project silent this long
+QUIET_CYCLES_HIGH = 3  # a job silent for this many of its own cycles is dead, not late
+UNTOUCHED_ROLLUP = 5  # as OVERDUE_ROLLUP, for untouched tasks
+VOICE_NOTE_STALE_DAYS = 7  # an untriaged voice note is not urgent before this
 
 # Jobs whose cron log is not where they report: check this file's freshness instead.
 QUIET_JOB_LOGS = {
@@ -79,9 +84,15 @@ ISO_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 # Findings
 # ---------------------------------------------------------------------------
 
-def finding(key, area, severity, title, detail="", url="", age_days=None, group=""):
-    return {"key": key, "area": area, "severity": severity, "title": title,
-            "detail": detail, "url": url, "age_days": age_days, "group": group}
+def finding(key, area, severity, title, detail="", url="", age_days=None, group="", acute=False):
+    """acute: something is erroring right now, as opposed to rotting slowly.
+
+    Ranking by age alone cannot express this. A job that failed on its last run has an age of
+    zero and would sort below a task 476 days overdue, though only one of them is actually
+    broken. Acute findings sort above chronic ones of the same severity.
+    """
+    return {"key": key, "area": area, "severity": severity, "title": title, "detail": detail,
+            "url": url, "age_days": age_days, "group": group, "acute": acute}
 
 
 def _days_since(iso, today):
@@ -210,17 +221,16 @@ def check_tasks(projects, today):
                                        age_days=age, **base))
                 continue
 
-            if overdue is not None and -14 <= overdue <= 0 and area == "Finance":
-                out.append(finding(f"task:{t['lid']}:due-soon", "Finance",
-                                   "high" if overdue >= -7 else "normal", label,
-                                   f"due in {-overdue} day(s) ({t['due']})",
-                                   age_days=overdue, **base))
-                continue
-
             if area == "Clients" and mod_age is not None and mod_age > 14:
                 out.append(finding(f"task:{t['lid']}:client", "Clients",
                                    "high" if mod_age > 30 else "normal", label,
                                    f"waiting on the client, no movement for {mod_age} days",
+                                   age_days=mod_age, **base))
+            elif mod_age is not None and mod_age > UNTOUCHED_AFTER_DAYS:
+                # No due date, not blocked, not in review: nothing else would ever surface it.
+                out.append(finding(f"task:{t['lid']}:untouched", area,
+                                   "high" if mod_age > UNTOUCHED_HIGH_DAYS else "normal", label,
+                                   f"open and untouched for {mod_age} days",
                                    age_days=mod_age, **base))
 
         overdue_here = [f for f in out if f["group"] == prefix and f["key"].endswith(":overdue")]
@@ -234,8 +244,22 @@ def check_tasks(projects, today):
                                "or close what's dead. Tasks listed below.",
                                age_days=oldest, group=prefix))
 
+        untouched_here = [f for f in out if f["group"] == prefix and f["key"].endswith(":untouched")]
+        if len(untouched_here) > UNTOUCHED_ROLLUP:
+            oldest = max(f["age_days"] for f in untouched_here)
+            for f in untouched_here:
+                f["today"] = False
+            out.append(finding(f"project:{prefix}:untouched-pile", "Projects",
+                               "high" if oldest > UNTOUCHED_HIGH_DAYS else "normal",
+                               f"{prefix}: {len(untouched_here)} tasks untouched for over "
+                               f"{UNTOUCHED_AFTER_DAYS} days, oldest {oldest}",
+                               "nothing else surfaces these. Close what's dead or pick one up. "
+                               "Tasks listed below.",
+                               age_days=oldest, group=prefix))
+
         if proj["status"] == "active" and proj["tasks"] and last_activity is not None and last_activity > 30:
-            out.append(finding(f"project:{prefix}:stale", "Projects", "normal",
+            out.append(finding(f"project:{prefix}:stale", "Projects",
+                               "high" if last_activity > PROJECT_STALE_HIGH_DAYS else "normal",
                                f"{prefix} has had no task activity for {last_activity} days",
                                f"{len(proj['tasks'])} open task(s); close, pause or pick it up",
                                age_days=last_activity, group="Stale projects"))
@@ -255,7 +279,8 @@ def check_books(today):
     path = os.getenv("GNUCASH_FILE")
     if not path or not Path(path).exists():
         return [finding("finance:gnucash-missing", "Finance", "high",
-                        "GnuCash book not found", "GNUCASH_FILE is unset or points nowhere")]
+                        "GnuCash book not found", "GNUCASH_FILE is unset or points nowhere",
+                        acute=True)]
     try:
         import gzip
         import xml.etree.ElementTree as ET
@@ -288,7 +313,7 @@ def check_books(today):
                     balance[a.text] = balance.get(a.text, 0.0) + (float(Fraction(q.text)) if q is not None else 0.0)
     except Exception as e:
         return [finding("finance:gnucash-unreadable", "Finance", "high",
-                        "Could not read the GnuCash book", str(e)[:200])]
+                        "Could not read the GnuCash book", str(e)[:200], acute=True)]
 
     # Only accounts in real use: holding money, or busy in the 90 days before their last entry.
     # Closed or dormant accounts (zero balance, a handful of entries) would otherwise read as stale.
@@ -318,7 +343,7 @@ def check_snapshot(today):
         data = json.loads(path.read_text())
     except (OSError, ValueError) as e:
         return [finding("ops:snapshot-missing", "Operations", "high",
-                        "Finance snapshot (accounts.json) unreadable", str(e)[:200])]
+                        "Finance snapshot (accounts.json) unreadable", str(e)[:200], acute=True)]
     out = []
     age = _days_since(data.get("generated_at", ""), today)
     if age is None or age > 2:
@@ -432,7 +457,10 @@ def check_cron(today, crontab_text=None, now=None):
             continue
         hours = (now - dt.datetime.fromtimestamp(watched.stat().st_mtime)).total_seconds() / 3600
         if hours > max_age:
-            out.append(finding(key, "Operations", "normal", f"Scheduled job {job} has gone quiet",
+            # Silent for several of its own cycles is a dead job, not a late one.
+            out.append(finding(key, "Operations",
+                               "high" if hours > max_age * QUIET_CYCLES_HIGH else "normal",
+                               f"Scheduled job {job} has gone quiet",
                                f"{watched.name} last written {hours / 24:.0f} day(s) ago, expected every "
                                f"~{max_age}h. Either it isn't running or it logs nothing on success",
                                age_days=int(hours // 24)))
@@ -444,7 +472,7 @@ def check_cron(today, crontab_text=None, now=None):
         if err:
             last = next((l for l in reversed(tail) if l.strip()), "")
             out.append(finding(key, "Operations", "high", f"Scheduled job {job} is failing",
-                               f"latest run ends: {last.strip()[:180]}"))
+                               f"latest run ends: {last.strip()[:180]}", acute=True))
     return out
 
 
@@ -513,7 +541,8 @@ def check_voice_notes(today):
         tasks = tasks.group(1).strip() if tasks else ""
         about = re.search(r"^\*\*About:\*\*\s*(.+)$", note.read_text(errors="replace"), re.M)
         detail = about.group(1)[:140] if about else (f"tasks: {tasks}" if tasks else "no task attached")
-        out.append(finding(f"voice:{note.stem}", "Voice notes", "high" if (age or 0) > 3 else "normal",
+        out.append(finding(f"voice:{note.stem}", "Voice notes",
+                           "high" if (age or 0) > VOICE_NOTE_STALE_DAYS else "normal",
                            note.stem, detail, url=obsidian_uri(note), age_days=age))
     try:
         state = json.loads((COLLECTORS_DIR / "audio_notes_state.json").read_text())
@@ -527,7 +556,8 @@ def check_voice_notes(today):
                                "(Scarlett gain, or Obsidian using the webcam mic)"))
         elif entry.get("status") == "failed" and entry.get("attempts", 0) >= 3:
             out.append(finding(f"voice:failed:{Path(path).name}", "Operations", "high",
-                               f"Could not transcribe {Path(path).name}", entry.get("error", "")[:160]))
+                               f"Could not transcribe {Path(path).name}", entry.get("error", "")[:160],
+                               acute=True))
     return out
 
 
@@ -535,22 +565,29 @@ def check_voice_notes(today):
 # State, ranking, rendering
 # ---------------------------------------------------------------------------
 
-def apply_escalation(findings, state, today):
-    """Stamp first_seen, bump severity for findings ignored past ESCALATE_AFTER_DAYS."""
+def stamp_first_seen(findings, state, today):
+    """Record when each finding was first raised. Severity is not touched here.
+
+    Severity belongs to the thing itself: how many days a task is overdue, how long a job has
+    been silent, how far behind the books are. Every check derives it from that age already, so
+    a second bump based on how long a finding had sat on the list counted age twice and, worse,
+    ratcheted: on 2026-09-30 the brief carried 58 criticals, 57 of them promoted by the clock
+    rather than by any check. first_seen now only feeds the "raised N days ago" line and breaks
+    ties in ranking.
+    """
     new_state = {}
     for f in findings:
         first = state.get(f["key"], today.isoformat())
         new_state[f["key"]] = first
-        ignored = _days_since(first, today) or 0
-        f["raised_days"] = ignored
-        if ignored >= ESCALATE_AFTER_DAYS and f["severity"] != "critical" and f.get("today", True):
-            f["severity"] = SEVERITIES[SEVERITIES.index(f["severity"]) + 1]
-            f["escalated"] = True
+        f["raised_days"] = _days_since(first, today) or 0
     return new_state
 
 
 def rank(f):
-    return (-SEVERITIES.index(f["severity"]), -(f.get("raised_days") or 0), -(f.get("age_days") or 0))
+    """Severity, then failing-now ahead of rotting, then the age of the problem, then how long
+    we have been reporting it."""
+    return (-SEVERITIES.index(f["severity"]), -int(f.get("acute", False)),
+            -(f.get("age_days") or 0), -(f.get("raised_days") or 0))
 
 
 def _line(f):
@@ -559,7 +596,7 @@ def _line(f):
     if f["detail"]:
         bits.append(f"- {f['detail']}")
     if f.get("raised_days"):
-        bits.append(f"*(raised {f['raised_days']} day(s) ago{', escalated' if f.get('escalated') else ''})*")
+        bits.append(f"*(raised {f['raised_days']} day(s) ago)*")
     return "- " + " ".join(bits)
 
 
@@ -624,7 +661,7 @@ def collect(today):
             findings += check()
         except Exception as e:  # one broken check must not sink the brief
             findings.append(finding(f"ops:brief-check-error:{len(findings)}", "Operations", "high",
-                                    "A Daily Brief check crashed", repr(e)[:200]))
+                                    "A Daily Brief check crashed", repr(e)[:200], acute=True))
     return findings
 
 
@@ -640,7 +677,7 @@ def main():
         state = json.loads(STATE_FILE.read_text())
     except (OSError, ValueError):
         state = {}
-    new_state = apply_escalation(findings, state, today)
+    new_state = stamp_first_seen(findings, state, today)
     note, counts, top = render(findings, today)
 
     if args.dry_run:
