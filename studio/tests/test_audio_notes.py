@@ -73,12 +73,12 @@ def test_render_note_marks_unreviewed_and_links_task(tmp_path):
 def test_daily_brief_lists_unreviewed_voice_notes(tmp_path, monkeypatch):
     monkeypatch.setenv("OBSIDIAN_VAULT", str(tmp_path))
     t = tmp_path / "Transcripts"; t.mkdir()
-    (t / "2026-09-10 09.00 voice note.md").write_text(
-        "---\nrecorded: 2026-09-10T09:00:00\ntasks: [BTF-032]\nreviewed: false\n---\n\n**About:** BTF-032 Thing\n")
+    (t / "2026-09-05 09.00 voice note.md").write_text(
+        "---\nrecorded: 2026-09-05T09:00:00\ntasks: [BTF-032]\nreviewed: false\n---\n\n**About:** BTF-032 Thing\n")
     (t / "2026-09-11 09.00 voice note.md").write_text("---\nrecorded: 2026-09-11T09:00:00\nreviewed: true\n---\n")
     monkeypatch.setattr(b, "COLLECTORS_DIR", tmp_path)
     (tmp_path / "audio_notes_state.json").write_text(json.dumps(
         {"/v/Assets/Recording 1.m4a": {"status": "silent", "mean_db": -64.7, "checked": "2026-09-16"}}))
     found = b.check_voice_notes(dt.date(2026, 9, 17))
-    assert [f["title"] for f in found] == ["2026-09-10 09.00 voice note", "Recording 1.m4a was silent"]
+    assert [f["title"] for f in found] == ["2026-09-05 09.00 voice note", "Recording 1.m4a was silent"]
     assert found[0]["severity"] == "high" and found[0]["detail"] == "BTF-032 Thing"
