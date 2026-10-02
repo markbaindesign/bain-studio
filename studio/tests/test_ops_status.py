@@ -47,3 +47,23 @@ def test_job_name_and_log_path():
 def test_upwork_jobs_are_namespaced():
     cmd = "cd /home/bain/ops/upwork-proposals && .venv/bin/python pipeline/run.py >> pipeline/run.log 2>&1"
     assert o._name(cmd) == "upwork/run"
+
+
+def test_parse_tailscale_orders_online_first_then_most_recently_seen():
+    import json
+    raw = json.dumps({
+        "BackendState": "Running",
+        "Self": {"HostName": "me", "TailscaleIPs": ["100.1.1.1"], "OS": "linux", "Online": True},
+        "Peer": {
+            "a": {"HostName": "old", "TailscaleIPs": ["100.1.1.2"], "Online": False, "LastSeen": "2026-01-01T00:00:00Z"},
+            "b": {"HostName": "recent", "TailscaleIPs": ["100.1.1.3"], "Online": False, "LastSeen": "2026-09-30T00:00:00Z"},
+            "c": {"HostName": "live", "TailscaleIPs": ["100.1.1.4"], "Online": True, "LastSeen": "2026-01-01T00:00:00Z"},
+        },
+    })
+    out = o.parse_tailscale(raw)
+    assert out["state"] == "Running" and out["self"]["ip"] == "100.1.1.1"
+    assert [p["name"] for p in out["peers"]] == ["live", "recent", "old"]
+
+
+def test_parse_tailscale_handles_no_peers():
+    assert o.parse_tailscale('{"BackendState": "Stopped", "Self": {}}')["peers"] == []
