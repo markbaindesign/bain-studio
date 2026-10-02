@@ -217,3 +217,10 @@ def test_obsidian_uri(monkeypatch, tmp_path):
     monkeypatch.setenv("OBSIDIAN_VAULT", str(tmp_path / "Work Notes"))
     uri = b.obsidian_uri(tmp_path / "Work Notes" / "Daily Brief" / "2026-09-17-daily-brief.md")
     assert uri == "obsidian://open?vault=Work%20Notes&file=Daily%20Brief/2026-09-17-daily-brief"
+
+
+def test_assigned_to_me_matches_only_the_users_gid():
+    assert b.assigned_to_me({"assignee": "Mark Bain (507443625075)"}, "507443625075")
+    assert not b.assigned_to_me({"assignee": "BainBot (1209202434387214)"}, "507443625075")
+    assert not b.assigned_to_me({"assignee": "none"}, "507443625075")
+    assert not b.assigned_to_me({"assignee": "Mark Bain (507443625075)"}, "")

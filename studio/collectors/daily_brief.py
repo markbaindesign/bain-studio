@@ -11,7 +11,7 @@ Areas:
               month-on-month losses, open money tasks (invoices, budgets, renewals)
   Operations  scheduled jobs that are erroring or have gone quiet, stale finance
               snapshot, uncommitted work, unmerged feature branches
-  Projects    overdue tasks, looper tasks blocked on Mark, work waiting in Review,
+  Projects    overdue tasks assigned to Mark, looper tasks blocked on Mark, work waiting in Review,
               projects with no activity
   Clients     tasks waiting on a client (chase, sign-off, client action) gone quiet
   Voice notes transcripts from audio_notes.py not yet marked reviewed; silent recordings
@@ -141,14 +141,21 @@ def parse_mirror(text):
                 "section": section, "looper": looper, "due": due,
                 "notes": fields.get("notes", ""), "blockers": fields.get("blockers", ""),
                 "progress": fields.get("progress", ""), "modified": fields.get("modified", ""),
-                "url": fields.get("url", ""),
+                "url": fields.get("url", ""), "assignee": fields.get("assignee", ""),
             })
     return tasks
 
 
+def assigned_to_me(task, user_gid):
+    """The brief is Mark's safety net: tasks assigned to anyone else (or nobody) are not his to chase."""
+    return bool(user_gid) and f"({user_gid})" in task["assignee"]
+
+
 def load_project_tasks():
     """{prefix: {"status", "tasks"}} for every registered project with a mirror, SL/SLT excluded
-    (their tasks are multi-homed and already appear in their home mirrors)."""
+    (their tasks are multi-homed and already appear in their home mirrors). Only tasks
+    assigned to ASANA_USER_GID are kept."""
+    user_gid = os.getenv("ASANA_USER_GID", "")
     projects = {}
     for entry in load_registry():
         root = Path(entry["path"]).expanduser()
@@ -162,7 +169,8 @@ def load_project_tasks():
         if not m or m.group(1) in ("SL", "SLT"):
             continue
         projects[m.group(1)] = {"status": entry.get("status", "active"), "root": root,
-                                "tasks": parse_mirror(mirror.read_text(errors="replace"))}
+                                "tasks": [t for t in parse_mirror(mirror.read_text(errors="replace"))
+                                          if assigned_to_me(t, user_gid)]}
     return projects
 
 
