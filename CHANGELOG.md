@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-10-02
+
+### Fixed
+- Daily Brief only surfaces tasks assigned to Mark (`ASANA_USER_GID`); tasks assigned to BainBot, other people or nobody are no longer chased.
+
 ## [1.11.0] - 2026-10-01
 
 ### Changed
