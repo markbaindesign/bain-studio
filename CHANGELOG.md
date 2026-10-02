@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-10-02
+
+### Added
+- Studio dashboard Ops tab shows Tailscale and SSH status: backend state, this machine's tailnet name and IP, whether `ssh` is active, and a table of tailnet devices with online/offline and last-seen. Answers "can I reach this machine remotely".
+
 ## [1.11.2] - 2026-10-02
 
 ### Fixed

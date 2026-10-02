@@ -1487,6 +1487,41 @@ function opsWhen(iso) {
   return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
+function tailscaleCards(t) {
+  if (!t || t.error) {
+    return `<div class="card col-6"><div class="card-title">Tailscale</div>
+      <div class="stat-value negative">unavailable</div>
+      <div class="stat-label">${(t && t.error) || 'no data'}</div></div>`;
+  }
+  const up = t.state === 'Running';
+  const rows = t.peers.map(p => `
+    <tr>
+      <td><strong>${p.name}</strong></td>
+      <td><code>${p.ip || ''}</code></td>
+      <td>${p.os || ''}</td>
+      <td><span class="badge ${p.online ? 'badge-later' : 'badge-soon'}">${p.online ? 'online' : 'offline'}</span></td>
+      <td>${p.online ? '' : opsWhen(p.last_seen)}</td>
+    </tr>`).join('');
+  return `
+    <div class="card col-3">
+      <div class="card-title">Tailscale</div>
+      <div class="stat-value ${up ? 'positive' : 'negative'}">${t.state || '?'}</div>
+      <div class="stat-label">${t.self.name} · <code>${t.self.ip || ''}</code></div>
+    </div>
+    <div class="card col-3">
+      <div class="card-title">SSH server</div>
+      <div class="stat-value ${t.ssh === 'active' ? 'positive' : 'negative'}">${t.ssh || '?'}</div>
+      <div class="stat-label">${t.peers.filter(p => p.online).length}/${t.peers.length} other devices online</div>
+    </div>
+    <div class="card col-12">
+      <div class="card-title">Tailnet devices</div>
+      <table class="ops-table">
+        <thead><tr><th>Device</th><th>IP</th><th>OS</th><th>Status</th><th>Last seen</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
 function renderOpsPage(d) {
   const missed = d.jobs.filter(j => j.status === 'missed' || j.status === 'no-log');
   const okCount = d.jobs.filter(j => j.status === 'ok').length;
@@ -1517,6 +1552,7 @@ function renderOpsPage(d) {
       <div class="stat-value">${d.ops_tag || 'detached'}</div>
       <div class="stat-label">${d.ops_head || ''} at /home/bain/ops/bain-studio</div>
     </div>
+    ${tailscaleCards(d.tailscale)}
     <div class="card col-12">
       <div class="card-title">Crontab vs log activity</div>
       <table class="ops-table">

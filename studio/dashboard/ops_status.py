@@ -1,4 +1,5 @@
 """Scheduled-job health for the Ops tab: crontab entries vs. their log files."""
+import json
 import os
 import re
 import subprocess
@@ -123,6 +124,32 @@ def _git(*args):
     return r.stdout.strip() if r.returncode == 0 else None
 
 
+def parse_tailscale(raw):
+    """Reduce `tailscale status --json` to this machine plus its peers, most recently seen first."""
+    d = json.loads(raw)
+    def dev(x):
+        return {'name': x.get('HostName'), 'ip': (x.get('TailscaleIPs') or [None])[0],
+                'os': x.get('OS'), 'online': bool(x.get('Online')), 'last_seen': x.get('LastSeen')}
+    peers = [dev(p) for p in (d.get('Peer') or {}).values()]
+    peers.sort(key=lambda p: p['last_seen'] or '', reverse=True)
+    peers.sort(key=lambda p: not p['online'])  # stable: online first, then most recently seen
+    return {'state': d.get('BackendState'), 'self': dev(d.get('Self') or {}), 'peers': peers}
+
+
+def tailscale():
+    """Tailscale state plus whether sshd is up; {'error': ...} if the CLI is missing or fails."""
+    try:
+        r = subprocess.run(['tailscale', 'status', '--json'], capture_output=True, text=True, timeout=5)
+        if r.returncode != 0:
+            return {'error': r.stderr.strip() or 'tailscale status failed'}
+        out = parse_tailscale(r.stdout)
+    except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+        return {'error': str(e)}
+    ssh = subprocess.run(['systemctl', 'is-active', 'ssh'], capture_output=True, text=True).stdout.strip()
+    out['ssh'] = ssh
+    return out
+
+
 def summary():
     now = datetime.now()
     up = subprocess.run(['uptime', '-s'], capture_output=True, text=True).stdout.strip()
@@ -133,5 +160,6 @@ def summary():
         'cron': cron,
         'ops_tag': _git('describe', '--tags', '--exact-match'),
         'ops_head': _git('rev-parse', '--short', 'HEAD'),
+        'tailscale': tailscale(),
         'jobs': jobs(now),
     }

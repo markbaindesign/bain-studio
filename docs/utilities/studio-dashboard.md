@@ -27,7 +27,7 @@ python3 studio/dashboard/server.py     # server only, http://localhost:5555
 | Financial | GnuCash + Harvest, `/api/data` |
 | KF Time Budget | `harvest_kf_collector` snapshot, `/api/kf` |
 | Pipeline | Upwork pipeline API on 5050 |
-| Ops | Crontab entries against their log files, `/api/ops` |
+| Ops | Crontab entries against their log files, Tailscale and SSH state, `/api/ops` |
 
 ### Highlights
 
@@ -50,6 +50,12 @@ Over by more than 5 points is amber, more than 15 is red.
 fired, and compares that with its log file's modification time. Job names link to
 `/ops/log/<name>` (last 500 lines as plain text, `?lines=0` for all). Only logs named in the
 crontab are served, looked up by job name, never by path.
+
+**Tailscale** (also on the Ops tab, under `tailscale` in `/api/ops`): the backend state, this
+machine's tailnet name and IP, whether the `ssh` service is active, and a table of every other
+device with online/offline and last-seen time (online first). It reads `tailscale status --json`;
+if the CLI is missing or fails the card shows the error instead of breaking the tab. It answers
+"can I reach this machine from elsewhere": Running + ssh active + the remote device online.
 
 Limits: a job that runs but writes nothing shows as missed, and jobs that log outside any
 crontab-visible file show "no log". Cron does not catch up on runs missed while the machine was
