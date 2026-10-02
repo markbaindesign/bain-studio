@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.2] - 2026-10-02
+
+### Fixed
+- `sync.py` logs Asana's error message alongside HTTP failures (e.g. `403 ... | Asana: You do not have access to this project.`), so bare 400/403 lines in `sync.log` say why.
+
 ## [1.11.1] - 2026-10-02
 
 ### Fixed
