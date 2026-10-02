@@ -234,24 +234,37 @@ def _h():
         return {"Authorization": f"Bearer {ASANA_USER_PAT}", "Accept": "application/json"}
     return {"Authorization": f"Bearer {ASANA_PAT}", "Accept": "application/json"}
 
+def _check(r):
+    """raise_for_status, but with Asana's error message appended so the log says why (a bare 400/403 doesn't)."""
+    try:
+        r.raise_for_status()
+    except requests.HTTPError as e:
+        try:
+            detail = "; ".join(x.get("message", "") for x in r.json().get("errors", []))
+        except ValueError:
+            detail = r.text[:200]
+        if detail:
+            raise requests.HTTPError(f"{e} | Asana: {detail}", response=r) from e
+        raise
+
 def _get(path, params=None):
     r = requests.get(f"{BASE_URL}{path}", headers=_h(), params=params, timeout=15)
-    r.raise_for_status()
+    _check(r)
     return r.json()
 
 def _post(path, payload):
     r = requests.post(f"{BASE_URL}{path}", headers=_h(), json=payload, timeout=15)
-    r.raise_for_status()
+    _check(r)
     return r.json()
 
 def _put(path, payload):
     r = requests.put(f"{BASE_URL}{path}", headers=_h(), json=payload, timeout=15)
-    r.raise_for_status()
+    _check(r)
     return r.json()
 
 def _delete(path):
     r = requests.delete(f"{BASE_URL}{path}", headers=_h(), timeout=15)
-    r.raise_for_status()
+    _check(r)
 
 def _wait_for_job(job_gid, interval=5, timeout=300):
     """Poll GET /jobs/{job_gid} until succeeded. Returns the new_project dict."""
