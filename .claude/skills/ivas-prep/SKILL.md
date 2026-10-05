@@ -43,6 +43,10 @@ This handles:
 
 Report what was created/downloaded/moved.
 
+The quarter is decided by each invoice's **issue date**, not its billing period or payment date. The Gmail search runs 7 days past quarter end, so read the issue date on every PDF dated in that window (`pdftotext -layout`) and move any issued after quarter end into the next quarter's folder (`T{Q+1}-{YEAR}/Compres/{supplier}/`).
+
+The script files every loose PDF under `Compres/Misc/`, including a VIES validation ("Vies on-the-Web - European Commission.pdf"). A VIES check backs an intra-EU sales invoice, so move it to `Vendes/` and rename it after that invoice: `INVOICE_{N}_Mark_Crawford_Bain_VIES.pdf` (match the client name in the VIES result to the Harvest invoice).
+
 If `--gmail` fails with "credentials.json not found", see Step 3.
 
 ---
@@ -55,7 +59,7 @@ Gmail download uses OAuth2 and requires a one-time setup:
 2. Enable Gmail API if not already enabled
 3. APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID → Desktop app
 4. Download the JSON and save it as:
-   `studio/tools/ivas-prep/credentials.json`
+   `/media/data/dev/bain-studio/studio/tools/ivas-prep/credentials.json`
 5. Re-run with `--gmail` — a browser window opens to authorise each account
 6. Tokens are saved to `~/.config/bain-studio/gmail_token_*.json` for future runs
 
@@ -117,4 +121,4 @@ Next steps:
 - Gmail download is automated via `gmail_download.py` — covers 7-day grace period after quarter end
 - OAuth tokens refresh automatically — re-auth only needed if revoked
 - Deadline: Mod 303 is due 20th of the month after quarter end (Q2 → 20 July)
-- Full expense checklist and quarter-specific items: see `docs/Finances/iva-mod303.md`
+- Full expense checklist and quarter-specific items: see `/media/data/dev/bain-studio/docs/Finances/iva-mod303.md`

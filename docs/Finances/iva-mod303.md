@@ -34,11 +34,13 @@ Harvest invoices are downloaded automatically. After the script runs, verify:
 - [ ] Invoices are numbered and in order
 - [ ] Check Upwork income — if any Upwork projects ran this quarter, confirm client invoices were raised
 - [ ] Check affiliate income (if any)
-- [ ] Check VIEs if required (intra-EU sales to VAT-registered businesses)
+- [ ] Check VIEs if required (intra-EU sales to VAT-registered businesses). Save each VIES validation PDF in `Vendes/`, named after the invoice it backs: `INVOICE_{N}_Mark_Crawford_Bain_VIES.pdf`
 
 ---
 
 ## Compres (incoming expense receipts)
+
+**Quarter is decided by the invoice's issue date**, never by the billing period or the payment date. A Cloudways invoice for September issued 1 October belongs in Q4; Xavi's invoice for a quarter goes in whichever quarter its date falls in. The Gmail download searches 7 days past quarter end, so check the issue date on anything it pulls from that window and move it to the next quarter's folder if needed.
 
 ### Automated via gmail_download.py
 
