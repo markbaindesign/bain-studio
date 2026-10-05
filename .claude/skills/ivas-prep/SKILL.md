@@ -43,7 +43,7 @@ This handles:
 
 Report what was created/downloaded/moved.
 
-The quarter is decided by each invoice's **issue date**, not its billing period or payment date. The Gmail search runs 7 days past quarter end, so read the issue date on every PDF dated in that window (`pdftotext -layout`) and move any issued after quarter end into the next quarter's folder (`T{Q+1}-{YEAR}/Compres/{supplier}/`).
+The quarter is decided by each invoice's **issue date**, not its billing period or payment date. The Gmail download reads the issue date from each PDF (`issue_date.py`) and files it in that quarter's folder, printing `-> T{n}-{YEAR}` when it lands outside the quarter being prepared. Where it prints `no issue date found in PDF - using email date`, open the PDF and move it by hand if needed. Files placed manually (portal downloads, loose PDFs) are not checked: confirm their issue dates yourself.
 
 The script files every loose PDF under `Compres/Misc/`, including a VIES validation ("Vies on-the-Web - European Commission.pdf"). A VIES check backs an intra-EU sales invoice, so move it to `Vendes/` and rename it after that invoice: `INVOICE_{N}_Mark_Crawford_Bain_VIES.pdf` (match the client name in the VIES result to the Harvest invoice).
 

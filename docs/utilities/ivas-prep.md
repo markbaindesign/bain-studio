@@ -33,7 +33,7 @@ Three sequential steps:
 
 **2. Harvest invoices** — fetches all Harvest invoices in the quarter date range via the Harvest API and downloads each as `INVOICE_{N}_Mark_Crawford_Bain.pdf` into `Vendes/`. Uses the public `client_key` PDF URL — no browser needed.
 
-**3. Gmail download** (with `--gmail`) — searches both Gmail accounts for invoices from known suppliers and downloads PDF attachments directly to the correct `Compres/{supplier}/` subfolder. Skips files that already exist.
+**3. Gmail download** (with `--gmail`) — searches both Gmail accounts for invoices from known suppliers and downloads PDF attachments to `Compres/{supplier}/`. Each PDF is filed by its own issue date (`issue_date.py`, via `pdftotext`), so an invoice issued after quarter end goes to the next quarter's folder; when no date can be read it falls back to the email date and says so. Skips files already in this, the previous or the next quarter.
 
 ### Covered Gmail accounts and suppliers
 
@@ -58,6 +58,7 @@ Requires an OAuth2 Desktop App credential from the bain-studio GCP project:
 
 - `studio/tools/ivas-prep/ivas-prep.py` — main script (scaffold, Harvest, sort)
 - `studio/tools/ivas-prep/gmail_download.py` — Gmail attachment downloader (standalone or imported)
+- `studio/tools/ivas-prep/issue_date.py` — reads an invoice's issue date from its PDF (English/Spanish/Catalan month names; numeric dates are not guessed)
 - `.claude/skills/ivas-prep/SKILL.md` — skill definition
 
 ## Config

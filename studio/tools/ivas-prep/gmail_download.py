@@ -31,6 +31,8 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
+from issue_date import issue_date, quarter_of
+
 HERE = Path(__file__).resolve().parent
 STUDIO = HERE.parents[1]
 load_dotenv(STUDIO / ".env")  # single consolidated env file
@@ -116,8 +118,29 @@ def get_credentials(account: str) -> Credentials:
     return creds
 
 
+def next_quarter(q, y):
+    if q == 4:
+        return (1, y + 1)
+    return (q + 1, y)
+
+
+def _already_filed(filename: str, folder: str, q: int, y: int) -> tuple[int, int] | None:
+    """Quarter (this, previous or next) whose Compres/{folder} already holds filename."""
+    for cq, cy in ((q, y), prev_quarter_end_year(q, y), next_quarter(q, y)):
+        if (quarter_path(cq, cy) / "Compres" / folder / filename).exists():
+            return (cq, cy)
+    return None
+
+
 def search_and_download(service, query: str, after: str, before: str,
-                        compres_dir: Path, dry_run: bool) -> list[str]:
+                        q: int, y: int, folder: str, dry_run: bool) -> list[str]:
+    """Download matching PDF attachments, filing each by its issue date.
+
+    The quarter comes from the invoice's own issue date (issue_date.py), not from when
+    it was emailed: Xavi's Q3 invoice dated 30 Sep arrives in October, and a Cloudways
+    invoice issued 1 Oct turns up inside the grace window. When no date can be read,
+    the email date is used and flagged. Returns the filenames that belong to Q{q} {y}.
+    """
     full_query = f"{query} has:attachment after:{after} before:{before}"
     results = service.users().messages().list(userId="me", q=full_query, maxResults=20).execute()
     messages = results.get("messages", [])
@@ -139,21 +162,37 @@ def search_and_download(service, query: str, after: str, before: str,
             if not attachment_id:
                 continue
 
-            dest = compres_dir / filename
-            if dest.exists():
-                print(f"    = {filename} (exists)")
-                saved.append(filename)
+            filed = _already_filed(filename, folder, q, y)
+            if filed:
+                where = "" if filed == (q, y) else f" in T{filed[0]}-{filed[1]}"
+                print(f"    = {filename} (exists{where})")
+                if filed == (q, y):
+                    saved.append(filename)
                 continue
 
-            print(f"    + {filename}")
+            # Fetch even on a dry run: the issue date is inside the PDF.
+            att = service.users().messages().attachments().get(
+                userId="me", messageId=msg_ref["id"], id=attachment_id
+            ).execute()
+            data = base64.urlsafe_b64decode(att["data"])
+
+            issued = issue_date(data)
+            note = ""
+            if issued is None:
+                issued = date.fromtimestamp(int(msg["internalDate"]) / 1000)
+                note = " [no issue date found in PDF - using email date, check it]"
+            tq, ty = quarter_of(issued)
+            if (tq, ty) != (q, y):
+                earlier = (ty, tq) < (y, q)
+                note += f" -> T{tq}-{ty}" + (" (earlier quarter - may already be filed)" if earlier else "")
+
+            print(f"    + {filename}  issued {issued.isoformat()}{note}")
             if not dry_run:
-                att = service.users().messages().attachments().get(
-                    userId="me", messageId=msg_ref["id"], id=attachment_id
-                ).execute()
-                data = base64.urlsafe_b64decode(att["data"])
-                compres_dir.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(data)
+                dest_dir = quarter_path(tq, ty) / "Compres" / folder
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                (dest_dir / filename).write_bytes(data)
                 print(f"      saved {len(data) // 1024}KB")
+            if (tq, ty) == (q, y):
                 saved.append(filename)
 
     return saved
@@ -200,9 +239,8 @@ def run(q: int, y: int, dry_run: bool):
         service = build("gmail", "v1", credentials=creds)
 
         for query, folder in sources:
-            folder_dir = compres / folder
             print(f"  [{folder}] {query}")
-            saved = search_and_download(service, query, after_str, before_str, folder_dir, dry_run)
+            saved = search_and_download(service, query, after_str, before_str, q, y, folder, dry_run)
             if saved:
                 totals.setdefault(folder, []).extend(saved)
 
