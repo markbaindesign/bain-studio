@@ -39,6 +39,7 @@ This handles:
 - Creating `Vendes/` and `Compres/{subfolders}/`
 - Downloading Harvest invoice PDFs → `Vendes/`
 - Sorting any loose PDFs in the quarter root
+- Flagging Upwork clients paid in the quarter with no Harvest invoice (reads the newest `*_transaction_report.csv` in the Financial folder; pass `--upwork-csv` to use another). Every Upwork client needs a Harvest invoice each quarter. If one is flagged, raise it before sending the pack: invoice numbers must stay sequential, so it cannot be backdated behind a later invoice.
 - Downloading Gmail invoice attachments to `Compres/{supplier}/` via Gmail API
 
 Report what was created/downloaded/moved.

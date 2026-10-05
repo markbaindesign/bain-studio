@@ -5,6 +5,7 @@ ivas-prep.py — IVA quarterly preparation tool
 1. Scaffolds Vendes/ and Compres/{subfolders} for the quarter
 2. Downloads invoice PDFs from Harvest API → Vendes/
 3. Sorts loose PDFs in the quarter root into the right child folders
+4. Flags Upwork clients paid in the quarter with no Harvest invoice (upwork_check.py)
 
 Gmail step is handled by the /ivas-prep skill (requires MCP tools).
 
@@ -19,6 +20,8 @@ import shutil
 import sys
 from datetime import date
 from pathlib import Path
+
+from upwork_check import find_report, report_check
 
 import requests
 from dotenv import load_dotenv
@@ -126,7 +129,7 @@ def download_harvest_invoices(q, y, vendes, dry_run=False):
     """Download invoice PDFs from Harvest using the client_key public PDF URL."""
     if not HARVEST_TOKEN or not HARVEST_ACCOUNT_ID:
         print("\nHarvest not configured — skipping")
-        return [], []
+        return [], [], []
 
     start, end = QUARTER_DATES[q]
     from_date = f"{y}-{start}"
@@ -181,7 +184,8 @@ def download_harvest_invoices(q, y, vendes, dry_run=False):
         else:
             missing.append(fname)
 
-    return present, missing
+    clients = [inv.get("client", {}).get("name", "") for inv in invoices]
+    return present, missing, clients
 
 
 def classify_loose(filename):
@@ -228,6 +232,9 @@ def main():
     parser.add_argument("--year", "-y", type=int, default=date.today().year)
     parser.add_argument("--dry-run", action="store_true", help="Preview only, no changes")
     parser.add_argument("--gmail", action="store_true", help="Also download Gmail invoice attachments")
+    parser.add_argument("--upwork-csv", type=Path,
+                        help="Upwork transaction report (default: newest *_transaction_report.csv"
+                             " in the Financial folder)")
     args = parser.parse_args()
 
     q = args.quarter or current_quarter()
@@ -237,8 +244,11 @@ def main():
     print(f"IVA Prep — Q{q} {y}" + (" [DRY RUN]" if dry else ""))
 
     vendes, compres = scaffold(q, y, dry)
-    download_harvest_invoices(q, y, vendes, dry)
+    _, _, invoiced_clients = download_harvest_invoices(q, y, vendes, dry)
     sort_loose(q, y, vendes, compres, dry)
+
+    start, end = (date.fromisoformat(f"{y}-{d}") for d in QUARTER_DATES[q])
+    report_check(args.upwork_csv or find_report(FINANCIAL_DIR.parent), start, end, invoiced_clients)
 
     if args.gmail:
         try:

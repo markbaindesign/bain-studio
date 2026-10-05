@@ -32,7 +32,7 @@ Harvest invoices are downloaded automatically. After the script runs, verify:
 - [ ] All Harvest invoices for the quarter are present in `Vendes/`
 - [ ] Invoices cover the whole quarter (check date range)
 - [ ] Invoices are numbered and in order
-- [ ] Check Upwork income — if any Upwork projects ran this quarter, confirm client invoices were raised
+- [ ] Check Upwork income — every Upwork client paid this quarter needs a Harvest invoice. `ivas-prep.py` flags any without one, from the latest Upwork transaction report CSV in the Financial folder (download a fresh one first)
 - [ ] Check affiliate income (if any)
 - [ ] Check VIEs if required (intra-EU sales to VAT-registered businesses). Save each VIES validation PDF in `Vendes/`, named after the invoice it backs: `INVOICE_{N}_Mark_Crawford_Bain_VIES.pdf`
 
