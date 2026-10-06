@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-10-06
+
+### Added
+- `sync.py --create-task --task-assignee me` assigns the new task to Mark (`ASANA_USER_GID`), so it lands in his My Tasks.
+
+### Fixed
+- `sync.py --create-task` ignored `--task-assignee` and `--task-depends-on`: every task went to BainBot and dependencies were silently dropped. Both now reach Asana, the mirror entry records the real assignee and the task it blocks, and a failed dependency link exits 1 instead of passing. The default assignee is still BainBot.
+
 ## [1.13.1] - 2026-10-06
 
 ### Fixed
@@ -393,7 +401,8 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.13.1...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.14.0...develop
+[1.14.0]: https://github.com/markbaindesign/bain-studio/compare/1.13.1...1.14.0
 [1.13.1]: https://github.com/markbaindesign/bain-studio/compare/1.13.0...1.13.1
 [1.13.0]: https://github.com/markbaindesign/bain-studio/compare/1.12.0...1.13.0
 [1.12.0]: https://github.com/markbaindesign/bain-studio/compare/1.11.2...1.12.0
