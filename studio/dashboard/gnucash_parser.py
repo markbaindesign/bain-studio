@@ -364,11 +364,9 @@ def _latest_annual_amount(matches, month_of_year, typical_day, window_days=20):
 # double the most recent actual.
 MOD130_RATE = 0.20
 
-# Account-path fragments excluded from the profit base. UK pension contributions are
-# personal rather than business expenses -- they may reduce the annual Renta base but
-# should not reduce quarterly business profit.
-# PENDING gestor confirmation; worth ~EUR 385 on the Q3 2026 figure. If Xavier says
-# they ARE deductible here, empty this tuple.
+# Account-path fragments excluded from the profit base. "Pension UK" holds voluntary UK
+# National Insurance contributions (State Pension gap-filling), not a pension plan: a
+# personal cost, never a business expense, so it does not reduce quarterly profit.
 MOD130_NON_DEDUCTIBLE = ('Pension',)
 
 
