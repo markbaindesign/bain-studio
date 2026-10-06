@@ -965,3 +965,55 @@ def test_push_set_field_failed_write_is_not_recorded():
                         "/remove", "follower", False, "T", "followers",
                         task=task, task_key="followers")
     assert [f["gid"] for f in task["followers"]] == ["2"]
+
+
+# ---------------------------------------------------------------------------
+# create_task_full: assignee and dependency (BSTD-819)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def fake_asana(monkeypatch, proj):
+    """Record Asana writes made by create_task_full; the task gets gid new_gid."""
+    proj.mirror_file.write_text("# Bot Asana Task Mirror\n\n## Test Project\n")
+    posts, puts = [], []
+
+    def fake_post(path, body):
+        posts.append((path, body))
+        return {"data": {"gid": "new_gid"}}
+
+    monkeypatch.setattr(sync, "fetch_sections", lambda p: {"NEXT UP": "sec_gid"})
+    monkeypatch.setattr(sync, "_post", fake_post)
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    monkeypatch.setattr(sync, "_get", lambda path, params=None: {"data": {"name": "Mark Bain"}})
+    monkeypatch.setattr(sync, "BAINBOT_GID", "bot_gid")
+    return posts
+
+
+def test_create_task_full_defaults_to_bainbot(proj, fake_asana):
+    sync.create_task_full(proj, "Do it")
+    assert fake_asana[0][0] == "/tasks"
+    assert fake_asana[0][1]["data"]["assignee"] == "bot_gid"
+    assert not any("addDependencies" in path for path, _ in fake_asana)
+
+
+def test_create_task_full_assignee_and_dependency(proj, fake_asana):
+    lid = sync.create_task_full(proj, "Do it", assignee="mark_gid", depends_on="blocked_gid")
+    assert fake_asana[0][1]["data"]["assignee"] == "mark_gid"
+    assert ("/tasks/blocked_gid/addDependencies",
+            {"data": {"dependencies": ["new_gid"]}}) in fake_asana
+    block = proj.mirror_file.read_text().split(f"### {lid} ")[1]
+    assert "- **Assignee:** Mark Bain (mark_gid)" in block
+    assert "- **Dependents:** blocked_gid (blocked_gid)" in block
+
+
+def test_create_task_full_dependency_failure_is_loud(proj, fake_asana, monkeypatch):
+    real_post = sync._post
+
+    def failing_post(path, body):
+        if "addDependencies" in path:
+            raise Exception("403")
+        return real_post(path, body)
+
+    monkeypatch.setattr(sync, "_post", failing_post)
+    with pytest.raises(RuntimeError, match="could not make it block blocked_gid"):
+        sync.create_task_full(proj, "Do it", depends_on="blocked_gid")
