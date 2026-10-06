@@ -1,0 +1,9 @@
+{
+  "session": "studio",
+  "windows": [
+    {"name": "tooling", "dir": "~/dev/bain-studio"},
+    {"name": "finance", "dir": "~/dev/bain-studio"},
+    {"name": "bizdev", "dir": "~/dev/upwork-proposals"},
+    {"name": "hr", "dir": "~/Dropbox/Work/Admin/Business"}
+  ]
+}

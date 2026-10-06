@@ -1,12 +1,12 @@
 ---
 name: open
-description: Open a project in a new Terminator tab with Claude Code. Takes a project prefix (e.g. /open MCF). Looks up the path from docs/projects/ and launches Terminator in that directory.
+description: Open a project as a new window in the studio tmux session, with Claude Code running. Takes a project prefix (e.g. /open MCF). Looks up the path from docs/projects/ and opens the window via studio-tmux.
 allowed-tools: [Bash]
 ---
 
 # Open Project Tab
 
-Open a project in a new Terminator tab with Claude Code running.
+Open a project as a window in the `studio` tmux session, with Claude Code running.
 
 Usage: `/open PREFIX` — e.g. `/open MCF`, `/open NORE`, `/open UAP`
 
@@ -50,14 +50,17 @@ If `NOT_FOUND`, report "No project with prefix {PREFIX} found." and stop.
 
 If the path does not exist on disk, report that and stop.
 
-### 3. Open the terminal tab
+### 3. Open the tmux window
 
 ```bash
-terminator --new-tab --working-directory="{PATH}" -e "zsh -c 'claude; exec zsh'"
+/media/data/dev/bain-studio/studio/scripts/studio-tmux open "{PREFIX}" "{PATH}" claude
 ```
 
-`--new-tab` opens a new tab in the existing Terminator window if one is running.
+This adds a `{PREFIX}` window to the studio session (reusing it if one is already open), selects
+it, and switches to it when run from inside tmux. If the session does not exist yet, it is created
+with the configured studio windows first. See `docs/utilities/studio-tmux.md`.
 
 ### 4. Confirm
 
-Report: "Opened {PREFIX} → {PATH} in a new Terminator tab."
+Report: "Opened {PREFIX} → {PATH} in the studio tmux session." If the script printed
+"Not inside tmux", add that Mark can attach with `studio-tmux`.

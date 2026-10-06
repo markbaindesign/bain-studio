@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""studio-tmux — open (or reattach to) the studio tmux session, one window per
+studio area, each opening a shell in that area's directory.
+
+The window list is local config, not code: ~/.config/bain-studio/tmux.json
+(override with --config or STUDIO_TMUX_CONFIG). See studio-tmux.example.json.
+
+    {
+      "session": "studio",
+      "windows": [
+        {"name": "tooling", "dir": "/media/data/dev/bain-studio"},
+        {"name": "finance", "dir": "/media/data/dev/bain-studio", "cmd": "claude"}
+      ]
+    }
+
+"cmd" is optional; without it the window is a plain shell. A window with a
+command drops to a shell when the command exits, so it stays open.
+
+Usage:
+    studio-tmux                    create the session if missing, add any
+                                   configured windows it lacks, then attach
+    studio-tmux --no-attach        same, without attaching
+    studio-tmux open NAME DIR [CMD]
+                                   add one window (e.g. a project) to the
+                                   session and select it; reuses an existing
+                                   window of that name
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+DEFAULT_CONFIG = os.path.expanduser("~/.config/bain-studio/tmux.json")
+
+
+def tmux(*args, check=True):
+    result = subprocess.run(["tmux", *args], capture_output=True, text=True)
+    if check and result.returncode != 0:
+        sys.exit(f"studio-tmux: tmux {args[0]} failed: {result.stderr.strip()}")
+    return result
+
+
+def load_config(path):
+    if not os.path.exists(path):
+        example = os.path.join(os.path.dirname(os.path.realpath(__file__)), "studio-tmux.example.json")
+        sys.exit(f"studio-tmux: no config at {path}\nCopy {example} there and edit it.")
+    with open(path) as f:
+        cfg = json.load(f)
+    cfg.setdefault("session", "studio")
+    cfg.setdefault("windows", [])
+    return cfg
+
+
+def shell_command(cmd):
+    """tmux's trailing shell-command argument: none for a plain shell, else the
+    command followed by an interactive shell for when it exits."""
+    if not cmd:
+        return []
+    return [f"{cmd}; exec {os.environ.get('SHELL', 'zsh')}"]
+
+
+def session_exists(session):
+    # "=" forces an exact name match; tmux otherwise prefix-matches sessions
+    return tmux("has-session", "-t", f"={session}", check=False).returncode == 0
+
+
+def window_names(session):
+    out = tmux("list-windows", "-t", f"={session}", "-F", "#{window_name}").stdout
+    return out.split()
+
+
+def add_window(session, name, directory, cmd, create_session=False):
+    directory = os.path.expanduser(directory)
+    if not os.path.isdir(directory):
+        print(f"studio-tmux: skipping '{name}', no such directory: {directory}", file=sys.stderr)
+        return False
+    if create_session:
+        tmux("new-session", "-d", "-s", session, "-n", name, "-c", directory, *shell_command(cmd))
+    else:
+        tmux("new-window", "-d", "-t", f"={session}:", "-n", name, "-c", directory, *shell_command(cmd))
+    return True
+
+
+def ensure_session(cfg):
+    """Create the session from config, or add the configured windows it is missing."""
+    session = cfg["session"]
+    exists = session_exists(session)
+    present = window_names(session) if exists else []
+    for w in cfg["windows"]:
+        if w["name"] in present:
+            continue
+        if add_window(session, w["name"], w["dir"], w.get("cmd"), create_session=not exists):
+            exists = True
+            present.append(w["name"])
+    if not exists:
+        sys.exit("studio-tmux: no window could be created; check the directories in the config")
+    if cfg["windows"]:
+        tmux("select-window", "-t", f"={session}:{cfg['windows'][0]['name']}", check=False)
+
+
+def attach(session):
+    # Inside tmux, attach would nest; switch the current client instead
+    if os.environ.get("TMUX"):
+        tmux("switch-client", "-t", f"={session}")
+    else:
+        os.execvp("tmux", ["tmux", "attach-session", "-t", f"={session}"])
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Open the studio tmux session.")
+    parser.add_argument("--config", default=os.environ.get("STUDIO_TMUX_CONFIG", DEFAULT_CONFIG))
+    parser.add_argument("--no-attach", action="store_true", help="set up the session without attaching")
+    sub = parser.add_subparsers(dest="action")
+    op = sub.add_parser("open", help="add one window to the session and select it")
+    op.add_argument("name")
+    op.add_argument("dir")
+    op.add_argument("cmd", nargs="?", help="command to run (default: a plain shell)")
+    args = parser.parse_args()
+
+    cfg = load_config(args.config)
+    session = cfg["session"]
+
+    if args.action == "open":
+        # Only lay out the configured windows for a new session; don't revive
+        # windows that were deliberately closed in a running one
+        if not session_exists(session):
+            ensure_session(cfg)
+        if args.name not in window_names(session):
+            if not add_window(session, args.name, args.dir, args.cmd):
+                sys.exit(1)
+        tmux("select-window", "-t", f"={session}:{args.name}")
+        print(f"Opened window '{args.name}' in tmux session '{session}'.")
+        if os.environ.get("TMUX"):
+            tmux("switch-client", "-t", f"={session}")
+        else:
+            print("Not inside tmux: run studio-tmux to attach.")
+        return
+
+    ensure_session(cfg)
+    if not args.no_attach:
+        attach(session)
+
+
+if __name__ == "__main__":
+    main()
