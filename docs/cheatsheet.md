@@ -130,6 +130,7 @@ Invoke in Claude Code with `/skill-name [args]`.
 
 | Script | Usage | What it does |
 |--------|-------|--------------|
+| `studio-tmux` | `studio-tmux` | Open or reattach to the studio tmux session, one window per area ([doc](utilities/studio-tmux.md)) |
 | `studio-open` | `studio-open MCF` | Open a project by prefix in new Terminator tab |
 | `studio-tabs` | `studio-tabs` | Open all active projects as Terminator tabs |
 | `open-project` | `open-project /path/to/project` | 2-pane Terminator tab: zsh left, claude right |

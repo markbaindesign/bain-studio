@@ -39,9 +39,14 @@ This handles:
 - Creating `Vendes/` and `Compres/{subfolders}/`
 - Downloading Harvest invoice PDFs → `Vendes/`
 - Sorting any loose PDFs in the quarter root
+- Flagging Upwork clients paid in the quarter with no Harvest invoice (reads the newest `*_transaction_report.csv` in the Financial folder; pass `--upwork-csv` to use another). Every Upwork client needs a Harvest invoice each quarter. If one is flagged, raise it before sending the pack: invoice numbers must stay sequential, so it cannot be backdated behind a later invoice.
 - Downloading Gmail invoice attachments to `Compres/{supplier}/` via Gmail API
 
 Report what was created/downloaded/moved.
+
+The quarter is decided by each invoice's **issue date**, not its billing period or payment date. The Gmail download reads the issue date from each PDF (`issue_date.py`) and files it in that quarter's folder, printing `-> T{n}-{YEAR}` when it lands outside the quarter being prepared. Where it prints `no issue date found in PDF - using email date`, open the PDF and move it by hand if needed. Files placed manually (portal downloads, loose PDFs) are not checked: confirm their issue dates yourself.
+
+The script files every loose PDF under `Compres/Misc/`, including a VIES validation ("Vies on-the-Web - European Commission.pdf"). A VIES check backs an intra-EU sales invoice, so move it to `Vendes/` and rename it after that invoice: `INVOICE_{N}_Mark_Crawford_Bain_VIES.pdf` (match the client name in the VIES result to the Harvest invoice).
 
 If `--gmail` fails with "credentials.json not found", see Step 3.
 
@@ -55,7 +60,7 @@ Gmail download uses OAuth2 and requires a one-time setup:
 2. Enable Gmail API if not already enabled
 3. APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID → Desktop app
 4. Download the JSON and save it as:
-   `studio/tools/ivas-prep/credentials.json`
+   `/media/data/dev/bain-studio/studio/tools/ivas-prep/credentials.json`
 5. Re-run with `--gmail` — a browser window opens to authorise each account
 6. Tokens are saved to `~/.config/bain-studio/gmail_token_*.json` for future runs
 
@@ -117,4 +122,4 @@ Next steps:
 - Gmail download is automated via `gmail_download.py` — covers 7-day grace period after quarter end
 - OAuth tokens refresh automatically — re-auth only needed if revoked
 - Deadline: Mod 303 is due 20th of the month after quarter end (Q2 → 20 July)
-- Full expense checklist and quarter-specific items: see `docs/Finances/iva-mod303.md`
+- Full expense checklist and quarter-specific items: see `/media/data/dev/bain-studio/docs/Finances/iva-mod303.md`

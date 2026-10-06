@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-10-06
+
+### Added
+- **Voice agent** (`studio/voice/`, `/voice-agent`): a hands-free spoken front desk on the OpenAI Realtime API. It hands studio work to background `claude -p` sessions (up to 3 at once, per-project by prefix), reads results back, and blocks outward actions (sending, pushing, merging, sharing) until Mark gives a spoken yes. Transcripts are saved to Dropbox. See `docs/utilities/voice-agent.md`.
+- **studio-tmux** (`studio/scripts/studio-tmux`): opens or reattaches to a `studio` tmux session with one window per studio area, configured in `~/.config/bain-studio/tmux.json`. See `docs/utilities/studio-tmux.md`.
+- ivas-prep `upwork_check.py`: flags Upwork clients paid in the quarter who have no matching Harvest invoice, and warns when the Upwork report ends before quarter end.
+- ivas-prep `issue_date.py`: reads an invoice's issue date from its PDF (English, Spanish and Catalan labels).
+
+### Changed
+- `/open` opens a project as a window in the studio tmux session instead of a new Terminator tab.
+- ivas-prep files Gmail invoices into the quarter of their issue date, not the quarter being searched, and flags any that belong to an earlier quarter.
+- ivas-prep skill uses absolute paths so it works when invoked outside bain-studio; VIES validation PDFs go in `Vendes/` under a fixed naming convention.
+- Mod 130 profit base: the comment on the `Pension` exclusion now records why it holds (voluntary UK National Insurance contributions, a personal cost). Behaviour is unchanged.
+
 ## [1.12.0] - 2026-10-02
 
 ### Added
@@ -373,7 +387,11 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.11.0...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.13.0...develop
+[1.13.0]: https://github.com/markbaindesign/bain-studio/compare/1.12.0...1.13.0
+[1.12.0]: https://github.com/markbaindesign/bain-studio/compare/1.11.2...1.12.0
+[1.11.2]: https://github.com/markbaindesign/bain-studio/compare/1.11.1...1.11.2
+[1.11.1]: https://github.com/markbaindesign/bain-studio/compare/1.11.0...1.11.1
 [1.11.0]: https://github.com/markbaindesign/bain-studio/compare/1.10.1...1.11.0
 [1.10.1]: https://github.com/markbaindesign/bain-studio/compare/1.10.0...1.10.1
 [1.10.0]: https://github.com/markbaindesign/bain-studio/compare/1.9.0...1.10.0
