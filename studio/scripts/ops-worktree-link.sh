@@ -52,8 +52,9 @@ PATHS=(
   # inbox - hermes routes messages out of here
   "studio/inbox"
 
-  # logs - keep one place to look, in the dev checkout
-  "studio/sync.log"
+  # logs - keep one place to look, in the dev checkout.
+  # Not studio/sync.log: sync.py rotates it (RotatingFileHandler), and rotation renames
+  # the symlink away and leaves a real file, so cron's sync log lives in the ops worktree.
   "studio/postman.log"
   "studio/collectors/careers_watch.log"
   "studio/collectors/gmail_watch.log"
