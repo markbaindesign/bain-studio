@@ -43,6 +43,9 @@ python3 /media/data/dev/bain-studio/studio/sync.py \
                        Must match an existing Asana section name exactly
 --task-notes TEXT      Task description / notes (optional)
 --task-due YYYY-MM-DD  Due date (optional)
+--task-assignee GID    Assignee (default: BainBot). 'me' uses ASANA_USER_GID
+--task-depends-on GID  A task the new one blocks. If linking fails, the task
+                       is still created but the command exits 1 and says so
 --dry-run              Preview without creating anything
 ```
 
@@ -65,7 +68,7 @@ To see sections for a project, check its mirror or Asana board. The `--task-sect
 
 ## Notes
 
-- All tasks are assigned to bainbot (not Mark) - consistent with the mirror workflow
+- Tasks are assigned to bainbot unless `--task-assignee` says otherwise - use `--task-assignee me` for a task Mark has to do, so it lands in his My Tasks
 - The mirror entry will be overwritten on the next full sync with fresh data from Asana, but the task GID and local ID are preserved
 - Use `--dry-run` to preview what would be created without hitting Asana
 - To add subtasks under an existing task, see [new-subtask](new-subtask.md)

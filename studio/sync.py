@@ -1405,10 +1405,14 @@ def create_subtasks(parent_gid: str, names: list, dry_run: bool = False) -> list
 
 
 def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT UP",
-                     notes: str = "", due: str = "", dry_run: bool = False) -> str:
+                     notes: str = "", due: str = "", assignee: str = "",
+                     depends_on: str = "", dry_run: bool = False) -> str:
     """
     Create a task in Asana, assign a local ID, place it in the correct section,
     and append it to the local mirror. Returns the local ID (e.g. NORE-042).
+
+    assignee defaults to BainBot. depends_on is the GID of a task the new one
+    blocks; if linking it fails, the task exists but this raises.
     """
     from datetime import datetime
 
@@ -1421,12 +1425,13 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
         raise ValueError(f"Section '{section_name_upper}' not found in {proj.prefix}. Available: {available}")
 
     # 2. Create in Asana
+    assignee_gid = assignee or BAINBOT_GID
     payload = {
         "data": {
             "name": name,
             "projects": [proj.gid],
             "workspace": WORKSPACE_GID,
-            "assignee": BAINBOT_GID,
+            "assignee": assignee_gid,
         }
     }
     if notes:
@@ -1435,7 +1440,9 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
         payload["data"]["due_on"] = due
 
     if dry_run:
-        log.info(f"  [DRY-RUN] Would create task: {name!r} in {proj.prefix}/{section_name_upper}")
+        log.info(f"  [DRY-RUN] Would create task: {name!r} in {proj.prefix}/{section_name_upper}, "
+                 f"assigned to {assignee_gid}"
+                 + (f", blocking {depends_on}" if depends_on else ""))
         return f"{proj.prefix}-DRY"
 
     resp = _post("/tasks", payload)
@@ -1459,7 +1466,25 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
         except Exception as e:
             log.warning(f"  Could not write Local ID to Asana: {e}")
 
-    # 5. Append to mirror
+    # 5. Link the task it blocks. Fail loudly: a silently missing dependency is
+    # how BSTD-819 went unnoticed.
+    if depends_on:
+        try:
+            _post(f"/tasks/{depends_on}/addDependencies", {"data": {"dependencies": [new_gid]}})
+            log.info(f"  Linked as dependency of {depends_on}")
+        except Exception as e:
+            raise RuntimeError(f"Created {lid} ({new_gid}) but could not make it block "
+                               f"{depends_on}: {e}") from e
+
+    if assignee_gid == BAINBOT_GID:
+        assignee_name = ASSIGNEE_NAME
+    else:
+        try:
+            assignee_name = _get(f"/users/{assignee_gid}", {"opt_fields": "name"})["data"]["name"]
+        except Exception:
+            assignee_name = assignee_gid
+
+    # 6. Append to mirror
     today = date.today().isoformat()
     now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     permalink = f"https://app.asana.com/1/{WORKSPACE_GID}/project/{proj.gid}/task/{new_gid}"
@@ -1470,12 +1495,12 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
         f"- **Section:** {section_name_upper}",
         f"- **Due:** {due if due else 'none'}",
         f"- **Start:** none",
-        f"- **Assignee:** {ASSIGNEE_NAME} ({BAINBOT_GID})",
+        f"- **Assignee:** {assignee_name} ({assignee_gid})",
         f"- **Assignee Status:** inbox",
         f"- **Tags:** none",
         f"- **Followers:** none",
         f"- **Dependencies:** none",
-        f"- **Dependents:** none",
+        f"- **Dependents:** {f'{depends_on} ({depends_on})' if depends_on else 'none'}",
         f"- **Notes:** {notes if notes else 'none'}",
         f"- **Blockers:** None identified.",
         f"- **Progress:** Checked {TODAY}.",
@@ -1794,7 +1819,8 @@ def main():
     parser.add_argument("--task-due", metavar="YYYY-MM-DD", default="",
                         help="Due date for the new task (optional)")
     parser.add_argument("--task-assignee", metavar="GID", default="",
-                        help="Assignee GID (optional; defaults to Mark's GID if not set)")
+                        help="Assignee GID for --create-task (default: BainBot). "
+                             "Use 'me' for ASANA_USER_GID")
     parser.add_argument("--task-depends-on", metavar="GID", default="",
                         help="GID of the task this new task unblocks (optional)")
     parser.add_argument("--update-task", action="store_true",
@@ -1882,14 +1908,25 @@ def main():
             log.error(f"No project found with prefix '{args.project}'.")
             sys.exit(1)
         proj = projects[0]
-        lid = create_task_full(
-            proj=proj,
-            name=args.task_name,
-            section_name=args.task_section,
-            notes=args.task_notes,
-            due=args.task_due,
-            dry_run=args.dry_run,
-        )
+        assignee = args.task_assignee
+        if assignee == "me":
+            if not USER_GID:
+                parser.error("--task-assignee me needs ASANA_USER_GID in studio/.env")
+            assignee = USER_GID
+        try:
+            lid = create_task_full(
+                proj=proj,
+                name=args.task_name,
+                section_name=args.task_section,
+                notes=args.task_notes,
+                due=args.task_due,
+                assignee=assignee,
+                depends_on=args.task_depends_on,
+                dry_run=args.dry_run,
+            )
+        except RuntimeError as e:
+            log.error(str(e))
+            sys.exit(1)
         print(lid)
         sys.exit(0)
 
