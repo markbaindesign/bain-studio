@@ -68,6 +68,12 @@ The script is idempotent and refuses to clobber a real file where a symlink belo
 tree has grown its own copy of some state, it reports a conflict and exits non-zero rather than
 deleting data.
 
+**Exception: `studio/sync.log` is not linked.** `sync.py` rotates its log, and rotation renames
+the symlink away and leaves a real file behind, so cron's sync log lives in the ops worktree at
+`/home/bain/ops/bain-studio/studio/sync.log` (plus `.1`-`.3`). The dev checkout's `sync.log` only
+holds syncs run by hand there. The `SYNC_LOG` env var overrides the path; the test suite uses it
+to write to a temp file.
+
 ## What runs where
 
 | Job | Tree | Why |

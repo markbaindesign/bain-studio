@@ -103,8 +103,9 @@ def _setup_logging() -> logging.Logger:
     ch.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(ch)
 
+    # SYNC_LOG redirects the file log; the test suite points it at a temp file.
     fh = RotatingFileHandler(
-        STUDIO_DIR / "sync.log",
+        os.getenv("SYNC_LOG") or STUDIO_DIR / "sync.log",
         maxBytes=5 * 1024 * 1024,
         backupCount=3,
         encoding="utf-8",
