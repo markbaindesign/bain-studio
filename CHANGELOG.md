@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.1] - 2026-10-06
+
+### Fixed
+- `ops-deploy.sh` no longer reports a conflict on `studio/sync.log`. `sync.py` rotates that log, and rotation replaced the ops symlink with a real file, so the sync log is no longer linked: cron's copy lives in the ops worktree.
+- Test runs no longer write fake entries into the real `studio/sync.log`. `sync.py` takes a `SYNC_LOG` path override, which the test suite points at a temp file.
+
 ## [1.13.0] - 2026-10-06
 
 ### Added
@@ -387,7 +393,8 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.13.0...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.13.1...develop
+[1.13.1]: https://github.com/markbaindesign/bain-studio/compare/1.13.0...1.13.1
 [1.13.0]: https://github.com/markbaindesign/bain-studio/compare/1.12.0...1.13.0
 [1.12.0]: https://github.com/markbaindesign/bain-studio/compare/1.11.2...1.12.0
 [1.11.2]: https://github.com/markbaindesign/bain-studio/compare/1.11.1...1.11.2
