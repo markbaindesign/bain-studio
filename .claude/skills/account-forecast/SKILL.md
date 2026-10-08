@@ -20,13 +20,35 @@ Read `/media/data/Dropbox/Work/Admin/Financial/Accounting/accounts.json`. If mor
 
 Key fields:
 - `bank_balances` — current balance per account
-- `upcoming_all` — every predicted transaction, each with `date`, `label`, `amount`, `type` (`fixed`, `tax`, `draw`, `income`, ...), and `account`
+- `upcoming_all` — every predicted transaction, each with `date`, `label`, `amount`, `type` (`fixed`, `tax`, `draw`, `income`, ...), and `account`. Income entries also carry a `tier`.
+
+### 1b. Check there is income — stop if there isn't
+
+A cash flow forecast without income is wrong, not cautious. Income comes from `studio/dashboard/income_forecast.py` in five tiers:
+
+| Tier | Source | Confidence |
+|---|---|---|
+| `receivable` | open items in GnuCash Accounts Receivable (invoices sent) | high |
+| `unbilled` | Harvest billable hours not yet invoiced | high |
+| `fixed` | `FINANCE_CONFIG_DIR/income.yaml` `recurring:` (same amount each period) | high |
+| `predicted` | `income.yaml` `recurring:` (amount varies) | medium |
+| `milestone` | `income.yaml` `milestones:` (agreed, not yet invoiced) | medium |
+
+Untiered `income` entries come from hand-dated `expected_income.yaml` lines.
+
+If `income_sources_missing` is non-empty (e.g. `harvest`), say which income is missing at the top of the output.
+
+If `upcoming_all` has no `type: income` entries, do not present balances. Say so and point at `income.yaml` and Accounts Receivable.
 
 ### 2. Split unattributed transactions
 
 Some recurring items in `upcoming_all` have `account: "Unknown"` — the source data doesn't yet say which account they draw from. Pull these into a separate "unassigned" list and call them out explicitly. Don't guess which account they belong to and don't fold them into any account's running balance — a wrong guess is worse than an honest gap.
 
 ### 3. Group and project, per account
+
+Run the projection twice:
+- **Base case:** receivable + unbilled + fixed income (and untiered) only. Shortfalls are judged on this.
+- **With upside:** every tier. Reported as what happens if predicted income and milestones land.
 
 For each named account (not "Unknown"):
 - Start from its current balance (`bank_balances`).
@@ -44,7 +66,9 @@ Any point where an account's running balance goes negative is a flag. For each f
 
 ### 5. Output
 
-Lead with a one-line summary: which accounts (if any) run short, and by when. This is the part that actually matters — put it first, not buried in tables.
+Lead with a one-line summary: which accounts (if any) run short in the base case, by when, and whether the upside covers it. This is the part that actually matters — put it first, not buried in tables.
+
+Show the income tier in the Type column, so a reader can see what the balance depends on.
 
 Then, per account, a table:
 

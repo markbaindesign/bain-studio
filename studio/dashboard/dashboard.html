@@ -170,6 +170,21 @@ header h1::before {
   color: var(--pencil);
   margin-bottom: 14px;
 }
+/* Exchange-rate subheader, shown on every Financial screen */
+.fx-bar {
+  font-size: 11px;
+  color: var(--pencil);
+  /* lines up with .grid below it, which supplies the gap to the cards */
+  padding: var(--space-5) var(--space-6) 0;
+  margin: 0 auto calc(-1 * var(--space-2));
+  max-width: 1440px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+}
+.fx-bar strong { color: var(--graphite); font-weight: 600; }
+.fx-bar .fx-warn { color: var(--vermilion); }
+
 .section-label {
   font-size: 11px;
   font-weight: 700;
@@ -574,6 +589,72 @@ header h1::before {
   border-color: var(--ink);
 }
 
+/* Sidebar sub-navigation: every tab has one, listing that tab's screens */
+.app-body { display: flex; align-items: flex-start; }
+#pages { flex: 1; min-width: 0; }
+.subnav {
+  width: 176px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  padding: var(--space-5) 0 var(--space-5) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.subnav-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pencil);
+  padding: 0 var(--space-3) var(--space-2);
+}
+.subnav-btn {
+  text-align: left;
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  padding: 6px var(--space-3);
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg-3);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.subnav-btn:hover { background: var(--hover-bg); color: var(--fg-1); }
+.subnav-btn.active {
+  color: var(--ink);
+  font-weight: 700;
+  background: var(--paper-pure);
+  border-left-color: var(--clay);
+}
+
+/* Cashflow + Configs screens */
+.table-scroll { overflow-x: auto; }
+.ops-table th.num, .ops-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ops-table tr.shortfall td { background: rgba(196, 61, 47, 0.08); }
+.ops-table td.cell-wrap { white-space: normal; word-break: break-word; }
+.table-scroll > .ops-table { min-width: 560px; }
+.tier {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border: 1px solid var(--rule-soft);
+  white-space: nowrap;
+  color: var(--graphite);
+}
+.tier-receivable, .tier-unbilled, .tier-fixed { border-color: var(--phosphor); color: #15803d; }
+.tier-predicted, .tier-milestone { border-color: var(--amber); color: #9a6a12; }
+.tier-transfer { border-color: var(--link); color: var(--link); }
+.cfg-meta { font-size: 11px; color: var(--pencil); margin: -8px 0 var(--space-4); }
+.cfg-desc { font-size: 12px; color: var(--graphite); margin-bottom: var(--space-4); max-width: 80ch; }
+.cfg-section { font-size: 12px; font-weight: 700; margin: var(--space-4) 0 var(--space-2); }
+.cfg-section:first-of-type { margin-top: 0; }
+.cfg-none { font-size: 12px; color: var(--pencil); }
+.note { font-size: 12px; color: var(--graphite); }
+.note-warn { color: var(--vermilion); font-weight: 700; }
+
 @media (max-width: 1100px) {
   .col-3, .col-4, .col-5, .col-6, .col-7, .col-8 { grid-column: span 6; }
   .pipeline-hdr, .pipeline-row { grid-template-columns: 1fr 80px 44px 80px 60px; }
@@ -581,8 +662,17 @@ header h1::before {
   .briefs-hdr span:last-child, .briefs-row .briefs-dim:last-child { display: none; }
 }
 @media (max-width: 700px) {
+  .app-body { flex-direction: column; }
+  .subnav {
+    position: static; width: 100%; flex-direction: row; overflow-x: auto;
+    padding: var(--space-3) var(--space-3) 0;
+  }
+  .subnav-title { display: none; }
+  .subnav-btn { border-left: none; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .subnav-btn.active { border-bottom-color: var(--clay); }
   .col-3, .col-4, .col-5, .col-6, .col-7, .col-8, .col-12 { grid-column: span 12; }
   .grid { padding: var(--space-3); }
+  .fx-bar { padding: var(--space-3) var(--space-3) 0; margin-bottom: 0; }
   header { padding: var(--space-3) var(--space-4); }
   .pipeline-hdr, .pipeline-row { grid-template-columns: 1fr 44px 80px 56px; }
   .pipeline-hdr span:nth-child(2), .pipeline-row .pipeline-budget { display: none; }
@@ -613,6 +703,11 @@ header h1::before {
 </header>
 
 <div id="errorBanner" class="error-banner"></div>
+
+<div class="app-body">
+<aside class="subnav" id="subnav" aria-label="Screens"></aside>
+<main id="pages">
+<div id="fxBar" class="fx-bar" style="display:none"></div>
 
 <!-- Highlights page -->
 <div id="page-highlights">
@@ -656,6 +751,23 @@ header h1::before {
   </div>
 </div>
 
+<!-- Financial > Cashflow -->
+<div id="page-finance-cashflow" style="display:none">
+  <div class="grid" id="cashflowGrid">
+    <div class="card col-12"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
+  </div>
+</div>
+
+<!-- Financial > Configs -->
+<div id="page-finance-configs" style="display:none">
+  <div class="grid" id="configsGrid">
+    <div class="card col-12"><div class="skel skel-lg"></div><div class="skel skel-text" style="width:60%"></div></div>
+  </div>
+</div>
+
+</main>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 let plChart, donutChart, beChart;
@@ -668,52 +780,91 @@ let pipelineDays = 7;
 
 const TABS = ['highlights', 'finance', 'kf', 'pipeline', 'ops'];
 
-function parseHash() {
-  const raw = location.hash.replace(/^#/, '') || 'highlights';
-  const [tab, qs] = raw.split('?');
-  const params = {};
-  if (qs) new URLSearchParams(qs).forEach((v, k) => { params[k] = v; });
-  return { tab: TABS.includes(tab) ? tab : 'highlights', params };
+// Each tab's screens, listed in its sidebar. 'overview' is the tab's original page
+// (#page-<tab>); any other screen lives in #page-<tab>-<screen>.
+const SCREENS = {
+  highlights: [['overview', 'Overview']],
+  finance:    [['overview', 'Overview'], ['cashflow', 'Cashflow'], ['configs', 'Configs']],
+  kf:         [['overview', 'Overview']],
+  pipeline:   [['overview', 'Overview']],
+  ops:        [['overview', 'Overview']],
+};
+const TAB_LABELS = { highlights: 'Highlights', finance: 'Financial', kf: 'KF Time Budget', pipeline: 'Pipeline', ops: 'Ops' };
+let currentScreen = 'overview';
+
+function pageId(tab, screen) {
+  return screen === 'overview' ? `page-${tab}` : `page-${tab}-${screen}`;
 }
 
-function buildHash(tab, params) {
-  const defaults = { status: 'all', score: 'all', days: '7' };
+function parseHash() {
+  const raw = location.hash.replace(/^#/, '') || 'highlights';
+  const [path, qs] = raw.split('?');
+  let [tab, screen] = path.split('/');
+  const params = {};
+  if (qs) new URLSearchParams(qs).forEach((v, k) => { params[k] = v; });
+  if (!TABS.includes(tab)) tab = 'highlights';
+  if (!SCREENS[tab].some(([id]) => id === screen)) screen = 'overview';
+  return { tab, screen, params };
+}
+
+function buildHash(tab, params, screen = 'overview') {
+  const defaults = { status: 'all', score: 'all', days: '7', scenario: 'base' };
   const qs = new URLSearchParams(
     Object.entries(params).filter(([k, v]) => v !== defaults[k])
   ).toString();
-  return '#' + tab + (qs ? '?' + qs : '');
+  return '#' + tab + (screen !== 'overview' ? '/' + screen : '') + (qs ? '?' + qs : '');
 }
 
-function navigate(tab, newParams = {}) {
+function navigate(tab, newParams = {}, screen = 'overview') {
   const cur = parseHash();
-  const params = cur.tab === tab ? { ...cur.params, ...newParams } : newParams;
-  history.pushState(null, '', buildHash(tab, params));
+  const same = cur.tab === tab && cur.screen === screen;
+  const params = same ? { ...cur.params, ...newParams } : newParams;
+  history.pushState(null, '', buildHash(tab, params, screen));
   onHashChange();
 }
 
+function renderSubnav(tab, screen) {
+  document.getElementById('subnav').innerHTML =
+    `<div class="subnav-title">${TAB_LABELS[tab]}</div>` +
+    SCREENS[tab].map(([id, label]) =>
+      `<button class="subnav-btn ${id === screen ? 'active' : ''}" onclick="switchScreen('${id}')">${label}</button>`
+    ).join('');
+}
+
 function onHashChange() {
-  const { tab, params } = parseHash();
-  const prevTab  = currentTab;
-  const prevDays = pipelineDays;
+  const { tab, screen, params } = parseHash();
+  const prevTab    = currentTab;
+  const prevScreen = currentScreen;
+  const prevDays   = pipelineDays;
 
   pipelineDays         = parseInt(params.days   || '7',   10);
   pipelineStatusFilter = params.status || 'all';
   pipelineScoreFilter  = params.score  || 'all';
   currentTab = tab;
+  currentScreen = screen;
 
   TABS.forEach(t => {
-    document.getElementById(`page-${t}`).style.display = t === tab ? '' : 'none';
+    SCREENS[t].forEach(([s]) => {
+      document.getElementById(pageId(t, s)).style.display = (t === tab && s === screen) ? '' : 'none';
+    });
     document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
   });
+  renderSubnav(tab, screen);
+  document.getElementById('fxBar').style.display = tab === 'finance' ? '' : 'none';
+  if (tab === 'finance') loadFx();
 
-  if (tab === 'highlights') {
+  if (tab === 'finance' && screen === 'cashflow') {
+    loadCashflow(params.scenario || 'base');
+  } else if (tab === 'finance' && screen === 'configs') {
+    loadConfigs();
+  } else if (tab === 'highlights') {
     loadHighlights();
   } else if (tab === 'kf') {
     loadKF();
   } else if (tab === 'ops') {
     loadOps();
   } else if (tab === 'pipeline') {
-    const needFetch = prevTab !== 'pipeline' || pipelineDays !== prevDays || !_pipelineBriefs.length;
+    const needFetch = prevTab !== 'pipeline' || prevScreen !== screen || pipelineDays !== prevDays || !_pipelineBriefs.length;
     if (needFetch) {
       loadPipeline();
     } else {
@@ -729,11 +880,32 @@ function onHashChange() {
   }
 }
 
+// Exchange-rate subheader for the Financial tab. Every screen converts USD/GBP to
+// EUR with these rates, so they're always shown alongside the figures.
+function renderFxBar(fx) {
+  const live = /^frankfurter/.test(fx.source || '');
+  const r = v => '€' + v.toFixed(4);
+  document.getElementById('fxBar').innerHTML = `
+    <span>Exchange rates</span>
+    <span><strong>1 USD = ${r(fx.USD_TO_EUR)}</strong></span>
+    <span><strong>1 GBP = ${r(fx.GBP_TO_EUR)}</strong></span>
+    <span class="${live ? '' : 'fx-warn'}">${fx.source || ''}</span>`;
+}
+async function loadFx() {
+  try {
+    const res = await fetch('/api/fx');
+    if (res.ok) renderFxBar(await res.json());
+  } catch (e) { /* bar keeps its last rates */ }
+}
+
 function switchTab(tab) { navigate(tab); }
+function switchScreen(screen) { navigate(currentTab, {}, screen); }
 
 function refreshCurrent() {
-  const { tab } = parseHash();
-  if (tab === 'highlights') loadHighlights();
+  const { tab, screen, params } = parseHash();
+  if (tab === 'finance' && screen === 'cashflow') loadCashflow(params.scenario || 'base');
+  else if (tab === 'finance' && screen === 'configs') loadConfigs();
+  else if (tab === 'highlights') loadHighlights();
   else if (tab === 'kf') loadKF();
   else if (tab === 'ops') loadOps();
   else if (tab === 'pipeline') loadPipeline();
@@ -788,7 +960,8 @@ function renderKPIs(g, h) {
   const bufferClass = bufferVsBE >= 0 ? 'positive' : 'negative';
 
   // Upcoming month totals
-  const upcoming = g.upcoming || [];
+  // Bills only: `upcoming` also carries forecast income (type 'income').
+  const upcoming = (g.upcoming || []).filter(u => u.type !== 'income');
   const thisMonthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0,10);
   const nextMonthEnd = new Date(today.getFullYear(), today.getMonth() + 2, 0).toISOString().slice(0,10);
   const thisMo = upcoming.filter(u => u.date <= thisMonthEnd).reduce((s,u) => s + u.amount, 0);
@@ -969,7 +1142,10 @@ function renderInvoices(harvest) {
           <div class="invoice-client">${inv.client} <span class="invoice-num">#${inv.number}</span></div>
           <div class="invoice-due">Due ${inv.due_date || '—'} ${od ? '<span class="overdue-tag">overdue</span>' : ''}</div>
         </div>
-        <div class="invoice-amt ${od ? 'negative' : ''}">${fmt(inv.due_amount)}</div>
+        <div style="text-align:right;">
+          <div class="invoice-amt ${od ? 'negative' : ''}">${inv.currency === 'EUR' ? fmt(inv.due_amount) : `${fmtNative(inv.due_amount, inv.currency)} <span class="invoice-due">≈ ${fmt(inv.due_amount_eur)}</span>`}</div>
+          ${inv.due_amount !== inv.amount ? `<div class="invoice-due">of ${fmtNative(inv.amount, inv.currency)}</div>` : ''}
+        </div>
       </div>`;
   }).join('');
 
@@ -1110,14 +1286,11 @@ async function loadData() {
       banner.style.display = 'none';
     }
 
-    // Updated timestamp + live FX rates
+    // Updated timestamp (FX rates live in the Financial subheader)
     const ts = new Date(d.generated_at);
-    const fx = d.fx || {};
-    const fxStr = fx.USD_TO_EUR
-      ? ` · USD/EUR ${fx.USD_TO_EUR.toFixed(4)} · GBP/EUR ${fx.GBP_TO_EUR.toFixed(4)}`
-      : '';
     document.getElementById('updatedAt').textContent =
-      'Updated ' + ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + fxStr;
+      'Updated ' + ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    if (d.fx && d.fx.USD_TO_EUR) renderFxBar(d.fx);
 
     // Render grid
     const grid = document.getElementById('mainGrid');
@@ -1126,7 +1299,7 @@ async function loadData() {
 
       <div class="section-label">Cash &amp; Liquidity</div>
       ${renderBalances(g.balances || [], g.total_eur || 0, g.liquid_eur)}
-      ${renderUpcoming(g.upcoming || [])}
+      ${renderUpcoming((g.upcoming || []).filter(u => u.type !== 'income'))}
       ${renderInvoices(h)}
 
       <div class="section-label">Projects</div>
@@ -1381,7 +1554,7 @@ async function loadHighlights() {
     const today = new Date().toISOString().slice(0, 10);
     (h.invoices || []).filter(i => i.state === 'open' && i.due_date && i.due_date < today)
       .forEach(i => add(0, 'finance', `Invoice ${i.number} to ${i.client} overdue: ${fmtNative(i.due_amount, i.currency)} due ${i.due_date}`));
-    const soon = (g.upcoming || []).filter(u => u.days <= 7);
+    const soon = (g.upcoming || []).filter(u => u.days <= 7 && u.type !== 'income');
     if (soon.length) add(1, 'finance', `${soon.length} payment${soon.length > 1 ? 's' : ''} in the next 7 days, ${fmt(soon.reduce((a, u) => a + (u.currency === 'EUR' ? u.amount : 0), 0))} EUR: ${soon.slice(0, 3).map(u => u.label).join(', ')}`);
     if (h.uninvoiced && h.uninvoiced.total_eur > 0) add(1, 'finance', `${fmt(h.uninvoiced.total_eur)} tracked but not yet invoiced`);
     add(2, 'finance', `Liquid cash ${fmt(g.liquid_eur)}`);
@@ -1837,6 +2010,326 @@ async function loadPipeline() {
 function setPipelineDays(days) { navigate('pipeline', { days: String(days) }); }
 
 // Boot
+// ---------------------------------------------------------------------------
+// Financial > Cashflow
+// ---------------------------------------------------------------------------
+
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function eur2(n) {
+  const sign = n < 0 ? '−' : '';
+  return sign + '€' + Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function shortDate(iso) {
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+const TIER_LABELS = {
+  receivable: 'Invoices sent', unbilled: 'Unbilled hours', fixed: 'Fixed recurring',
+  predicted: 'Predicted', milestone: 'Milestones', expected: 'Expected (manual)',
+};
+const TIER_ORDER = ['receivable', 'unbilled', 'fixed', 'expected', 'predicted', 'milestone'];
+
+function accountName(n) { return n.replace(/^Wise:Wise \(Business\):/, '').replace(/^Wise:Wise \(Personal\):/, ''); }
+
+function setScenario(v) { navigate('finance', { scenario: v }, 'cashflow'); }
+
+function renderCashflowPage(d, scenario) {
+  const sc = d[scenario];
+  const other = d[scenario === 'base' ? 'all' : 'base'];
+  const baseTiers = d.base_tiers;
+
+  const chips = [['base', 'Base case'], ['all', 'With upside']].map(([v, l]) =>
+    `<button class="filter-chip ${scenario === v ? 'active' : ''}" onclick="setScenario('${v}')">${l}</button>`).join('');
+
+  // First dip and lowest point per account: the first dip can be cents, the low much deeper.
+  const short = sc.shortfalls.length
+    ? sc.shortfalls.map(f => {
+        const acct = sc.accounts.find(a => a.name === f.account);
+        const low = acct ? acct.rows.reduce((m, r) => (r.balance < m.balance ? r : m), acct.rows[0]) : null;
+        const lowText = low && low.balance < f.balance - 0.005
+          ? `, lowest ${eur2(low.balance)} on ${shortDate(low.date)} (${esc(low.label)})` : '';
+        return `<div class="note"><span class="note-warn">${esc(accountName(f.account))}</span> first goes negative on ${shortDate(f.date)} (${eur2(f.balance)}, ${esc(f.label)})${lowText}</div>`;
+      }).join('')
+    : `<div class="note positive">Every account stays positive to ${shortDate(d.window_end)}.</div>`;
+  const otherNote = scenario === 'base'
+    ? (other.shortfalls.length ? 'Still short with predicted income and milestones too.' : 'Covered if predicted income and milestones land.')
+    : (other.shortfalls.length ? 'The base case alone runs short; this view depends on predicted income and milestones.' : 'The base case alone also stays positive.');
+  const missing = (d.income_sources_missing || []).length
+    ? `<div class="note note-warn" style="margin-top:8px">Income incomplete: ${d.income_sources_missing.map(esc).join(', ')} unavailable.</div>` : '';
+
+  const tierRows = TIER_ORDER.filter(t => d.income_by_tier[t] !== undefined).map(t => {
+    const inBase = t === 'expected' || baseTiers.includes(t);
+    return `<tr><td><span class="tier tier-${t}">${TIER_LABELS[t]}</span></td>
+      <td>${inBase ? 'Base' : 'Upside'}</td><td class="num">${eur2(d.income_by_tier[t])}</td></tr>`;
+  }).join('');
+
+  const accounts = sc.accounts.map(a => {
+    const rows = a.rows.map(r => `
+      <tr class="${r.shortfall ? 'shortfall' : ''}">
+        <td>${shortDate(r.date)}</td>
+        <td class="cell-wrap">${esc(r.label)}</td>
+        <td><span class="tier tier-${esc(r.type)}">${esc(r.type)}</span></td>
+        <td class="num ${r.amount > 0 ? 'positive' : ''}">${r.amount > 0 ? '+' : ''}${eur2(r.amount)}</td>
+        <td class="num ${r.balance < 0 ? 'negative' : ''}">${eur2(r.balance)}${r.shortfall ? ' ⚠' : ''}</td>
+      </tr>`).join('');
+    const end = a.rows.length ? a.rows[a.rows.length - 1].balance : a.start;
+    return `
+      <div class="card col-12">
+        <div class="card-title">${esc(accountName(a.name))} · start ${eur2(a.start)} · end ${eur2(end)}</div>
+        <div class="table-scroll"><table class="ops-table">
+          <thead><tr><th>Date</th><th>Label</th><th>Type</th><th class="num">Amount</th><th class="num">Balance</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>`;
+  }).join('');
+
+  const unassigned = sc.unassigned.length ? `
+    <div class="card col-12">
+      <div class="card-title">Unassigned (no account attributed)</div>
+      <table class="ops-table"><thead><tr><th>Date</th><th>Label</th><th>Type</th><th class="num">Amount</th></tr></thead><tbody>
+      ${sc.unassigned.map(u => `<tr><td>${shortDate(u.date)}</td><td class="cell-wrap">${esc(u.label)}</td><td>${esc(u.type)}</td><td class="num">${eur2(u.amount)}</td></tr>`).join('')}
+      </tbody></table>
+    </div>` : '';
+
+  document.getElementById('cashflowGrid').innerHTML = `
+    <div class="card col-12">
+      <div class="card-title">All accounts · running balance to ${shortDate(d.window_end)} · ${scenario === 'base' ? 'base case' : 'with upside'}</div>
+      <div class="chart-wrap" style="height:300px;"><canvas id="cashflowChart" role="img"
+        aria-label="Running balance of each bank account over the forecast window; the tables below give every figure"></canvas></div>
+    </div>
+    <div class="card col-6">
+      <div class="card-title">Cashflow to ${shortDate(d.window_end)}</div>
+      <div class="filter-bar">${chips}</div>
+      ${short}
+      <div class="note" style="margin-top:6px">${otherNote}</div>
+      ${missing}
+      <div class="note" style="margin-top:10px;color:var(--pencil)">BBVA shortfalls are covered by a predicted transfer from Wise USD on the day.</div>
+    </div>
+    <div class="card col-6">
+      <div class="card-title">Forecast income by tier</div>
+      <table class="ops-table"><thead><tr><th>Tier</th><th>Counts in</th><th class="num">Total</th></tr></thead><tbody>${tierRows}</tbody></table>
+    </div>
+    ${accounts}
+    ${unassigned}
+  `;
+  renderCashflowChart(sc.accounts, d.window_end);
+}
+
+// Categorical slots 1-3 of the dataviz reference palette, validated all-pairs on the
+// white card surface (CVD ΔE 9.2, normal-vision 24.0). Aqua is under 3:1 contrast, so
+// lines carry direct end labels and the tables below are the table view.
+const ACCOUNT_COLORS = ['#2a78d6', '#eb6834', '#1baf7a'];
+let cashflowChart;
+
+// Draws each account's name at its line's last point, nudged apart so labels never overlap.
+const endLabels = {
+  id: 'endLabels',
+  afterDatasetsDraw(chart) {
+    const { ctx, chartArea } = chart;
+    const labels = chart.data.datasets.map((ds, i) => {
+      const meta = chart.getDatasetMeta(i);
+      if (meta.hidden || !meta.data.length) return null;
+      const pt = meta.data[meta.data.length - 1];
+      return { text: ds.label, color: ds.borderColor, x: pt.x, y: pt.y };
+    }).filter(Boolean).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < labels.length; i++) {
+      labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 15);
+    }
+    ctx.save();
+    ctx.font = '11px "JetBrains Mono", monospace';
+    ctx.textBaseline = 'middle';
+    labels.forEach(l => {
+      ctx.fillStyle = l.color;
+      ctx.fillRect(chartArea.right + 8, l.y - 4, 8, 8);
+      ctx.fillStyle = '#3D3D3A';
+      ctx.fillText(l.text, chartArea.right + 20, l.y);
+    });
+    ctx.restore();
+  },
+};
+
+function renderCashflowChart(accounts, windowEnd) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const dayOf = iso => Math.round((new Date(iso + 'T00:00:00') - today) / 86400000);
+  const dateOf = n => { const d = new Date(today); d.setDate(d.getDate() + n); return d; };
+  const lastDay = dayOf(windowEnd);
+
+  // One point per day for every account (end-of-day balance, carried forward), so the
+  // hover tooltip reads the same date across all accounts.
+  const datasets = accounts.map((a, i) => {
+    const byDay = new Map();
+    a.rows.forEach(r => byDay.set(dayOf(r.date), r.balance));
+    const pts = [];
+    let bal = a.start;
+    for (let x = 0; x <= lastDay; x++) {
+      if (byDay.has(x)) bal = byDay.get(x);
+      pts.push({ x, y: bal });
+    }
+    const color = ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
+    return {
+      label: accountName(a.name).replace(/ \.\.\.\d+$/, ''),
+      data: pts, stepped: 'before', borderColor: color, backgroundColor: color,
+      borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 10,
+    };
+  });
+
+  // End labels need ~150px; on a narrow screen the legend alone names the lines.
+  const canvas = document.getElementById('cashflowChart');
+  const wide = canvas.parentElement.clientWidth >= 600;
+  if (cashflowChart) cashflowChart.destroy();
+  cashflowChart = new Chart(canvas, {
+    type: 'line',
+    data: { datasets },
+    plugins: wide ? [endLabels] : [],
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      layout: { padding: { right: wide ? 150 : 0 } },
+      interaction: { mode: 'nearest', axis: 'x', intersect: false },
+      plugins: {
+        legend: { position: 'top', align: 'start', labels: { boxWidth: 10, boxHeight: 10, font: { size: 11 }, color: '#3D3D3A' } },
+        tooltip: {
+          mode: 'index', intersect: false,
+          callbacks: {
+            title: items => dateOf(items[0].parsed.x).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+            label: item => ` ${item.dataset.label}: ${eur2(item.parsed.y)}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'linear', min: 0, max: lastDay,
+          grid: { display: false },
+          ticks: { stepSize: 7, color: '#8C8A85', font: { size: 11 },
+                   callback: v => dateOf(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) },
+        },
+        y: {
+          grid: { color: c => c.tick.value === 0 ? '#3D3D3A' : '#EEEAE2', lineWidth: c => c.tick.value === 0 ? 1.5 : 1 },
+          border: { display: false },
+          ticks: { color: '#8C8A85', font: { size: 11 }, callback: v => eur2(v).replace('.00', '') },
+        },
+      },
+    },
+  });
+}
+
+async function loadCashflow(scenario) {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning');
+  try {
+    const res = await fetch('/api/cashflow');
+    const d = await res.json();
+    if (!res.ok) throw new Error((d.errors || []).map(e => `${e.source}: ${e.message}`).join(' | ') || `Server error ${res.status}`);
+    const banner = document.getElementById('errorBanner');
+    banner.style.display = d.errors && d.errors.length ? 'block' : 'none';
+    banner.textContent = (d.errors || []).map(e => `${e.source}: ${e.message}`).join('  |  ');
+    document.getElementById('updatedAt').textContent =
+      'Updated ' + new Date(d.generated_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    renderCashflowPage(d, scenario === 'all' ? 'all' : 'base');
+  } catch (err) {
+    const banner = document.getElementById('errorBanner');
+    banner.style.display = 'block';
+    banner.textContent = 'Failed to load cashflow: ' + err.message;
+  } finally {
+    btn.classList.remove('spinning');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Financial > Configs — every finance YAML file, rendered as tables (read-only)
+// ---------------------------------------------------------------------------
+
+function isScalar(v) { return v === null || typeof v !== 'object'; }
+
+function cfgCell(v) {
+  if (isScalar(v)) return esc(v === null ? '' : v);
+  if (Array.isArray(v) && v.every(isScalar)) return v.map(esc).join(', ');
+  return cfgValue(v);
+}
+
+function cfgColumns(objs) {
+  const cols = [];
+  objs.forEach(o => Object.keys(o).forEach(k => { if (!cols.includes(k)) cols.push(k); }));
+  return cols;
+}
+
+function cfgTable(head, rows) {
+  return `<div class="table-scroll"><table class="ops-table">
+    <thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${r.map(c => `<td class="cell-wrap">${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+function cfgValue(v) {
+  if (isScalar(v)) return `<div class="note">${esc(v)}</div>`;
+  if (Array.isArray(v)) {
+    if (!v.length) return '<div class="cfg-none">None</div>';
+    if (v.every(x => x && typeof x === 'object' && !Array.isArray(x))) {
+      const cols = cfgColumns(v);
+      return cfgTable(cols, v.map(o => cols.map(c => cfgCell(o[c]))));
+    }
+    return cfgTable(['value'], v.map(x => [cfgCell(x)]));
+  }
+  const entries = Object.entries(v);
+  if (!entries.length) return '<div class="cfg-none">None</div>';
+  // A map of records (e.g. overheads: name -> {amount, ...}) reads best as one table.
+  if (entries.every(([, x]) => x && typeof x === 'object' && !Array.isArray(x))) {
+    const cols = cfgColumns(entries.map(([, x]) => x));
+    return cfgTable(['key', ...cols], entries.map(([k, x]) => [esc(k), ...cols.map(c => cfgCell(x[c]))]));
+  }
+  return cfgTable(['setting', 'value'], entries.map(([k, x]) => [esc(k), cfgCell(x)]));
+}
+
+function renderConfigFile(f) {
+  if (f.error) {
+    return `<div class="card col-12"><div class="card-title">${esc(f.file)}</div><div class="note note-warn">Could not parse: ${esc(f.error)}</div></div>`;
+  }
+  const data = { ...f.data };
+  const desc = data.description; delete data.description; delete data.name;
+  const scalars = Object.entries(data).filter(([, v]) => isScalar(v));
+  const sections = Object.entries(data).filter(([, v]) => !isScalar(v));
+  const mod = new Date(f.modified).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return `
+    <div class="card col-12" id="cfg-${esc(f.file.replace(/\W/g, '-'))}">
+      <div class="card-title">${esc(f.file)}</div>
+      <div class="cfg-meta">${esc(f.path)} · modified ${mod}</div>
+      ${desc ? `<div class="cfg-desc">${esc(desc)}</div>` : ''}
+      ${scalars.length ? `<div class="cfg-section">Settings</div>${cfgTable(['setting', 'value'], scalars.map(([k, v]) => [esc(k), cfgCell(v)]))}` : ''}
+      ${sections.map(([k, v]) => `<div class="cfg-section">${esc(k)}</div>${cfgValue(v)}`).join('')}
+    </div>`;
+}
+
+async function loadConfigs() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning');
+  try {
+    const res = await fetch('/api/configs');
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const d = await res.json();
+    document.getElementById('errorBanner').style.display = 'none';
+    document.getElementById('updatedAt').textContent = 'Read-only · edit the YAML files to change';
+    const index = d.files.map(f =>
+      `<button class="filter-chip" onclick="document.getElementById('cfg-${esc(f.file.replace(/\W/g, '-'))}').scrollIntoView({behavior:'smooth'})">${esc(f.file)}</button>`).join('');
+    document.getElementById('configsGrid').innerHTML = `
+      <div class="card col-12">
+        <div class="card-title">Finance configs</div>
+        <div class="cfg-meta" style="margin-top:0">${esc(d.dir)}</div>
+        <div class="filter-bar" style="margin-bottom:0">${index}</div>
+      </div>
+      ${d.files.map(renderConfigFile).join('')}`;
+  } catch (err) {
+    const banner = document.getElementById('errorBanner');
+    banner.style.display = 'block';
+    banner.textContent = 'Failed to load configs: ' + err.message;
+  } finally {
+    btn.classList.remove('spinning');
+  }
+}
+
 window.addEventListener('popstate', onHashChange);
 onHashChange();
 
