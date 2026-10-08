@@ -2,7 +2,7 @@
 tags: [tool, dashboard, ops]
 god: hermes
 command: studio/scripts/dashboard-app.sh
-description: Studio dashboard on port 5555 - Highlights home, finance, KF time budget, Upwork pipeline and Ops tabs. Not the Upwork pipeline dashboard on 5050.
+description: Studio dashboard on port 5555 - Highlights home, finance (overview, cashflow, configs), KF time budget, Upwork pipeline and Ops tabs. Not the Upwork pipeline dashboard on 5050.
 ---
 
 # Studio dashboard
@@ -19,7 +19,11 @@ python3 studio/dashboard/server.py     # server only, http://localhost:5555
 `dashboard-app.sh` is also installed as a "Studio Dashboard" desktop entry
 (`~/.local/share/applications/studio-dashboard.desktop`).
 
-## Tabs
+## Tabs and screens
+
+Every tab has a sidebar listing its screens. A screen is addressed as `#<tab>/<screen>` (e.g.
+`#finance/cashflow`); a bare `#<tab>` is its Overview. To add a screen, add it to `SCREENS` in
+`dashboard.html` and give it a `#page-<tab>-<screen>` container.
 
 | Tab | Source |
 |---|---|
@@ -28,6 +32,22 @@ python3 studio/dashboard/server.py     # server only, http://localhost:5555
 | KF Time Budget | `harvest_kf_collector` snapshot, `/api/kf` |
 | Pipeline | Upwork pipeline API on 5050 |
 | Ops | Crontab entries against their log files, Tailscale and SSH state, `/api/ops` |
+
+### Financial
+
+| Screen | Source | Shows |
+|---|---|---|
+| Overview | `/api/data` | Balances, upcoming bills, open Harvest invoices (in their own currency, with the EUR value and an EUR total), projects, P&L charts |
+| Cashflow | `/api/cashflow` | A stepped line chart of every bank account's daily balance on one EUR axis (zero line emphasised, hover for all accounts on a date), then the running balance per bank account to the end of the forecast window, with predicted top-ups into BBVA. A toggle switches between the **base case** (invoices sent, unbilled hours, fixed income) and **with upside** (adds predicted income and milestones). Shortfall rows are highlighted, and the summary gives each short account's first dip and its lowest point. Also totals forecast income by tier. |
+| Configs | `/api/configs` | Every `FINANCE_CONFIG_DIR/*.yaml` file rendered as tables, in the file's own key order. Read-only: edit the YAML to change anything. |
+
+Every Financial screen has a subheader showing the USD and GBP to EUR rates used for conversion,
+and their source (`/api/fx`: frankfurter.app, cached for an hour). The source turns red when the
+live fetch failed and the dashboard is using cached or hardcoded fallback rates.
+
+The Cashflow screen uses `studio/dashboard/cashflow.py`, the same projection as the daily Slack
+forecast (`account_forecast_report.py`), so the two always agree. Income comes from
+[[income-forecast]]. The Overview's bill totals and Upcoming Payments exclude income entries.
 
 ### Highlights
 

@@ -134,8 +134,9 @@ class HarvestClient:
                 'partial':       partial,
                 'by_project_id': by_project_id,
             }
-        except Exception:
-            return {'total_eur': 0, 'by_project': [], 'partial': [], 'by_project_id': {}}
+        except Exception as e:
+            # 'error' lets the income forecast tell "no unbilled hours" from "Harvest failed".
+            return {'total_eur': 0, 'by_project': [], 'partial': [], 'by_project_id': {}, 'error': str(e)}
 
     def get_earnings(self, usd_rate=0.92, gbp_rate=1.17):
         today       = date.today()
@@ -178,6 +179,13 @@ class HarvestClient:
         projects    = self.get_active_projects()
         invoices    = self.get_outstanding_invoices()
         uninvoiced  = self.get_uninvoiced_total(usd_rate=usd_rate, gbp_rate=gbp_rate)
+        # Invoices are in the client's currency; add EUR equivalents so totals don't
+        # mix currencies.
+        rates = {'EUR': 1.0, 'USD': usd_rate, 'GBP': gbp_rate}
+        for inv in invoices:
+            rate = rates.get(inv['currency'], 1.0)
+            inv['amount_eur']     = round(inv['amount'] * rate, 2)
+            inv['due_amount_eur'] = round(inv['due_amount'] * rate, 2)
         earnings    = self.get_earnings(usd_rate=usd_rate, gbp_rate=gbp_rate)
         month_time  = self.get_project_time_this_month()
 
@@ -200,5 +208,5 @@ class HarvestClient:
             'invoices':      invoices,
             'uninvoiced':    uninvoiced,
             'earnings':      earnings,
-            'invoice_total': round(sum(i['due_amount'] for i in invoices), 2),
+            'invoice_total': round(sum(i['due_amount_eur'] for i in invoices), 2),
         }

@@ -25,6 +25,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "dashboard"))
 import gnucash_parser
+import income_forecast
 
 
 def _require_env(name):
@@ -55,11 +56,14 @@ def fetch_from_server():
 def fetch_direct() -> dict:
     """Parse the GnuCash file directly, without the server."""
     fx = _get_fx_rates()
-    gnucash = gnucash_parser.parse(str(GNUCASH_FILE), usd_rate=fx['USD'], gbp_rate=fx['GBP'])
+    harvest = _fetch_harvest(fx)
+    gnucash = gnucash_parser.parse(str(GNUCASH_FILE), usd_rate=fx['USD'], gbp_rate=fx['GBP'],
+                                   harvest_projects=income_forecast.harvest_projects(harvest))
 
     return {
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'gnucash': gnucash,
+        'harvest': harvest,
         'fx': {
             'USD_TO_EUR': fx['USD'],
             'GBP_TO_EUR': fx['GBP'],
@@ -67,6 +71,20 @@ def fetch_direct() -> dict:
         },
         'errors': [],
     }
+
+
+def _fetch_harvest(fx) -> dict:
+    """Same Harvest data the dashboard server serves, so the direct path still forecasts
+    unbilled hours. On failure the parser records 'harvest' in income_sources_missing."""
+    token = os.getenv('HARVEST_TOKEN', '').strip()
+    account_id = os.getenv('HARVEST_ACCOUNT_ID', '').strip()
+    if not (token and account_id):
+        return {'configured': False}
+    try:
+        from harvest_client import HarvestClient
+        return HarvestClient(token, account_id).fetch_all(usd_rate=fx['USD'], gbp_rate=fx['GBP'])
+    except Exception as e:
+        return {'configured': True, 'error': str(e)}
 
 
 def _get_fx_rates() -> dict:
@@ -111,7 +129,7 @@ def build_financial_snapshot(data: dict) -> dict:
 
     # Cashflow risk: upcoming 30d obligations vs liquid cash, offset by expected incoming payments
     upcoming_total = sum(u['amount'] for u in obligations_30)
-    income_total   = sum(u['amount'] for u in upcoming_30 if u.get('type') == 'income')
+    income_total   = sum(u['amount'] for u in upcoming_30 if income_forecast.is_base(u))  # base case only
     balance_after  = liquid_eur - upcoming_total + income_total
 
     return {
@@ -137,6 +155,7 @@ def build_financial_snapshot(data: dict) -> dict:
         'income_30d_total': round(income_total, 2),
         'balance_after_30d': round(balance_after, 2),
         'expected_income': g.get('expected_income', []),
+        'income_sources_missing': g.get('income_sources_missing', []),
         'bbva_forecast': g.get('bbva_forecast', {}),
 
         # Recent income (for pipeline context)
@@ -175,7 +194,7 @@ def main():
     today = _date.today()
     month_end = str(_date(today.year, today.month, _cal.monthrange(today.year, today.month)[1]))
     eom_obligations = sum(u['amount'] for u in snapshot['upcoming_30d'] if u['date'] <= month_end and u.get('type') != 'income')
-    eom_income      = sum(u['amount'] for u in snapshot['upcoming_30d'] if u['date'] <= month_end and u.get('type') == 'income')
+    eom_income      = sum(u['amount'] for u in snapshot['upcoming_30d'] if u['date'] <= month_end and income_forecast.is_base(u))
     eom_balance = snapshot['liquid_eur'] - eom_obligations + eom_income
     print(f'  End-of-month obligations ({month_end}): €{eom_obligations:,.2f}')
     print(f'  Liquid after month-end: €{eom_balance:,.2f}')

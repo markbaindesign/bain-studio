@@ -15,6 +15,7 @@ load_dotenv(HERE.parent / '.env')  # studio/.env — single source, no local ove
 
 sys.path.insert(0, str(HERE))
 import gnucash_parser
+import income_forecast
 import ops_status
 from harvest_client import HarvestClient
 
@@ -63,6 +64,12 @@ KF_SNAPSHOT = _STUDIO_CONTENT_DIR / 'projects' / 'kf' / 'time_snapshot.json'
 @app.route('/')
 def index():
     return send_file(HERE / 'dashboard.html')
+
+
+@app.route('/api/fx')
+def api_fx():
+    rates, source = get_fx_rates()
+    return jsonify({'USD_TO_EUR': rates['USD'], 'GBP_TO_EUR': rates['GBP'], 'source': source})
 
 
 @app.route('/api/kf')
@@ -187,6 +194,11 @@ def api_transactions():
 
 @app.route('/api/data')
 def api_data():
+    return jsonify(_collect())
+
+
+def _collect():
+    """GnuCash + Harvest + FX, as served by /api/data and used by /api/cashflow."""
     # Reload .env on each request so credential changes take effect without restart
     load_dotenv(Path(__file__).resolve().parent.parent / '.env', override=True)
     harvest_token      = os.getenv('HARVEST_TOKEN', '').strip()
@@ -210,16 +222,6 @@ def api_data():
         'source': fx_source,
     }
 
-    # GNUCash — always attempt
-    try:
-        result['gnucash'] = gnucash_parser.parse(
-            GNUCASH_PATH,
-            usd_rate=fx_rates['USD'],
-            gbp_rate=fx_rates['GBP'],
-        )
-    except Exception as e:
-        errors.append({'source': 'gnucash', 'message': str(e)})
-
     # Harvest
     if harvest_token and harvest_account_id:
         try:
@@ -233,7 +235,109 @@ def api_data():
         if not harvest_token:
             errors.append({'source': 'harvest', 'message': 'HARVEST_TOKEN not set in .env'})
 
-    return jsonify(result)
+    # GNUCash — always attempt. After Harvest, so unbilled hours reach the income forecast.
+    try:
+        result['gnucash'] = gnucash_parser.parse(
+            GNUCASH_PATH,
+            usd_rate=fx_rates['USD'],
+            gbp_rate=fx_rates['GBP'],
+            harvest_projects=income_forecast.harvest_projects(result['harvest']),
+        )
+    except Exception as e:
+        errors.append({'source': 'gnucash', 'message': str(e)})
+
+    return result
+
+
+@app.route('/api/cashflow')
+def api_cashflow():
+    """Per-account running balances over the forecast window, for the base case
+    (invoices sent, unbilled hours, fixed income) and with every income tier."""
+    from datetime import date as _date
+    import cashflow
+
+    d = _collect()
+    g = d.get('gnucash') or {}
+    if not g:
+        return jsonify({'errors': d['errors']}), 500
+    data = {'bank_balances': g.get('balances', []), 'upcoming_all': g.get('upcoming', [])}
+    window_end = _date.today() + timedelta(days=income_forecast.HORIZON_DAYS)
+
+    def scenario(tiers):
+        shortfalls, tables, unassigned = cashflow.build_forecast(data, window_end, tiers)
+        return {
+            'shortfalls': [{'account': a, 'date': dt, 'label': lb, 'balance': round(bal, 2)}
+                           for a, dt, lb, bal in shortfalls],
+            'accounts': [{
+                'name': name, 'start': round(start, 2),
+                'rows': [{'date': dt, 'label': lb, 'type': ty, 'amount': round(delta, 2),
+                          'balance': round(run, 2), 'shortfall': flag}
+                         for dt, lb, ty, delta, run, flag in rows],
+            } for name, start, rows in sorted(tables)],
+            'unassigned': [{'date': t['date'], 'label': t['label'], 'amount': t['amount'],
+                            'type': t.get('tier') or t.get('type')}
+                           for t in unassigned if t['date'] <= str(window_end)],
+        }
+
+    income = [u for u in g.get('upcoming', []) if u.get('type') == 'income' and u['date'] <= str(window_end)]
+    by_tier = {}
+    for u in income:
+        tier = u.get('tier') or 'expected'
+        by_tier[tier] = round(by_tier.get(tier, 0) + u['amount'], 2)
+
+    return jsonify({
+        'generated_at': d['generated_at'],
+        'window_end': str(window_end),
+        'base_tiers': list(cashflow.BASE_TIERS),
+        'income_by_tier': by_tier,
+        'income_sources_missing': g.get('income_sources_missing', []),
+        'base': scenario(cashflow.BASE_TIERS),
+        'all': scenario(None),
+        'errors': d['errors'],
+    })
+
+
+# Shown first, in this order; any other *.yaml in the config dir follows alphabetically.
+CONFIG_ORDER = ['income.yaml', 'recurring-transactions.yaml', 'overheads.yaml',
+                'rates.yaml', 'expected_income.yaml', 'bookkeeper-rules.yaml']
+
+
+def _iso_dates(v):
+    """YAML dates as ISO strings; Flask would otherwise send them as HTTP dates."""
+    from datetime import date as _date
+    if isinstance(v, dict):
+        return {k: _iso_dates(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_iso_dates(x) for x in v]
+    if isinstance(v, _date):
+        return v.isoformat()
+    return v
+
+
+@app.route('/api/configs')
+def api_configs():
+    """Finance config files (FINANCE_CONFIG_DIR/*.yaml), parsed, for the Configs screen.
+    Read-only: the YAML files stay the place to edit."""
+    import yaml
+    cfg_dir = gnucash_parser._finance_config_dir()
+    files = sorted(cfg_dir.glob('*.yaml'),
+                   key=lambda f: (CONFIG_ORDER.index(f.name) if f.name in CONFIG_ORDER else len(CONFIG_ORDER), f.name))
+    out = []
+    for f in files:
+        try:
+            docs = [x for x in yaml.safe_load_all(f.read_text(encoding='utf-8')) if x is not None]
+            data = {}
+            for doc in docs:
+                data.update(doc if isinstance(doc, dict) else {'value': doc})
+            out.append({'file': f.name, 'path': str(f),
+                        'modified': datetime.fromtimestamp(f.stat().st_mtime, timezone.utc).isoformat(),
+                        'data': _iso_dates(data)})
+        except Exception as e:
+            out.append({'file': f.name, 'path': str(f), 'error': str(e)})
+    # Not jsonify: it sorts keys, and table columns should keep the YAML file's order.
+    import json as _json
+    return app.response_class(_json.dumps({'dir': str(cfg_dir), 'files': out}, ensure_ascii=False),
+                              mimetype='application/json')
 
 
 def _open_browser():

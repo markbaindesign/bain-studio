@@ -6,6 +6,8 @@ from datetime import date, timedelta
 from pathlib import Path
 import os
 
+import income_forecast
+
 def _finance_config_dir():
     value = os.getenv("FINANCE_CONFIG_DIR")
     if not value:
@@ -76,6 +78,10 @@ def _load_upcoming_patterns():
             raise RuntimeError(f"{e['keyword']}: annual cadence requires month_of_year")
         patterns.append({
             "keyword":        e["keyword"],
+            # Match on the expense account instead of the bank description when given:
+            # descriptions change with the bank's wording (Movistar became "Adeudo de
+            # telefonica" in Sep 2026 and dropped out of the forecast), accounts don't.
+            "expense_account": e.get("expense_account"),
             "label":          e["label"],
             "day_of_month":   e["day_of_month"],
             "type":           e["type"],
@@ -107,7 +113,9 @@ def _get_path(acc_id, accounts, depth=0):
     return (parent + ':' + a['name']).lstrip(':')
 
 
-def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
+def parse(filepath, usd_rate=0.92, gbp_rate=1.17, harvest_projects=None):
+    """`harvest_projects` (HarvestClient.fetch_all()['projects']) adds unbilled hours to
+    forecast income; without it `income_sources_missing` lists 'harvest'."""
     owner_draw, breakeven_allin, fixed_costs = _load_overheads()
 
     opener = gzip.open if _is_gzip(filepath) else open
@@ -171,6 +179,7 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
                     'type': a2['type'] or '',
                     'cur':  cur,
                     'val':  val,
+                    'qty':  qty,   # in the account's own currency; val is in the txn's
                     'eur':  eur,
                 })
 
@@ -236,15 +245,23 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
         parts = r['path'].replace('Root Account:Expenses:', '').split(':')
         cat_exp[parts[0]] += r['eur']
 
-    # --- Upcoming expenses + manually-forecast incoming payments ---
+    # --- Upcoming expenses + forecast income (receivables, recurring, milestones) ---
     today = date.today()
     upcoming = _compute_upcoming(rows, today, owner_draw)
     expected_income = _load_expected_income(today)
-    upcoming = sorted(upcoming + expected_income, key=lambda x: x['date'])
+    forecast = income_forecast.forecast_income(
+        rows, today, {'USD': usd_rate, 'GBP': gbp_rate},
+        income_forecast.load_config(_finance_config_dir()),
+        harvest_projects,
+    )
+    income_sources_missing = [] if harvest_projects is not None else ['harvest']
+    upcoming = sorted(upcoming + expected_income + forecast, key=lambda x: x['date'])
 
     # --- Balance after 30 days of known bills (income entries offset, not add to, obligations) ---
+    # Only base-case income (invoices sent, fixed recurring) offsets bills; predicted
+    # income and milestones are upside, as in the account forecast.
     due_30d    = sum(u['amount'] for u in upcoming if u.get('days', 999) <= 30 and u.get('type') != 'income')
-    income_30d = sum(u['amount'] for u in upcoming if u.get('days', 999) <= 30 and u.get('type') == 'income')
+    income_30d = sum(u['amount'] for u in upcoming if u.get('days', 999) <= 30 and income_forecast.is_base(u))
     balance_after_30d = round(liquid_eur - due_30d + income_30d, 2)
 
     # --- BBVA-specific forecast — the account Spanish DDs actually draw from ---
@@ -255,7 +272,7 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
     )
     bbva_income_30d = sum(
         u['amount'] for u in upcoming
-        if u.get('account') == 'BBVA EUR' and u.get('type') == 'income' and u.get('days', 999) <= 30
+        if u.get('account') == 'BBVA EUR' and income_forecast.is_base(u) and u.get('days', 999) <= 30
     )
     bbva_balance_after_30d = round(bbva_balance - bbva_due_30d + bbva_income_30d, 2)
     bbva_forecast = {
@@ -289,6 +306,8 @@ def parse(filepath, usd_rate=0.92, gbp_rate=1.17):
         'cat_exp':           dict(cat_exp),
         'upcoming':          upcoming,
         'expected_income':   expected_income,
+        'income_forecast':   forecast,
+        'income_sources_missing': income_sources_missing,
         'recent_income':     recent_income,
         'owner_draw':        owner_draw,
         'breakeven_allin': breakeven_allin,
@@ -446,6 +465,55 @@ def _next_mod130_filing(today):
     return None, None
 
 
+# The gestor invoices each quarter after it closes and the fee is debited from BBVA
+# about two weeks later. Historic debits land 16-55 days after quarter end, with no
+# fixed day; Xavier's Q3 2026 invoice (2 Oct) was debited 16 Oct, so the 16th of the
+# month after quarter end is the forecast date.
+GESTOR_CHARGE_DAY = 16
+
+
+def _quarter_index(d):
+    """Quarters as a running integer, so quarter arithmetic is plain addition."""
+    return d.year * 4 + (d.month - 1) // 3
+
+
+def _gestor_upcoming(exp_rows, today):
+    """One gestor fee per quarter not yet paid, within the forecast window.
+
+    A debit pays for the quarter before the one it falls in (14 Aug pays Q2), so the
+    next unpaid quarter follows the last debit's. Previously the forecast added three
+    months to the last debit, which put the Q3 2026 fee on 14 Nov instead of 16 Oct."""
+    matches = [r for r in exp_rows if r['path'].endswith(':Gestor')]
+    if not matches:
+        return []
+    last = max(matches, key=lambda r: r['date'])
+    paid_q = _quarter_index(date.fromisoformat(last['date'])) - 1
+    horizon = today + timedelta(days=income_forecast.HORIZON_DAYS)
+
+    entries = []
+    q = paid_q + 1
+    while True:
+        # First month after quarter q ends.
+        y, qi = divmod(q + 1, 4)
+        d = date(y, qi * 3 + 1, GESTOR_CHARGE_DAY)
+        if d > horizon:
+            return entries
+        # Due but not yet in the books (import lag): still owed, so expect it tomorrow.
+        d = max(d, today + timedelta(days=1))
+        entries.append({
+            'label':        'Gestor (Accountant)',
+            'date':         str(d),
+            'amount':       round(last['eur'], 2),
+            'amount_basis': f"actual {last['date']}",
+            'currency':     'EUR',
+            'type':         'fixed',
+            'account':      'BBVA EUR',
+            'days':         (d - today).days,
+            'quarter':      f"Q{q % 4 + 1} {q // 4}",
+        })
+        q += 1
+
+
 def _compute_upcoming(rows, today, owner_draw):
     upcoming = []
 
@@ -487,7 +555,10 @@ def _compute_upcoming(rows, today, owner_draw):
         billing_account = pattern['billing_account']
         cadence         = pattern['cadence']
 
-        matches = [r for r in exp_rows if keyword.lower() in r['desc'].lower()]
+        if pattern['expense_account']:
+            matches = [r for r in exp_rows if r['path'].endswith(':' + pattern['expense_account'])]
+        else:
+            matches = [r for r in exp_rows if keyword.lower() in r['desc'].lower()]
         if not matches:
             continue
         last = max(matches, key=lambda x: x['date'])
@@ -521,12 +592,19 @@ def _compute_upcoming(rows, today, owner_draw):
             })
             continue
 
-        for delta in range(3):
+        # Every occurrence in the forecast window, not just the next one: a single
+        # Autonomos entry left later months short by 380.88 each.
+        horizon = today + timedelta(days=income_forecast.HORIZON_DAYS)
+        delta = 0
+        while True:
             m = last_date.month + delta
             y = last_date.year + (m - 1) // 12
             m = ((m - 1) % 12) + 1
+            delta += 1
             max_day = calendar.monthrange(y, m)[1]
             d = date(y, m, min(typical_day, max_day))
+            if d > horizon:
+                break
             if d > today:
                 upcoming.append({
                     'label':        label,
@@ -538,16 +616,15 @@ def _compute_upcoming(rows, today, owner_draw):
                     'account':      billing_account,
                     'days':         (d - today).days,
                 })
-                break
 
-    # Quarterly taxes — Mod 130, Mod 111, IVA, Gestor
+    upcoming += _gestor_upcoming(exp_rows, today)
+
+    # Quarterly taxes — Mod 130, Mod 111, IVA
     # Deadlines per aletheia-codex: Q1=20 Apr, Q2=20 Jul, Q3=20 Oct, Q4=30 Jan
-    # Gestor follows the same quarterly pattern but uses the actual payment day.
     quarterly = [
         ('Mod. 130', 'Mod 130 (Income Tax)',  'tax'),
         ('Mod. 111', 'Mod 111 (Withholding)', 'tax'),
         ('IVA',      'IVA',                   'tax'),
-        ('Gestor',   'Gestor (Accountant)',    'fixed'),
     ]
     # All quarterly filings and the gestor draw from BBVA per aletheia-codex.md §3
     QUARTERLY_ACCOUNT = 'BBVA EUR'
