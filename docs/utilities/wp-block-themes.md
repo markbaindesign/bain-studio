@@ -5,8 +5,9 @@ description: Studio playbook for building WordPress block themes - structure, th
 
 # WordPress Block Themes - playbook
 
-How the studio builds FSE block themes. Written from the Slipstream build
-(`bain-theme-factory/themes/slipstream`), which is the reference implementation
+How the studio builds FSE block themes. Written from the Broadsheet build
+(`/media/data/dev/wp-themes/broadsheet`; built as Slipstream and renamed before
+release), which is the reference implementation
 for everything here.
 
 Every trap in this document was found by **running** the theme, not by reading
@@ -103,7 +104,7 @@ that ships its content inside one is decoration, not a pattern.
 Multiple mask layers on one pseudo element will place several marks (four
 corner crop marks from a single `::before`).
 
-Justify any exception in the theme README. In Slipstream the only one is the
+Justify any exception in the theme README. In Broadsheet the only one is the
 wordmark, which needs the same word four times in one element - no core block
 expresses that - and it is `Inserter: no` and driven by `get_bloginfo('name')`.
 
@@ -119,7 +120,7 @@ Anything that lives in Settings comes from a Settings block:
 | Dates, titles, terms, excerpts | `core/post-*` |
 | Copyright year | PHP pattern with `gmdate('Y')` |
 
-A hardcoded tagline is the classic one, and it rots: in Slipstream the literal
+A hardcoded tagline is the classic one, and it rots: in Broadsheet the literal
 copy in the header was still the reference site's tagline months after Settings
 had been changed, and nothing surfaced the mismatch.
 
@@ -261,35 +262,44 @@ colour must win, so wrap the component's default background in `:where()` to
 zero its specificity:
 
 ```css
-:where(.grid) > * { background: var(--paper); }   /* palette class can win */
+:where(.grid) > * { background: var(--base); }    /* palette class can win */
 .grid > *        { margin-block: 0; }             /* must NOT be :where() */
 ```
 
 The margin reset must stay at normal specificity, because core's flow-layout
 margin rule is **also** zero-specificity and would win on source order -
-pushing every cell after the first down and exposing the container beneath.
+pushing every cell after the first down and out of line with its row.
 
 **BEM class vs child selector.** `.block__el` (0,1,0) loses to `.block > span`
 (0,1,1). Renaming a child to a BEM class silently lost a `position: relative`
-in Slipstream and collapsed the masthead to zero height. Write
+in Broadsheet and collapsed the masthead to zero height. Write
 `.block > .block__el`.
 
 ### Hairline grids
 
-Do not use per-cell borders - they fall apart when columns drop away. Use a 1px
-gap over a coloured ground:
+Do not use per-cell borders - they double up where cells meet and fall apart
+when columns drop away. And do not draw the rules as a 1px gap over a coloured
+ground either: the ground shows through every empty slot, so a short last row
+(five posts in a four-up, say) ends in a solid block of colour.
+
+Draw each rule from the cells instead. Every cell gets a 1px ring as a spread
+shadow, which reaches into the 1px gap and overlaps its neighbour's ring into
+one line; the container's padding gives the outer rings room:
 
 ```css
-.grid { display: grid; gap: 1px; background: var(--ink); border: 1px solid var(--ink); }
+.grid      { display: grid; gap: 1px; padding: 1px; }
+.grid > *  { box-shadow: 0 0 0 1px var(--contrast); }
 ```
 
-A four-up can then become two, then one, and every rule stays where it belongs.
+Full rows render exactly as the gap method did, a four-up can still become two,
+then one, and an empty slot is plain background. (Broadsheet, 2026-10-07,
+verified pixel-identical on full grids.)
 
 ## Contrast
 
 Audit the palette before shipping, not after. Two findings worth generalising:
 
-- **A "quiet" grey is almost always too light.** Slipstream's was 2.29:1 on
+- **A "quiet" grey is almost always too light.** Broadsheet's was 2.29:1 on
   paper where 4.5:1 is needed, and it carried dates, the colophon and captions.
 - **A brand colour bright enough for a fill is rarely dark enough for text.**
   Carry **two values**: one for fills, where type on it is large display and
@@ -299,9 +309,93 @@ Audit the palette before shipping, not after. Two findings worth generalising:
 Large-text rules apply only to genuinely large type. Do not set small copy on a
 band that passes at 3:1.
 
+## Buttons
+
+Studio policy, decided 2026-10-08 on Broadsheet. Every block theme offers the
+same four button styles, built the same way.
+
+### The four styles
+
+| Style | At rest | On hover and keyboard focus |
+|---|---|---|
+| **Fill** (core default) | contrast fill, base text | contrast outline, contrast text |
+| **Outline** (core) | contrast outline, contrast text | contrast fill, base text |
+| **Fill: accent** | accent fill, base text | accent outline, accent text |
+| **Outline: accent** | accent outline, accent text | accent fill, base text |
+
+Every style swaps to its opposite on hover. No other hover effect.
+
+### The rules
+
+- **Name styles by role, never by colour.** Reuse core's own Fill and Outline,
+  and register only the two accent styles (`register_block_style()` in
+  `functions.php`, translatable labels). A style called "Red Fill" or "Navy
+  Fill" is wrong the moment the palette or a style variation changes.
+- **One colour per style.** Each style sets a single custom property for its
+  border, fill and text (`--btn-ink`); the other side of the swap is `base`.
+  Colours come from palette roles (`contrast`, the section's accent), so the
+  buttons follow every style variation.
+- **Accent means the text-safe accent.** Use the darker `accent-text` value, not
+  the fill accent: base-coloured label text on a bright fill accent typically
+  fails 4.5:1 (Broadsheet's was 3.8:1). Button labels are small type, so the
+  large-text 3:1 rule never applies.
+- **One size for all four.** Give every style the same border and take its width
+  out of the padding. Core's outline style brings its own em padding plus a
+  border, which makes outline buttons visibly smaller than fills if left alone.
+- **Padding in em, from theme.json.** Define `custom.button.paddingBlock`,
+  `paddingInline` and `outlineWidth` once; `styles.elements.button` and the CSS
+  both read them. Em scales the padding with the label.
+- **States live in CSS.** theme.json cannot express hover or focus for a block
+  style variation. Cover `:focus-visible` with `:hover` every time. Keep the
+  transition short (about 150ms) and switch it off under
+  `prefers-reduced-motion`.
+- **Scope to the Button block** (`.wp-block-buttons > .wp-block-button`). Search
+  and form buttons keep the theme.json element styling.
+- **Editor-chosen colours win.** Guard every colour with
+  `:not(.has-text-color)` / `:not(.has-background)`, and clear the border on a
+  `.has-background` button so its box stays the same size.
+
+### Skeleton
+
+```css
+.wp-block-buttons > .wp-block-button { --btn-ink: var(--contrast); }
+.wp-block-buttons > .wp-block-button:is(.is-style-fill-accent, .is-style-outline-accent) { --btn-ink: var(--accent-text); }
+.wp-block-buttons > .wp-block-button > .wp-block-button__link {
+  border: var(--wp--custom--button--outline-width) solid var(--btn-ink);
+  padding:
+    calc(var(--wp--custom--button--padding-block) - var(--wp--custom--button--outline-width))
+    calc(var(--wp--custom--button--padding-inline) - var(--wp--custom--button--outline-width));
+}
+/* Fill styles: --btn-ink fill + base text at rest; transparent + --btn-ink text on :is(:hover, :focus-visible).
+   Outline styles: the reverse. Each colour declaration guarded by :not(.has-background) / :not(.has-text-color). */
+```
+
+The full implementation is the "Buttons" block in Broadsheet's `style.css`
+(`/media/data/dev/wp-themes/broadsheet`, commit `3bcd709`). The
+`.wp-block-buttons >` prefix is what outranks core's own outline rules.
+
+### Do not
+
+- **Fade on hover** (`opacity: 0.6`). Fading lowers label contrast - often below
+  4.5:1, depending on the colours - and gives keyboard users no distinct focus
+  state. NORE does this.
+- **Name variations after colours** (NORE's `navy-fill`, `red-fill`, `tan-fill`).
+- **Let styles differ in padding or border**, which makes them different sizes.
+
+### Verify
+
+Build a temporary page with all four styles plus one editor-coloured button,
+then measure rather than judge by eye:
+
+- all buttons with the same label are the same width and height;
+- every rest and hover state is 4.5:1 or better, in every style variation;
+- search and form buttons are unchanged.
+
+Delete the page afterwards.
+
 ## Fonts
 
-Self-host. Latin subset, woff2 only - Slipstream's five faces total ~68 KB.
+Self-host. Latin subset, woff2 only - Broadsheet's five faces total ~68 KB.
 Declare them in `theme.json` under `typography.fontFamilies[].fontFace` with
 `file:./assets/fonts/...` paths.
 
@@ -366,7 +460,7 @@ use `google-chrome --headless=new --screenshot=...` when scripting captures.
 
 ## See also
 
-- `bain-theme-factory/themes/slipstream/README.md` - reference implementation,
+- `/media/data/dev/wp-themes/broadsheet/README.md` - reference implementation,
   with the same traps written against that theme's specifics
 - `bain-theme-factory/css-foundation-spec.md` - the studio CSS foundation this
   maps onto
