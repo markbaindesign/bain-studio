@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-10-08
+
+### Added
+- **Income forecast** (`studio/dashboard/income_forecast.py`): forecast income in five tiers (receivable, unbilled, fixed, predicted, milestone), configured in `FINANCE_CONFIG_DIR/income.yaml` and merged into `accounts.json` `upcoming_all`, so every cash flow forecast includes income. See `docs/utilities/income-forecast.md`.
+- Dashboard **Cashflow** screen: every bank account's projected daily balance on one EUR chart, with a base case / with upside toggle and shortfall highlighting. Shares `studio/dashboard/cashflow.py` with the daily Slack forecast, so the two agree.
+- Dashboard **Configs** screen: the finance YAML configs rendered read-only.
+- Every Financial screen shows the USD and GBP to EUR exchange rates in use and their source, in red when the live rate fetch failed (new `/api/fx` endpoint).
+
+### Changed
+- `account_forecast_report.py` reads income from the income forecast instead of its own hard-coded recurring income.
+- `/account-forecast` refuses to present outgoings-only balances and reports a base case and a with-upside projection.
+
+### Fixed
+- Dashboard Outstanding Invoices treated every invoice as EUR. USD and GBP invoices now show their own currency with the EUR value, and the receivable total is summed in EUR.
+
 ## [1.14.0] - 2026-10-06
 
 ### Added
