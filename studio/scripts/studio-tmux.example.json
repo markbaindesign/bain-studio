@@ -4,6 +4,11 @@
     {"name": "tooling", "dir": "~/dev/bain-studio"},
     {"name": "finance", "dir": "~/dev/bain-studio"},
     {"name": "bizdev", "dir": "~/dev/upwork-proposals"},
-    {"name": "hr", "dir": "~/Dropbox/Work/Admin/Business"}
+    {"name": "hr", "dir": "~/Dropbox/Work/Admin/Business"},
+    {"name": "monitor", "dir": "~/dev/bain-studio", "layout": "main-vertical", "panes": [
+      {"cmd": "htop"},
+      {"cmd": "tail -n 30 -F studio/sync.log"},
+      {"cmd": "journalctl --user -fu studio-dashboard -n 20"}
+    ]}
   ]
 }

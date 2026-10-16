@@ -45,6 +45,28 @@ The window list is local config, not code, so client paths stay out of this publ
 - `cmd` is optional. Without it the window is a plain shell.
 - `dir` accepts `~`. A window whose directory does not exist is skipped with a warning.
 
+### Panes
+
+A window can be split into panes, for example a monitor window with `htop` beside the sync log
+and the dashboard's log:
+
+```json
+{"name": "monitor", "dir": "~/ops/bain-studio", "layout": "main-vertical", "panes": [
+  {"cmd": "htop"},
+  {"cmd": "tail -n 30 -F studio/sync.log"},
+  {"cmd": "journalctl --user -fu studio-dashboard -n 20"}
+]}
+```
+
+- `panes` is a list of `{"cmd", "dir"}`. Both are optional, and `dir` defaults to the window's.
+  Each pane drops to a shell when its command exits, like a window does.
+- `layout` is any tmux layout name: `tiled` (the default), `main-vertical`, `main-horizontal`,
+  `even-horizontal`, `even-vertical`.
+- Panes are created in the order listed. In `main-vertical` the first one is the large pane.
+- With `panes` set, the window's own `cmd` is ignored.
+- A new session is sized to the terminal `studio-tmux` runs in, so the layout fits on first
+  attach. tmux's detached default (80x24) would squeeze the side panes to one column.
+
 To add an area, add a line to `windows` and run `studio-tmux` again. A starting point is
 `studio/scripts/studio-tmux.example.json`.
 
@@ -52,4 +74,4 @@ To add an area, add a line to `windows` and run `studio-tmux` again. A starting 
 
 - Session and window targets use tmux's `=` exact-match prefix. Without it, a session called
   `studio` would also match `studio-old`.
-- Tested on tmux 3.0a.
+- Tested on tmux 3.0a; panes tested on tmux 3.8.
