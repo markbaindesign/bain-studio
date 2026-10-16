@@ -6,7 +6,7 @@ name: Alex Wright Site
 status: active
 client: Alex Wright
 type: client
-repo: git@bitbucket.org:markbaindesign/alex-wright.git
+repo: git@ssh.bitbucket.org:markbaindesign/alex-wright.git
 sector: Personal brand · Speaker / Author
 stack: WordPress FSE block theme · ACF Pro · VVV
 path: /media/data/dev/vvv/clients/www/alex-wright

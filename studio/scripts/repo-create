@@ -186,7 +186,7 @@ print(json.dumps(d))
     exit 1
   fi
 
-  local remote_url="git@bitbucket.org:$workspace/$slug.git"
+  local remote_url="git@ssh.bitbucket.org:$workspace/$slug.git"
   local pushed=0
 
   if [[ -n "$clone_path" ]]; then
