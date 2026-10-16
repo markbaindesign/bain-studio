@@ -6,7 +6,7 @@ name: KF Tara Mini-Site
 status: active
 client: Khyentse Foundation
 type: client
-repo: git@ssh.bitbucket.org:markbaindesign/kf-tara-web.git
+repo: https://github.com/Khyentse-Foundation/kf-tara-web.git
 sector: Non-profit · Religion · Culture
 stack: Astro · astro:i18n · static output, no CMS/backend
 path: /media/data/dev/misc/kf-tara-web
