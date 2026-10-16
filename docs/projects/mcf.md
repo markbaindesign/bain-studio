@@ -6,7 +6,7 @@ name: Mhairi McFarlane
 status: inactive
 client: Mhairi McFarlane
 type: client
-repo: git@bitbucket.org:markbaindesign/m_mcf_astro_js.git
+repo: git@ssh.bitbucket.org:markbaindesign/m_mcf_astro_js.git
 sector: Publishing · Author
 stack: Astro.js
 path: /home/bain/code/misc/js/astrojs/client/mhairi_mcf

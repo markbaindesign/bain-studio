@@ -6,7 +6,7 @@ name: Khyentse Foundation Website
 status: active
 client: Khyentse Foundation
 type: client
-repo: git@bitbucket.org:markbaindesign/kf-21.git
+repo: git@ssh.bitbucket.org:markbaindesign/kf-21.git
 sector: Non-profit · Religion · Culture
 stack: WordPress · Custom Theme · 15 custom plugins · VVV · WP Engine
 path: /media/data/dev/vvv/clients/www/kf-21
