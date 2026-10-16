@@ -1017,3 +1017,52 @@ def test_create_task_full_dependency_failure_is_loud(proj, fake_asana, monkeypat
     monkeypatch.setattr(sync, "_post", failing_post)
     with pytest.raises(RuntimeError, match="could not make it block blocked_gid"):
         sync.create_task_full(proj, "Do it", depends_on="blocked_gid")
+
+
+# ---------------------------------------------------------------------------
+# assign_ids - tasks carrying another project's ID
+# ---------------------------------------------------------------------------
+
+def _homed(gid, local_id, *project_gids):
+    t = _task(gid, local_id)
+    t["memberships"] = [{"project": {"gid": g}} for g in project_gids]
+    return t
+
+
+def test_assign_ids_multihomed_task_keeps_issuing_projects_id(proj):
+    state = {"next_seq": 40, "tasks": {"1": "TEST-031"}}
+    tasks = [_homed("1", "OTHER-007", "proj_gid_123", "other_gid")]
+    assign_ids(proj, tasks, state, "field_gid", dry_run=True,
+               prefix_gids={"TEST": "proj_gid_123", "OTHER": "other_gid"})
+    assert tasks[0]["_local_id"] == "OTHER-007"
+    assert state["tasks"]["1"] == "OTHER-007"
+    assert state["next_seq"] == 40
+
+
+def test_assign_ids_task_moved_out_of_issuing_project_is_rehomed(proj):
+    state = {"next_seq": 40, "tasks": {}}
+    tasks = [_homed("1", "OTHER-007", "proj_gid_123")]
+    assign_ids(proj, tasks, state, "field_gid", dry_run=True,
+               prefix_gids={"TEST": "proj_gid_123", "OTHER": "other_gid"})
+    assert tasks[0]["_local_id"] == "TEST-040"
+
+
+def test_assign_ids_unregistered_prefix_is_rehomed(proj):
+    state = {"next_seq": 40, "tasks": {}}
+    tasks = [_homed("1", "GONE-007", "proj_gid_123", "gone_gid")]
+    assign_ids(proj, tasks, state, "field_gid", dry_run=True,
+               prefix_gids={"TEST": "proj_gid_123"})
+    assert tasks[0]["_local_id"] == "TEST-040"
+
+
+def test_assign_ids_multihomed_pair_stops_flipping(tmp_path):
+    a = ProjectConfig(name="A", root=tmp_path / "a", gid="a_gid", prefix="KF-WEB")
+    b = ProjectConfig(name="B", root=tmp_path / "b", gid="b_gid", prefix="TARA")
+    prefix_gids = {"KF-WEB": "a_gid", "TARA": "b_gid"}
+    task = _homed("1", "TARA-134", "a_gid", "b_gid")
+    for _ in range(3):
+        for p in (a, b):
+            t = dict(task)
+            assign_ids(p, [t], {"next_seq": 500, "tasks": {}}, "f", dry_run=True,
+                       prefix_gids=prefix_gids)
+            assert t["_local_id"] == "TARA-134"
