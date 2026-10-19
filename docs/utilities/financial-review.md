@@ -22,7 +22,7 @@ Reads the Athena report from `{CONTENT_DIR}/pipeline/athena/{slug}-*.md`. If no 
 
 | Skill | Role |
 |---|---|
-| **Raise Invoice** (`/raise-invoice`) | Produces the formatted invoice after delivery |
+| **Raise Invoice** (`/raise-invoice`) | Checks uninvoiced Harvest hours and raises a Harvest draft invoice (hours or milestone) |
 | **Tax Prep** (`/tax-prep`) | Quarterly Modelo 303/130 filing pack |
 | **Cashflow Projection** (`/cashflow-projection`) | 90-day income vs. outgoings, break-even risk, runway |
 | **Account Forecast** (`/account-forecast`) | Per-account transaction forecast, insufficient-funds flags |
