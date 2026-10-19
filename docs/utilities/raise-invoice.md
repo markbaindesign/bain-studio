@@ -2,6 +2,7 @@
 description: Check uninvoiced Harvest hours and raise Harvest draft invoices from hours or as a milestone
 command: python3 studio/tools/raise-invoice/raise_invoice.py {uninvoiced|hours|milestone}
 invoke: /raise-invoice
+god: financial-review
 role: Finance
 tags:
 - utility
