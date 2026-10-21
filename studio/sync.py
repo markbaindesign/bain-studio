@@ -170,7 +170,7 @@ def load_projects_registry() -> list:
     return result
 
 
-def discover_projects(filter_prefix=None, include_inactive=False) -> list:
+def discover_projects(filter_prefix=None, include_inactive=False, quiet=False) -> list:
     registry = load_projects_registry()
     if not registry:
         log.error(f"No projects.json found at {PROJECTS_FILE}. Copy projects.example.json to get started.")
@@ -183,24 +183,27 @@ def discover_projects(filter_prefix=None, include_inactive=False) -> list:
         raw    = entry["path"]
         status = entry.get("status", "active")
         # Skip paused and archived projects unless explicitly filtered by prefix
-        if status in ("paused", "archived") and not (filter_prefix or include_inactive):
+        if status in ("paused", "archived") and not filter_prefix and not include_inactive:
             continue
         root = Path(raw).expanduser()
         claude_md = root / "CLAUDE.md"
         if not claude_md.exists():
-            log.warning(f"  Skipping {raw} — no CLAUDE.md found")
+            if not quiet:
+                log.warning(f"  Skipping {raw} — no CLAUDE.md found")
             continue
 
         try:
             text = claude_md.read_text(errors="replace")
         except OSError as e:
-            log.warning(f"  Skipping {raw} — could not read CLAUDE.md: {e}")
+            if not quiet:
+                log.warning(f"  Skipping {raw} — could not read CLAUDE.md: {e}")
             continue
 
         gid_m    = re.search(r"ASANA_PROJECT_GID:\s*(\S+)", text)
         prefix_m = re.search(r"ASANA_TASK_PREFIX:\s*(\S+)", text)
         if not gid_m:
-            log.warning(f"  Skipping {raw} — no ASANA_PROJECT_GID in CLAUDE.md")
+            if not quiet:
+                log.warning(f"  Skipping {raw} — no ASANA_PROJECT_GID in CLAUDE.md")
             continue
 
         gid    = gid_m.group(1)
@@ -224,6 +227,17 @@ def discover_projects(filter_prefix=None, include_inactive=False) -> list:
         seen_gids.add(gid)
 
     return projects
+
+
+def prefix_owners() -> dict:
+    """Map each ID prefix to the Asana project that owns it.
+
+    Includes paused and archived projects (they still own their IDs). Aggregators
+    (PRESERVE_FOREIGN_IDS, e.g. Studio Looper) are left out, so tasks created there
+    still re-home into the real project they're added to.
+    """
+    return {p.prefix: p.gid for p in discover_projects(include_inactive=True, quiet=True)
+            if not p.preserve_foreign_ids}
 
 
 # ---------------------------------------------------------------------------
@@ -616,39 +630,8 @@ def _is_junk(task) -> bool:
 # ID assignment
 # ---------------------------------------------------------------------------
 
-_prefix_gids_cache = None
-
-
-def registered_prefix_gids() -> dict:
-    """Map every registered project's prefix to its Asana GID, paused and archived included."""
-    global _prefix_gids_cache
-    if _prefix_gids_cache is None:
-        _prefix_gids_cache = {p.prefix: p.gid for p in discover_projects(include_inactive=True)}
-    return _prefix_gids_cache
-
-
-def _id_prefix(local_id: str):
-    m = re.fullmatch(r"(.+)-\d+", local_id)
-    return m.group(1) if m else None
-
-
-def _still_homed_elsewhere(task: dict, prefix_gids: dict) -> bool:
-    """True when the task still belongs to the project its Local ID's prefix names.
-
-    A task multi-homed in two registered projects used to be re-homed by each
-    one in turn, so its ID flipped on every sync and both counters climbed
-    (TARA-134 to TARA-568 in eleven days). It now keeps the ID it has for as
-    long as it is still in that project, and is only re-homed once it leaves.
-    """
-    owner_gid = prefix_gids.get(_id_prefix(task["_local_id"]) or "")
-    if not owner_gid:
-        return False
-    return any((m.get("project") or {}).get("gid") == owner_gid
-               for m in task.get("memberships", []))
-
-
 def assign_ids(proj: ProjectConfig, tasks: list, state: dict, field_gid: str, dry_run=False,
-               prefix_gids: dict = None) -> dict:
+               prefix_owners: dict = None) -> dict:
     assigned = 0
     rehomed = 0
     # Keep the counter ahead of every ID already in use for this prefix *before* assigning any,
@@ -669,11 +652,12 @@ def assign_ids(proj: ProjectConfig, tasks: list, state: dict, field_gid: str, dr
                 if gid not in state["tasks"]:
                     state["tasks"][gid] = existing
                 continue
-            if prefix_gids is None:
-                prefix_gids = registered_prefix_gids()
-            if _still_homed_elsewhere(t, prefix_gids):
-                # Multi-homed with the project that issued its ID — keep it, and drop
-                # any ID this project handed out while the two were fighting over it.
+            # Multi-homed task that is still in the project owning its ID: keep that ID.
+            # Re-homing it here would make each project hand it a new ID on every sync.
+            prefix_m  = re.fullmatch(r"(.+)-\d+", existing)
+            owner_gid = (prefix_owners or {}).get(prefix_m.group(1) if prefix_m else None)
+            in_projects = {(m.get("project") or {}).get("gid") for m in t.get("memberships") or []}
+            if owner_gid and owner_gid in in_projects:
                 state["tasks"][gid] = existing
                 continue
             # Normal project — reassign with this project's prefix
@@ -1153,7 +1137,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         sections = fetch_sections(proj)
         log.info(f"  [{proj.prefix}] Sections: {list(sections.keys())}")
 
-        state      = assign_ids(proj, tasks, state, field_gid, dry_run)
+        state      = assign_ids(proj, tasks, state, field_gid, dry_run, prefix_owners=prefix_owners())
         gid_to_lid = state.get("tasks", {})
         # Last Synced is stamped near the end of the run, and only on tasks we
         # actually wrote to — see the stamping block after the comment loop.

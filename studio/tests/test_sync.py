@@ -269,6 +269,66 @@ def test_assign_ids_new_task_listed_before_adopted_id_does_not_collide(proj):
 
 
 # ---------------------------------------------------------------------------
+# assign_ids - multi-homed tasks keep the ID of the project they still belong to
+# ---------------------------------------------------------------------------
+
+def _homed_task(gid, local_id, *project_gids):
+    return {"gid": gid, "name": f"task {gid}", "_local_id": local_id,
+            "memberships": [{"project": {"gid": g}} for g in project_gids]}
+
+
+def test_assign_ids_keeps_foreign_id_while_task_is_still_in_owning_project(proj):
+    # KF-WEB-239 is in both KF (owner) and this project: syncing this project must not
+    # re-home it, or KF and this project hand it a new ID on every run (BSTD 2026-10-20).
+    state = {"next_seq": 1, "tasks": {}}
+    tasks = [_homed_task("1", "KF-WEB-239", "kf_gid", proj.gid)]
+    assign_ids(proj, tasks, state, "field_gid", dry_run=True, prefix_owners={"KF-WEB": "kf_gid"})
+    assert tasks[0]["_local_id"] == "KF-WEB-239"
+    assert state["tasks"]["1"] == "KF-WEB-239"
+    assert state["next_seq"] == 1
+
+
+def test_assign_ids_rehomes_foreign_id_once_task_has_left_owning_project(proj):
+    state = {"next_seq": 1, "tasks": {}}
+    tasks = [_homed_task("1", "KF-WEB-239", proj.gid)]
+    assign_ids(proj, tasks, state, "field_gid", dry_run=True, prefix_owners={"KF-WEB": "kf_gid"})
+    assert tasks[0]["_local_id"] == "TEST-001"
+
+
+def test_assign_ids_rehomes_id_from_unknown_prefix(proj):
+    state = {"next_seq": 1, "tasks": {}}
+    tasks = [_homed_task("1", "GONE-007", "gone_gid", proj.gid)]
+    assign_ids(proj, tasks, state, "field_gid", dry_run=True, prefix_owners={"KF-WEB": "kf_gid"})
+    assert tasks[0]["_local_id"] == "TEST-001"
+
+
+def test_assign_ids_without_prefix_owners_keeps_old_rehoming(proj):
+    state = {"next_seq": 1, "tasks": {}}
+    tasks = [_homed_task("1", "KF-WEB-239", "kf_gid", proj.gid)]
+    assign_ids(proj, tasks, state, "field_gid", dry_run=True)
+    assert tasks[0]["_local_id"] == "TEST-001"
+
+
+def test_prefix_owners_skips_aggregators_and_includes_paused(tmp_path, monkeypatch):
+    # Looper-created tasks (SL-NNN) must still re-home into a real project, so aggregators
+    # never count as owners; a paused project still owns its prefix.
+    def project(name, gid, prefix, extra=""):
+        root = tmp_path / name
+        root.mkdir()
+        (root / "CLAUDE.md").write_text(
+            f"ASANA_PROJECT_GID: {gid}\nASANA_TASK_PREFIX: {prefix}\n{extra}")
+        return root
+    registry = [
+        {"path": str(project("kf", "kf_gid", "KF-WEB")), "status": "active"},
+        {"path": str(project("asp", "asp_gid", "ASP")), "status": "paused"},
+        {"path": str(project("sl", "sl_gid", "SL", "PRESERVE_FOREIGN_IDS: true\n")), "status": "active"},
+    ]
+    monkeypatch.setattr(sync, "load_projects_registry", lambda: registry)
+    assert sync.prefix_owners() == {"KF-WEB": "kf_gid", "ASP": "asp_gid"}
+
+
+
+# ---------------------------------------------------------------------------
 # parse_existing_mirror
 # ---------------------------------------------------------------------------
 
@@ -1033,7 +1093,7 @@ def test_assign_ids_multihomed_task_keeps_issuing_projects_id(proj):
     state = {"next_seq": 40, "tasks": {"1": "TEST-031"}}
     tasks = [_homed("1", "OTHER-007", "proj_gid_123", "other_gid")]
     assign_ids(proj, tasks, state, "field_gid", dry_run=True,
-               prefix_gids={"TEST": "proj_gid_123", "OTHER": "other_gid"})
+               prefix_owners={"TEST": "proj_gid_123", "OTHER": "other_gid"})
     assert tasks[0]["_local_id"] == "OTHER-007"
     assert state["tasks"]["1"] == "OTHER-007"
     assert state["next_seq"] == 40
@@ -1043,7 +1103,7 @@ def test_assign_ids_task_moved_out_of_issuing_project_is_rehomed(proj):
     state = {"next_seq": 40, "tasks": {}}
     tasks = [_homed("1", "OTHER-007", "proj_gid_123")]
     assign_ids(proj, tasks, state, "field_gid", dry_run=True,
-               prefix_gids={"TEST": "proj_gid_123", "OTHER": "other_gid"})
+               prefix_owners={"TEST": "proj_gid_123", "OTHER": "other_gid"})
     assert tasks[0]["_local_id"] == "TEST-040"
 
 
@@ -1051,7 +1111,7 @@ def test_assign_ids_unregistered_prefix_is_rehomed(proj):
     state = {"next_seq": 40, "tasks": {}}
     tasks = [_homed("1", "GONE-007", "proj_gid_123", "gone_gid")]
     assign_ids(proj, tasks, state, "field_gid", dry_run=True,
-               prefix_gids={"TEST": "proj_gid_123"})
+               prefix_owners={"TEST": "proj_gid_123"})
     assert tasks[0]["_local_id"] == "TEST-040"
 
 
@@ -1064,5 +1124,5 @@ def test_assign_ids_multihomed_pair_stops_flipping(tmp_path):
         for p in (a, b):
             t = dict(task)
             assign_ids(p, [t], {"next_seq": 500, "tasks": {}}, "f", dry_run=True,
-                       prefix_gids=prefix_gids)
+                       prefix_owners=prefix_gids)
             assert t["_local_id"] == "TARA-134"
