@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Postman ping:** `send()` now alerts the live Claude session(s) working in the receiving project: tmux bell, a 📬 prefix on the window name, a message flashed on attached tmux clients, and a desktop notification. New `postman.py unmark` clears the marker. See `docs/gods/hermes/postman.md`.
+- **`inbox-alert.py` hook:** lists unread postman mail in Claude's context on each prompt and at session start, and clears the 📬 marker once the inbox is empty.
+
+### Fixed
+- **Postman:** `--project` now resolves a registered prefix (e.g. `ASP`) through `docs/projects/*.md`. Before, only folder names matched, so KF's `ASP` messages fell back to `studio/inbox/` and sat unread.
+
 ## [1.15.1] - 2026-10-20
 
 ### Fixed
