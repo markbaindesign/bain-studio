@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.1] - 2026-10-20
+
+### Fixed
+- **Sync:** a task in two normal projects no longer gets a new Local ID on every run. It keeps its ID while it is still in the project that owns that prefix (`assign_ids()`, `prefix_owners()`).
+- **Templates:** `templates.json` pointed the internal project template at the SLW client project (`1215208138819356`); it now points at `{TEMPLATE Project}` (`1211611158088242`). `ASANA_TEMPLATE_PROJECT_GID` in `studio/.env` (untracked) was corrected to match.
+
 ## [1.15.0] - 2026-10-08
 
 ### Added
