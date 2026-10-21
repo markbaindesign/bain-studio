@@ -63,6 +63,8 @@ def _registry_path(project: str):
 def _project_inbox(project: str):
     """Find .claude/inbox/ for a project: registry prefix first, then by walking STUDIO_SCAN_ROOTS."""
     registered = _registry_path(project)
+    if registered and registered.resolve() == STUDIO_ROOT.resolve():
+        return _studio_inbox()
     if registered and registered.is_dir():
         inbox = registered / '.claude' / 'inbox'
         inbox.mkdir(parents=True, exist_ok=True)
