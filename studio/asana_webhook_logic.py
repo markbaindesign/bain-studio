@@ -207,6 +207,21 @@ def protected_path_denies(root: Path) -> list:
     return [f"Edit({base}/.git/**)", f"Edit({base}/.claude/**)", f"Edit({base}/.envrc)"]
 
 
+SECRET_FILES = (".env", ".env.*", "wp-config.php", "deploy.config.sh", "*.pem")
+
+
+def secret_read_denies(root: Path) -> list:
+    """Absolute Read deny rules for credential files inside the project root. A run
+    has no network, but it can post any text as an Asana comment, which clients can
+    see - so an injected comment must not be able to have it read studio/.env and
+    echo it back. Read rules also cover Grep and Glob."""
+    base = "/" + str(root).rstrip("/")
+    out = []
+    for name in SECRET_FILES:
+        out += [f"Read({base}/{name})", f"Read({base}/**/{name})"]
+    return out
+
+
 def prefix_from_path(path: str) -> str:
     """Route by the last path segment, so /asana/BD and /BD both resolve to BD
     (tailscale serve may or may not strip its mount path)."""

@@ -11,6 +11,7 @@ from asana_webhook_logic import (
     over_rate_limit,
     prefix_from_path,
     protected_path_denies,
+    secret_read_denies,
     should_reregister,
     story_triggers,
     task_gid_for,
@@ -225,4 +226,12 @@ def test_protected_path_denies_are_absolute_edit_rules():
     # Edit(path) covers Write too; Claude Code ignores Write(path) rules.
     assert protected_path_denies(Path("/srv/proj/")) == [
         "Edit(//srv/proj/.git/**)", "Edit(//srv/proj/.claude/**)", "Edit(//srv/proj/.envrc)"]
+
+
+def test_secret_read_denies_cover_root_and_nested_env_and_wp_config():
+    rules = secret_read_denies(Path("/srv/proj"))
+    for r in ("Read(//srv/proj/.env)", "Read(//srv/proj/**/.env)",
+              "Read(//srv/proj/**/.env.*)", "Read(//srv/proj/**/wp-config.php)"):
+        assert r in rules
+    assert all(r.startswith("Read(//srv/proj/") for r in rules)
 

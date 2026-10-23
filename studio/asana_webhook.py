@@ -48,6 +48,7 @@ from asana_webhook_logic import (  # noqa: E402
     over_rate_limit,
     prefix_from_path,
     protected_path_denies,
+    secret_read_denies,
     should_reregister,
     story_triggers,
     task_gid_for,
@@ -398,7 +399,8 @@ class Worker:
             [CLAUDE_BIN, "-p", prompt, "--model", MODEL,
              "--restricted", "--strict-mcp-config", "--tools", RUN_TOOLS,
              "--allowedTools", *ALLOWED,
-             "--disallowedTools", *DISALLOWED, *protected_path_denies(proj.root)],
+             "--disallowedTools", *DISALLOWED, *protected_path_denies(proj.root),
+             *secret_read_denies(proj.root)],
             cwd=proj.root, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
             start_new_session=True)
         self.running[prefix] = (proc, time.time(), out)

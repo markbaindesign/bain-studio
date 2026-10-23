@@ -53,7 +53,9 @@ files and no MCP servers are loaded, so the explicit `--allowedTools` list (`ALL
 tools, `sync.py`, local git up to commit) is the whole allow-list. Only `RUN_TOOLS` (`Read, Glob,
 Grep, Edit, Write, Bash`) exist. The deny-list is the voice agent's `OUTWARD_TOOLS`, the whole
 Asana MCP, `WebFetch` and `WebSearch`, plus `Edit` denies on the project's `.git/**`,
-`.claude/**` and `.envrc`. Git hooks are switched off for the run
+`.claude/**` and `.envrc`, and `Read` denies on credential files anywhere in the project
+(`.env`, `.env.*`, `wp-config.php`, `deploy.config.sh`, `*.pem`; `SECRET_FILES`), because a run
+can still post any text as an Asana comment. Git hooks are switched off for the run
 (`GIT_CONFIG_PARAMETERS='core.hooksPath=/dev/null'`), so a committed file can't execute. No
 auto mode, and never `--dangerously-skip-permissions`. An agent that needs more (SSH, WP-CLI,
 network, editing skills or `.claude/`) asks in Asana instead. Restricted mode does not load

@@ -49,7 +49,8 @@ matching project folder.
    run. Restricted mode already refuses writes to git and settings files; the run also gets
    explicit `Edit(//<root>/.git/**)`, `.claude/**` and `.envrc` denies, and
    `GIT_CONFIG_PARAMETERS='core.hooksPath=/dev/null'` so no hook runs at all. (Git here is
-   2.25, which predates `GIT_CONFIG_COUNT`.) Cost: a webhook run cannot edit skills, settings
+   2.25, which predates `GIT_CONFIG_COUNT`.) The run can still post any text as an Asana comment, so
+   credential files in the project (`.env`, `wp-config.php`, ...) get `Read` denies too. Cost: a webhook run cannot edit skills, settings
    or archive `.claude/inbox/`; that work waits for a normal session.
 3. **One session per project, including interactive ones.** The guard reads the Claude session
    registry and live `claude` processes' working directories, not a listener-private lock, so a
