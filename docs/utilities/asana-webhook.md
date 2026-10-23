@@ -48,10 +48,16 @@ A fixed prompt (`AGENT_PROMPT` in `studio/asana_webhook.py`): pull the project w
 `CLAUDE.md`, post a progress comment with `sync.py --comment`, exit. It must not push, merge,
 deploy to production or send email, and asks in Asana when it needs a decision.
 
-The run gets an explicit `--allowedTools` list (`ALLOWED`: file tools, `sync.py`, local git
-up to commit) and a deny-list (the voice agent's `OUTWARD_TOOLS` plus the whole Asana MCP). No
-auto mode, and never `--dangerously-skip-permissions`. Anything the project's own settings don't
-also allow is denied, so an agent that needs more (SSH, WP-CLI) asks in Asana instead. Model: `ASANA_WEBHOOK_MODEL`
+The run starts with `--restricted --strict-mcp-config`: no user, project or local settings
+files and no MCP servers are loaded, so the explicit `--allowedTools` list (`ALLOWED`: file
+tools, `sync.py`, local git up to commit) is the whole allow-list. Only `RUN_TOOLS` (`Read, Glob,
+Grep, Edit, Write, Bash`) exist. The deny-list is the voice agent's `OUTWARD_TOOLS`, the whole
+Asana MCP, `WebFetch` and `WebSearch`, plus `Edit` denies on the project's `.git/**`,
+`.claude/**` and `.envrc`. Git hooks are switched off for the run
+(`GIT_CONFIG_PARAMETERS='core.hooksPath=/dev/null'`), so a committed file can't execute. No
+auto mode, and never `--dangerously-skip-permissions`. An agent that needs more (SSH, WP-CLI,
+network, editing skills or `.claude/`) asks in Asana instead. Restricted mode does not load
+`CLAUDE.md`, so the prompt tells the agent to read it first. See ADR 025 points 2 and 9. Model: `ASANA_WEBHOOK_MODEL`
 (default `sonnet`). A project whose `.envrc` exports `CLAUDE_CONFIG_DIR` (KF) runs on that
 account ([ADR 017](../adr/017-per-client-looper-queues.md)).
 
@@ -61,7 +67,7 @@ Before launching, the worker reads `~/.claude/sessions/*.json`, `~/.claude-kf/se
 and every live `claude` process's working directory, and skips the project if any of them is
 inside the project root. That includes an idle interactive session left open in tmux. The activity stays pending, a
 Slack ping says so once, and the run starts when the session closes. One run per project at a
-time; runs are killed after 60 minutes.
+time; runs are stopped after 60 minutes: SIGTERM to the whole process group, SIGKILL 30 seconds later if anything is left, so a hung run can never block its project. The listener rejects a request body over 1 MB (413) before reading it.
 
 ## Setup
 
@@ -71,8 +77,10 @@ Config in `studio/.env`:
 ASANA_WEBHOOK_TRIGGER_USERS=<Mark GID>,<PmBot GID>
 ASANA_WEBHOOK_URL=https://<machine>.<tailnet>.ts.net/asana
 ASANA_WEBHOOK_PORT=8787
-ASANA_WEBHOOK_PROJECTS=BD,BSTD
+ASANA_WEBHOOK_PROJECTS=BSTD
 ```
+
+Rollout: BSTD only (also the code default) until the end-to-end and reboot tests pass, then add BD.
 
 1. Expose the listener: `tailscale funnel --bg --set-path /asana http://127.0.0.1:8787`
 2. Install and start the services (they run from the ops worktree, [ADR 014](../adr/014-ops-worktree-for-scheduled-jobs.md)):
@@ -82,7 +90,7 @@ ASANA_WEBHOOK_PROJECTS=BD,BSTD
    systemctl --user enable --now asana-webhook.service asana-webhook-catchup.timer
    ```
    User lingering must be on (`loginctl show-user $USER -p Linger`) for it to start at boot.
-3. Register each project: `python3 studio/asana_webhook.py register --project BD`.
+3. Register each project: `python3 studio/asana_webhook.py register --project BSTD`.
    The listener must already be live: Asana sends the `X-Hook-Secret` handshake *during* the
    registration call, and the listener only accepts a handshake for 2 minutes after `register`
    arms it, so nobody else can plant a secret.
@@ -97,7 +105,9 @@ ASANA_WEBHOOK_PROJECTS=BD,BSTD
 ## Daily catch-up
 
 `asana-webhook-catchup.timer` runs `catchup` at 07:45. Per project it re-registers a webhook that
-Asana has deactivated or deleted (Asana deletes one after 24 hours of failed deliveries), then
+Asana has deactivated or deleted (Asana deletes one after 24 hours of failed deliveries), but only
+for a project registered before: one with no stored `webhook_gid` is logged and skipped, so first
+registration is always a manual `register`. It then
 queues any open DevBot task whose latest Mark/PmBot comment is newer than both DevBot's latest
 comment and the last time the listener woke an agent for it.
 

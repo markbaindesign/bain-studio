@@ -13,6 +13,8 @@ Covers:
     sessions on one project" rule)
   - Per-task rate capping, to stop PmBot <-> DevBot ping-pong
   - Reading a project's CLAUDE_CONFIG_DIR from its .envrc (ADR 017)
+  - Run hardening: request size cap, catch-up re-registration rule, git hook
+    override, protected-path deny rules
 
 See studio/tests/test_asana_webhook.py.
 """
@@ -155,6 +157,54 @@ def config_dir_from_envrc(text: str, home: Path) -> str:
     if val.startswith("~"):
         val = str(home) + val[1:]
     return val
+
+
+# ---------------------------------------------------------------------------
+# Run hardening (PmBot review, BSTD-838)
+# ---------------------------------------------------------------------------
+
+def body_length_error(content_length, max_bytes: int):
+    """HTTP status to reject a request with before reading its body, or None.
+
+    Checked before the signature, so an unauthenticated caller can't make the
+    listener read an arbitrarily large body."""
+    try:
+        n = int(content_length or 0)
+    except (TypeError, ValueError):
+        return 400
+    if n < 0:
+        return 400
+    if n > max_bytes:
+        return 413
+    return None
+
+
+def should_reregister(hooks: list, entry: dict) -> bool:
+    """Catch-up only repairs a webhook we registered before (a stored webhook_gid)
+    that Asana has since disabled or deleted. A project that was never registered
+    is left alone, so adding it to ASANA_WEBHOOK_PROJECTS never registers it on the
+    next 07:45 run - first registration is always a manual `register`."""
+    if not (entry or {}).get("webhook_gid"):
+        return False
+    return not any(h.get("active") for h in hooks or [])
+
+
+def git_config_parameters(existing: str) -> str:
+    """GIT_CONFIG_PARAMETERS for agent runs: disable every git hook.
+
+    Uses the pre-2.31 'key=value' form (this machine runs git 2.25, which has no
+    GIT_CONFIG_COUNT and rejects 'key'='value'). Appends to any existing value."""
+    ours = "'core.hooksPath=/dev/null'"
+    return f"{existing} {ours}".strip() if existing else ours
+
+
+def protected_path_denies(root: Path) -> list:
+    """Absolute deny rules for files that would let a run escalate: git internals
+    (hooks), Claude settings, and the .envrc a later run reads CLAUDE_CONFIG_DIR
+    from. `//` marks an absolute path. Edit(path) rules cover every file-editing
+    tool, Write included; Claude Code ignores Write(path) rules."""
+    base = "/" + str(root).rstrip("/")
+    return [f"Edit({base}/.git/**)", f"Edit({base}/.claude/**)", f"Edit({base}/.envrc)"]
 
 
 def prefix_from_path(path: str) -> str:

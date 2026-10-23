@@ -3,11 +3,15 @@ import hmac
 from pathlib import Path
 
 from asana_webhook_logic import (
+    body_length_error,
     busy_sessions,
     candidate_events,
     config_dir_from_envrc,
+    git_config_parameters,
     over_rate_limit,
     prefix_from_path,
+    protected_path_denies,
+    should_reregister,
     story_triggers,
     task_gid_for,
     task_is_for_bot,
@@ -186,3 +190,39 @@ def test_prefix_from_path():
     assert prefix_from_path("/bstd/") == "BSTD"
     assert prefix_from_path("/asana/KF-WEB?x=1") == "KF-WEB"
     assert prefix_from_path("/") == ""
+
+
+# --- run hardening (BSTD-838 review) -------------------------------------------
+
+def test_body_length_error():
+    cap = 1024
+    assert body_length_error("512", cap) is None
+    assert body_length_error(None, cap) is None          # heartbeat with no body
+    assert body_length_error("1024", cap) is None
+    assert body_length_error("1025", cap) == 413
+    assert body_length_error("-1", cap) == 400
+    assert body_length_error("abc", cap) == 400
+
+
+def test_should_reregister_only_repairs_known_webhooks():
+    dead = [{"gid": "W1", "active": False}]
+    live = [{"gid": "W1", "active": True}]
+    assert should_reregister(dead, {"webhook_gid": "W1"}) is True
+    assert should_reregister([], {"webhook_gid": "W1"}) is True      # Asana deleted it
+    assert should_reregister(live, {"webhook_gid": "W1"}) is False
+    # Never registered: catch-up must not create a first registration (e.g. BD).
+    assert should_reregister([], None) is False
+    assert should_reregister([], {}) is False
+    assert should_reregister(dead, {"secret": "s"}) is False
+
+
+def test_git_config_parameters_disables_hooks_and_appends():
+    assert git_config_parameters("") == "'core.hooksPath=/dev/null'"
+    assert git_config_parameters("'user.name=x'") == "'user.name=x' 'core.hooksPath=/dev/null'"
+
+
+def test_protected_path_denies_are_absolute_edit_rules():
+    # Edit(path) covers Write too; Claude Code ignores Write(path) rules.
+    assert protected_path_denies(Path("/srv/proj/")) == [
+        "Edit(//srv/proj/.git/**)", "Edit(//srv/proj/.claude/**)", "Edit(//srv/proj/.envrc)"]
+

@@ -26,6 +26,7 @@ import fcntl
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -39,11 +40,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import sync  # noqa: E402  (loads studio/.env, Asana helpers, project discovery)
 from asana_webhook_logic import (  # noqa: E402
+    body_length_error,
     busy_sessions,
     candidate_events,
     config_dir_from_envrc,
+    git_config_parameters,
     over_rate_limit,
     prefix_from_path,
+    protected_path_denies,
+    should_reregister,
     story_triggers,
     task_gid_for,
     task_is_for_bot,
@@ -58,7 +63,8 @@ from voice.tasks import OUTWARD_TOOLS  # noqa: E402
 
 PORT = int(os.getenv("ASANA_WEBHOOK_PORT", "8787"))
 PUBLIC_URL = os.getenv("ASANA_WEBHOOK_URL", "").rstrip("/")  # e.g. https://host.ts.net/asana
-PROJECTS = [p.strip() for p in os.getenv("ASANA_WEBHOOK_PROJECTS", "BD,BSTD").split(",") if p.strip()]
+# Rollout: BSTD only until the end-to-end and reboot tests pass, then add BD (BSTD-842).
+PROJECTS = [p.strip() for p in os.getenv("ASANA_WEBHOOK_PROJECTS", "BSTD").split(",") if p.strip()]
 BOT_GID = os.getenv("ASANA_BAINBOT_GID", "")
 TRIGGER_USERS = {g.strip() for g in os.getenv("ASANA_WEBHOOK_TRIGGER_USERS", "").split(",") if g.strip()}
 MODEL = os.getenv("ASANA_WEBHOOK_MODEL", "sonnet")
@@ -66,6 +72,8 @@ DEBOUNCE_S = 20
 RUN_TIMEOUT_S = 60 * 60
 MAX_RUNS_PER_TASK_PER_HOUR = 3
 HANDSHAKE_WINDOW_S = 120
+MAX_BODY_BYTES = 1024 * 1024  # Asana batches are a few KB; anything near this is not Asana
+REAP_GRACE_S = 30
 
 STATE = Path(os.getenv("XDG_STATE_HOME", Path.home() / ".local/state")) / "bain-studio" / "asana-webhook"
 QUEUE = STATE / "queue"
@@ -81,14 +89,18 @@ CLAUDE_CONFIG_DIRS = [Path.home() / ".claude", Path.home() / ".claude-kf"]
 DISALLOWED = OUTWARD_TOOLS + [
     "mcp__claude_ai_Asana",          # every Asana MCP tool: mutations go through sync.py
     "mcp__claude_ai_Gmail__create_draft",
+    "WebFetch", "WebSearch",         # no network egress for a run that reads Asana comments
     "Bash(git flow * publish *)",
 ]
 
 STUDIO_ROOT = Path(__file__).resolve().parents[1]
 SYNC_PY = STUDIO_ROOT / "studio" / "sync.py"
 
-# Explicit allow-list (ADR 025): no auto mode, no skipped permissions. Anything else
-# the project's own settings don't allow is denied, and the agent asks in Asana.
+# Runs use --restricted (ADR 025): user, project and local settings files are ignored,
+# so ALLOWED is the whole allow-list rather than an addition to the project's own
+# (BSTD's local settings allow `python3 *`, BD's allow `Bash(*)`). Only the tools in
+# RUN_TOOLS exist; anything not in ALLOWED is denied and the agent asks in Asana.
+RUN_TOOLS = "Read,Glob,Grep,Edit,Write,Bash"
 ALLOWED = [
     "Read", "Glob", "Grep", "Edit", "Write",
     f"Bash(python3 {SYNC_PY} *)",
@@ -100,7 +112,8 @@ ALLOWED = [
 AGENT_PROMPT = """An Asana webhook woke you. Mark or PmBot has new activity on these tasks assigned to DevBot in project {prefix}:
 {tasks}
 
-1. Pull the latest from Asana: python3 {sync} --project {prefix}
+1. Read CLAUDE.md in this folder first. This run does not load it automatically.
+   Pull the latest from Asana: python3 {sync} --project {prefix}
 2. Read each task above in asana-mirror.md, including its newest comments, and handle the new work for DevBot following this project's CLAUDE.md and any mission brief the task links to.
 3. Post a short progress comment on each task you touched: python3 {sync} --comment --task-gid <GID> --comment-text "<text>"
 4. Exit when done.
@@ -177,7 +190,13 @@ class Handler(BaseHTTPRequestHandler):
         if prefix not in self.projects:
             log(f"REJECT unknown path {self.path!r}")
             return self._reply(404)
-        body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        length = self.headers.get("Content-Length")
+        error = body_length_error(length, MAX_BODY_BYTES)
+        if error:
+            log(f"REJECT {prefix} body length {length!r} -> {error}")
+            self.close_connection = True  # the unread body must not be parsed as a request
+            return self._reply(error)
+        body = self.rfile.read(int(length or 0))
 
         hook_secret = self.headers.get("X-Hook-Secret")
         if hook_secret:
@@ -340,7 +359,8 @@ class Worker:
                 if over_rate_limit(runs, now, MAX_RUNS_PER_TASK_PER_HOUR):
                     continue
                 runs[:] = [t for t in runs if now - t < 86400] + [now]
-                hist[gid]["last_wake"] = datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+                hist[gid]["last_wake"] = (datetime.datetime.now(datetime.timezone.utc)
+                                          .strftime("%Y-%m-%dT%H:%M:%SZ"))
                 allowed.append(gid)
 
         _locked_json(HISTORY, update)
@@ -368,13 +388,17 @@ class Worker:
         cfg = config_dir_from_envrc(envrc.read_text() if envrc.exists() else "", Path.home())
         if cfg:
             env["CLAUDE_CONFIG_DIR"] = cfg
+        # A run can write files and `git commit`; with hooks off, a hook it wrote can't run.
+        env["GIT_CONFIG_PARAMETERS"] = git_config_parameters(env.get("GIT_CONFIG_PARAMETERS", ""))
 
         RUNS.mkdir(parents=True, exist_ok=True)
         run_log = RUNS / f"{prefix}-{datetime.datetime.now():%Y%m%d-%H%M%S}.log"
         out = run_log.open("w")
         proc = subprocess.Popen(
             [CLAUDE_BIN, "-p", prompt, "--model", MODEL,
-             "--allowedTools", *ALLOWED, "--disallowedTools", *DISALLOWED],
+             "--restricted", "--strict-mcp-config", "--tools", RUN_TOOLS,
+             "--allowedTools", *ALLOWED,
+             "--disallowedTools", *DISALLOWED, *protected_path_denies(proj.root)],
             cwd=proj.root, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
             start_new_session=True)
         self.running[prefix] = (proc, time.time(), out)
@@ -384,16 +408,32 @@ class Worker:
         for prefix, (proc, started, out) in list(self.running.items()):
             code = proc.poll()
             if code is None and time.time() - started > RUN_TIMEOUT_S:
-                proc.terminate()
                 log(f"TIMEOUT {prefix} pid={proc.pid} terminated after {RUN_TIMEOUT_S // 60}m")
                 _notify(f"The {prefix} agent run timed out and was stopped.", prefix)
-                code = proc.wait(timeout=30)
+                code = _stop_group(proc)
             if code is not None:
                 out.close()
                 log(f"EXIT {prefix} pid={proc.pid} code={code} after {(time.time() - started) / 60:.1f}m")
                 if code != 0:
                     _notify(f"The {prefix} agent run exited with code {code}.", prefix)
                 del self.running[prefix]
+
+
+def _stop_group(proc) -> int:
+    """Stop a run and everything it started. Runs use start_new_session=True, so the
+    process group id is the leader's pid; terminate() alone would leave children
+    behind. SIGKILL after a grace period, so the run is always reaped and its
+    project can never stay blocked."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except ProcessLookupError:
+            pass
+        try:
+            return proc.wait(timeout=REAP_GRACE_S)
+        except subprocess.TimeoutExpired:
+            continue
+    return proc.wait()
 
 
 def _notify(message: str, prefix: str) -> None:
@@ -507,22 +547,39 @@ def list_hooks() -> None:
                   f"\n    target={h.get('target')}")
 
 
+def open_tasks(proj) -> list:
+    """Every incomplete task in the project, following next_page."""
+    params = {"project": proj.gid, "completed_since": "now",
+              "opt_fields": "assignee.gid,completed", "limit": 100}
+    out = []
+    while True:
+        page = sync._get("/tasks", params)
+        out.extend(page.get("data") or [])
+        offset = (page.get("next_page") or {}).get("offset")
+        if not offset:
+            return out
+        params["offset"] = offset
+
+
 def catchup() -> None:
-    """Daily safety net: re-register dead webhooks, then queue any DevBot task whose
-    latest Mark/PmBot comment has not been answered since the last wake."""
+    """Daily safety net: repair webhooks we registered that Asana has disabled, then
+    queue any DevBot task whose latest Mark/PmBot comment has not been answered since
+    the last wake. Never registers a project for the first time."""
     projects = project_map()
     history = _locked_json(HISTORY)
+    secrets = _locked_json(SECRETS)
     for prefix, proj in projects.items():
         try:
             hooks = webhooks_for(proj)
-            if not any(h.get("active") for h in hooks):
+            if should_reregister(hooks, secrets.get(prefix)):
                 for h in hooks:
                     sync._delete(f"/webhooks/{h['gid']}")
                 log(f"CATCHUP {prefix} webhook missing or inactive - re-registering")
                 register(prefix)
+            elif not (secrets.get(prefix) or {}).get("webhook_gid"):
+                log(f"CATCHUP {prefix} never registered - skipping (run `register` to add it)")
 
-            tasks = sync._get("/tasks", {"project": proj.gid, "completed_since": "now",
-                                         "opt_fields": "assignee.gid,completed"})["data"]
+            tasks = open_tasks(proj)
             waiting = []
             for t in tasks:
                 if not task_is_for_bot(t, BOT_GID):

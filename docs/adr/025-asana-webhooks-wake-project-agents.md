@@ -32,11 +32,25 @@ matching project folder.
 1. **Only Mark and PmBot trigger runs.** The brief proposed "anyone except DevBot". Clients
    comment on these boards, Asana text is untrusted (bain-studio `CLAUDE.md`), and the endpoint
    is public. A client comment therefore never starts an agent; it waits for a normal session.
-2. **Explicit allow-list.** Runs get `--allowedTools` for file tools, `sync.py`, and local git
-   (status, diff, log, branch, add, commit, feature start), plus a deny-list (outward tools, the
-   whole Asana MCP, push/merge). No auto mode and never `--dangerously-skip-permissions`, which
-   the looper uses for queue work Mark started himself. Anything else the project's own
-   settings don't allow is denied, and the agent asks in Asana.
+2. **Explicit allow-list, and nothing inherited.** Runs start with `--restricted
+   --strict-mcp-config`, so user, project and local settings files and MCP servers are not
+   loaded: `--allowedTools` is the *whole* allow-list, not an addition to the project's own.
+   (Without this, BSTD's local settings would add `python3 *` and BD's `Bash(*)`, and every
+   user settings file adds `WebFetch`/`WebSearch`: open egress for a run that reads Asana
+   comments.) Only `Read, Glob, Grep, Edit, Write, Bash` exist (`--tools`); the allow-list is
+   file tools, `sync.py`, and local git (status, diff, log, branch, add, commit, feature start).
+   The deny-list adds outward tools, the whole Asana MCP, `WebFetch`, `WebSearch` and git flow
+   publish. No auto mode and never `--dangerously-skip-permissions`, which the looper uses for
+   queue work Mark started himself. Anything else is denied, and the agent asks in Asana.
+   Because the project's `CLAUDE.md` is not loaded in restricted mode, the prompt tells the
+   agent to read it first.
+9. **A run cannot plant code that runs later.** File writes plus `git commit` would let a run
+   write a git hook that the commit then executes, or edit settings and `.envrc` for the next
+   run. Restricted mode already refuses writes to git and settings files; the run also gets
+   explicit `Edit(//<root>/.git/**)`, `.claude/**` and `.envrc` denies, and
+   `GIT_CONFIG_PARAMETERS='core.hooksPath=/dev/null'` so no hook runs at all. (Git here is
+   2.25, which predates `GIT_CONFIG_COUNT`.) Cost: a webhook run cannot edit skills, settings
+   or archive `.claude/inbox/`; that work waits for a normal session.
 3. **One session per project, including interactive ones.** The guard reads the Claude session
    registry and live `claude` processes' working directories, not a listener-private lock, so a
    tmux session left open on a project blocks a headless run there. The looper's state-file guard was not reused because it only sees looper
@@ -48,7 +62,9 @@ matching project folder.
 6. **Loop cap.** At most 3 runs per task per hour. Filtering DevBot's own events stops
    self-triggering, but a PmBot to DevBot exchange could still ping-pong.
 7. **Daily catch-up** re-registers dead webhooks and queues unanswered tasks, because Asana
-   deletes a webhook after 24 hours of failed deliveries.
+   deletes a webhook after 24 hours of failed deliveries. It only repairs a webhook that was
+   registered before (a stored `webhook_gid`); first registration is always a manual
+   `register`, so listing a project in `ASANA_WEBHOOK_PROJECTS` never goes live by itself.
 8. **State outside the repo**, under `$XDG_STATE_HOME/bain-studio/asana-webhook/`, in the
    direction ADR 021 sets.
 
