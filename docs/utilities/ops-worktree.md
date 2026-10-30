@@ -142,6 +142,10 @@ not a bug: `git flow release finish` alone changes nothing about what executes a
 
 ## Rules
 
+- **Every tagged release deploys.** Cutting a tag and stopping there leaves all scheduled
+  jobs on the previous release, silently and with nothing in any log to show it. Step 2
+  below is part of the release, not an optional follow-up.
+
 - **Never check out a branch in the ops worktree.** It stays detached at a release tag. Use
   `ops-deploy.sh` to move it; do not `git checkout` there by hand.
 - **Never edit files in the ops worktree.** It is a deployment target. `ops-deploy.sh` will
