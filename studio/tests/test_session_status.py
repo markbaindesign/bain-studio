@@ -91,7 +91,7 @@ def test_latest_ai_title_wins():
 
 # --- fitting the row to the pane ------------------------------------------
 
-ROW = {"status": "shell", "account": "main", "where": "studio:1.0",
+ROW = {"status": "shell", "account": "bain", "where": "studio:1.0",
        "project": "middlewayeducation", "ctx": 282744, "for": 480,
        "title": "Invoices bookkeeping"}
 

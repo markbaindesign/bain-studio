@@ -15,20 +15,22 @@ last because a session idle for two days is not asking for anything, while busy 
 watching.
 
 ```
-12 sessions   1 waiting · 1 shell · 1 busy · 9 idle   kf 2 · main 10        1s ago
-● waiting  main  mwe:1.1       middlewayeducation        118k    12m  Passiko project setup
-◑ shell    main  studio:1.0    Work                      282k    54m  Invoices bookkeeping
-◐ busy     main  infra:0.0     bain-studio               159k     3s  Session dashboard rebuild
-○ idle     main  ebiz:0.0      ebiz-global               103k    53m  EBiz Japan email migration
+12 sessions   1 waiting · 1 shell · 1 busy · 9 idle   bain 10 · kf 2        1s ago
+● waiting  bain  mwe:1.1       middlewayeducation        118k    12m  Passiko project setup
+◑ shell    bain  studio:1.0    Work                      282k    54m  Invoices bookkeeping
+◐ busy     bain  infra:0.0     bain-studio               159k     3s  Session dashboard rebuild
+○ idle     bain  ebiz:0.0      ebiz-global               103k    53m  EBiz Japan email migration
 ○ idle     kf    kf:0.0        kf-21                      82k    49m  Ticket reply directly
 ○ idle     kf    KF:1.0        kf-21                     168k    49m  Budget update
-○ idle     main  infra:0.1     bain-studio (bg)           31k     7m  -
+○ idle     bain  infra:0.1     bain-studio (bg)           31k     7m  -
 ```
 
 Columns are given up as the pane narrows, in order of what can be done without: the title
 first, then the context size, then the project is squeezed. Status, tmux target and time in
 state always survive. The account column appears only when more than one Claude account has
-sessions running; on a single-account machine it would be dead space.
+sessions running; on a single-account machine it would be dead space. Each account is named
+after the domain of the signed-in email - `bain`, `kf` - the same names the status line shows,
+so a row here and a prompt there are obviously the same account.
 
 ## What moves on screen
 
@@ -127,6 +129,16 @@ third account needs no code change: create it and it is picked up on the next po
 Last-activity time is the mtime of the session transcript at
 `<config dir>/projects/<slug>/<sessionId>.jsonl`, falling back to `startedAt`. It is resolved
 per account, so a KF session's transcript is looked for under `~/.claude-kf`, not `~/.claude`.
+
+The account name comes from `oauthAccount.emailAddress` in that account's `.claude.json` -
+inside the config directory for a second account, but `~/.claude.json` for the default one,
+which is where Claude Code itself keeps it. The domain is mapped to the short label
+(`bain.design` -> `bain`, `khyentsefoundation.org` -> `kf`), unmapped domains falling back to
+their first label. The map is a copy of the one in `~/.claude/hooks/statusline.py`: that file
+is outside this repo, and the app runs from the ops worktree, so it cannot be imported. A read
+is cached once it succeeds, because Claude Code rewrites `.claude.json` often enough that a
+4-second poll catches it mid-write. Signing out and into a different account in a config
+directory therefore needs the pane respawned before the name catches up.
 
 ### What the transcript gives, in the same read
 

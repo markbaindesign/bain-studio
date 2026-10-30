@@ -111,10 +111,42 @@ def config_dirs():
     return found or [DEFAULT_CONFIG]
 
 
+# Account label by email domain, the same two names the status line prints
+# (~/.claude/hooks/statusline.py). That file is outside this repo and the app
+# runs from the ops worktree, so the map is duplicated rather than imported.
+ACCOUNT_LABELS = {"bain.design": "bain", "khyentsefoundation.org": "kf"}
+
+# config dir -> label, filled only on a successful read. Claude Code rewrites
+# .claude.json often, so a 4-second poll will occasionally catch it mid-write;
+# without this, the label would fall back for a frame and split the tally. The
+# signed-in account rarely changes while a pane runs - a logout and login in
+# that config dir would do it, and then the pane needs respawning.
+_ACCOUNTS = {}
+
+
 def account_of(config_dir):
-    """~/.claude -> 'main', ~/.claude-kf -> 'kf'."""
-    suffix = config_dir.name[len(".claude"):].lstrip("-.")
-    return suffix or "main"
+    """~/.claude -> 'bain', ~/.claude-kf -> 'kf'.
+
+    Named after the signed-in account, not the directory, so the names match
+    the status line. The email lives in <config dir>/.claude.json, except for
+    the default account, whose file is ~/.claude.json - the same lookup the
+    status line does. There is no fallback from one file to the other: reading
+    the wrong one would label a KF session "bain".
+    """
+    if config_dir in _ACCOUNTS:
+        return _ACCOUNTS[config_dir]
+    account_file = (Path.home() / ".claude.json" if config_dir == DEFAULT_CONFIG
+                    else config_dir / ".claude.json")
+    try:
+        with open(account_file) as f:
+            email = json.load(f).get("oauthAccount", {}).get("emailAddress")
+        domain = email.split("@")[-1]
+        label = ACCOUNT_LABELS.get(domain) or domain.split(".")[0].lower()
+        _ACCOUNTS[config_dir] = label
+        return label
+    except (OSError, ValueError, AttributeError, IndexError):
+        # No readable account file: fall back to the directory suffix.
+        return config_dir.name[len(".claude"):].lstrip("-.") or "default"
 
 
 def sessions_for(config_dir):
@@ -311,7 +343,7 @@ def collect():
                 "status": status,
                 "ctx": (state or {}).get("ctx", 0),
                 "title": (state or {}).get("title", ""),
-                "account": s.get("_account", "main"),
+                "account": s.get("_account", "?"),
                 "where": locate(s.get("pid", 0), panes) or "-",
                 "project": (os.path.basename(s.get("cwd", "")) or "/")
                 + (" (bg)" if s.get("kind") == "background" else ""),
