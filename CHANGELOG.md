@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-10-30
+
+### Added
+- **Session status** reads each session's transcript, in the same pass that gives it a timestamp, and shows two new columns: the context the session is holding (the figure Claude Code prints in its own footer) and the session's AI title, so a row says what the session is working on and not only that it is working.
+- **Session status:** a `shell` status. The CLI reports `busy` for as long as a background shell lives on, which hid finished turns among live ones. A session whose newest transcript entry is an assistant message that ended its turn with nothing outstanding is reported as `shell` - neither working nor parked, because the shell may yet wake it.
+
+### Changed
+- **Session status** sorts waiting, shell, busy, idle. A session sitting on a permission prompt or holding a finished turn is asking for something, so it comes above live work; idle sits last, since a session parked for two days is asking for nothing.
+- **Session status** moves to say what it is doing without being read: busy spins, the statuses that want a human pulse, idle is greyed out, and the cursor stays hidden until a key is pressed.
+- **Session status** names accounts after the signed-in email domain, so the column reads `bain` and `kf` - the same names the status line shows - instead of naming the config directory `main`.
+
+### Fixed
+- **Sync:** a registry entry whose directory no longer exists said "no CLAUDE.md found", which reads as a repo that is present but unconfigured. It now reports the missing path, so the fix (drop the entry from `projects.json`) is obvious.
+
 ## [1.17.0] - 2026-10-30
 
 ### Changed
