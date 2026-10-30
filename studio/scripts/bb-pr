@@ -105,7 +105,7 @@ if [[ -z "$REMOTE_URL" ]]; then
   exit 1
 fi
 
-# support both SSH (git@bitbucket.org:owner/repo.git) and HTTPS
+# support SSH (git@ssh.bitbucket.org:owner/repo.git, legacy git@bitbucket.org:) and HTTPS
 if [[ "$REMOTE_URL" =~ bitbucket\.org[:/](.+/.+?)(.git)?$ ]]; then
   SLUG="${BASH_REMATCH[1]}"
 else

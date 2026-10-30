@@ -1,70 +1,57 @@
 ---
 name: raise-invoice
-description: Raise an invoice for a completed project or milestone. Invoke with a project slug or name. Produces a formatted invoice ready for review. Payment/status tracking lives in Harvest, not a local log.
-allowed-tools: [Read, Write, Bash]
+description: Check uninvoiced Harvest hours and raise a Harvest draft invoice, from a project's unbilled time or as a fixed milestone. Invoke with a project name fragment or Harvest project ID, or with no args to see what is unbilled. Only ever creates drafts; Mark sends from Harvest.
+allowed-tools: [Bash, Read]
 ---
 
 # Raise Invoice
 
-Produces a formatted invoice for a completed project or milestone, with the correct Spanish IVA/IRPF treatment applied.
+A thin trigger for `raise_invoice.py`. Harvest numbers the invoice, renders the PDF, sends it
+and tracks payment. The script only creates **drafts**, and only with `--create`.
+
+```
+SCRIPT=/media/data/dev/bain-studio/studio/tools/raise-invoice/raise_invoice.py
+python3 $SCRIPT uninvoiced [--all]
+python3 $SCRIPT hours PROJECT [--from YYYY-MM-DD --to YYYY-MM-DD] [--type T] [--create]
+python3 $SCRIPT milestone PROJECT --amount N --description TEXT [--type T] [--create]
+```
+
+`PROJECT` is a Harvest project ID or a fragment of an active project's or client's name (the
+skill arg, if given). `--type` is `es`, `eu`, `intl` or `upwork`. Run `--help` on a subcommand
+for the rest (`--currency`, `--customer-vat`, `--issue-date`, `--allow-draft`, `--summary`).
 
 ## Steps
 
-### 1. Load the project record
+### 1. See what is unbilled
 
-Read the project row from `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv`. Extract:
-- Client Name, Project Name, End Date
-- Quoted Price, Final Price (use Final Price if set, otherwise Quoted Price)
-- Upwork? field
+Run `uninvoiced`. Show Mark the output, including any credits and fixed-fee rows.
 
-If the project is not in Mnemosyne, stop and ask Mark to log it first via `/log-project`.
+### 2. Mark picks hours or milestone
 
-### 2. Load rate and tax configuration
+- **Hours**: bills the project's unbilled time. Use `--from/--to` for part of it.
+- **Milestone**: one fixed-price line. **Mark gives the amount and the description.** Never infer
+  them. You may cross-check against the proposal or Asana and point out a mismatch.
 
-Read `/media/data/Dropbox/Work/Admin/Financial/Accounting/config/rates.yaml` for: studio rate, Upwork rate, IVA rate (21%), IRPF rate (15%).
+Fixed-fee projects are billed by milestone, not hours.
 
-### 3. Determine tax treatment
+### 3. Preview and confirm
 
-- **Upwork project**: no IVA, no IRPF — Upwork handles this. Invoice is internal record only.
-- **Spanish B2B client**: IVA 21% applies (added to invoice total). IRPF 15% applies (withheld by payer).
-- **International direct client**: no IVA or IRPF.
+Run the subcommand **without** `--create`. The preview shows the client, currency, type, tax,
+lines and notes. Confirm with Mark:
 
-Ask Mark to confirm the client type if it is ambiguous.
+- the type (the preview suggests one from past invoices when `--type` is missing)
+- the currency (it comes from the client's last invoice of the same kind, not the client record)
+- the notes, and every WARNING line
 
-### 4. Produce the invoice
+Re-run the preview with any corrected flags until Mark is happy with it.
 
-```
-FACTURA / INVOICE
-Número: {YYYY-NNN}
-Fecha: {YYYY-MM-DD}
-Vencimiento: {30 days from issue}
+### 4. Create the draft — only on Mark's yes
 
-DE / FROM:
-Mark Bain — Bain Design
-mark@bain.design
-NIF: [Mark's NIF]
+Re-run the exact previewed command with `--type` set and `--create`, and only after Mark says yes
+to **that** draft. This is not reversible in the usual sense: importing time marks those hours
+invoiced in Harvest at once, until the draft is deleted. Never pass `--create` speculatively.
 
-PARA / TO:
-{Client Name}
-{Client address if known}
+### 5. Hand over
 
-CONCEPTO / DESCRIPTION:
-{Project Name} — {brief description of services}
-
-BASE IMPONIBLE:        €{amount}
-IVA 21% (if applicable): €{iva}
-IRPF -15% (if applicable): -€{irpf}
-TOTAL:                 €{total}
-
-FORMA DE PAGO / PAYMENT:
-Transferencia bancaria / Bank transfer
-IBAN: [Mark's IBAN]
-BIC: [Mark's BIC]
-Referencia: {invoice number}
-```
-
-### 5. Output
-
-Return the full invoice text. Note: "Ready for Mark's review — send via Wise or email once approved."
-
-Do not send. Mark approves and sends. The Law of the Gate.
+Give Mark the Harvest link the script prints. **Do not send.** Mark reviews the draft and sends
+it from Harvest. The Law of the Gate.

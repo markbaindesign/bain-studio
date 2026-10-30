@@ -56,23 +56,50 @@ python3 studio/postman.py sweep --dry-run
 
 ## Inbox locations
 
-- **Studio inbox:** `studio/inbox/` in the bain-studio repo
-- **Project inbox:** `{project}/.claude/inbox/` — resolved by walking `STUDIO_SCAN_ROOTS`
+- **Studio inbox:** `studio/inbox/` in the bain-studio repo. Also the fallback for a project
+  postman can't find, so check `postman.log` if a message seems to have gone missing.
+- **Project inbox:** `{project}/.claude/inbox/`. `--project` is looked up first as a registered
+  prefix (`prefix:` and `path:` in `docs/projects/*.md`, so `ASP` finds
+  `/media/data/dev/ddev/algolia-search`), then as a folder name under `STUDIO_SCAN_ROOTS`.
 
 `STUDIO_SCAN_ROOTS` is set in `studio/.env` as a colon-separated list of directory roots to scan.
 
 ## Message lifecycle
 
 1. `send()` writes a `msg-{timestamp}-{id}.md` file to the appropriate inbox
-2. High/urgent messages trigger an immediate Slack notification via `notifier.py`, and are
+2. `send()` pings every live Claude session working in the receiving project (see below)
+3. High/urgent messages trigger an immediate Slack notification via `notifier.py`, and are
    stamped `notified_at` once the post succeeds
-3. On sweep (Hermes, daily 08:05), every message without `notified_at` is posted to Slack and
+4. On sweep (Hermes, daily 08:05), every message without `notified_at` is posted to Slack and
    stamped. It **stays in the inbox**; a failed post leaves it unstamped for the next sweep
-4. `/check-inbox` reads the message in a Claude session and moves it to `processed/`
+5. `/check-inbox` reads the message in a Claude session and moves it to `processed/`
 
 Until 2026-09-17 the sweep archived messages as it posted them, so they disappeared before any
 session read them, and `/check-inbox` only looked in `.claude/inbox/` while studio messages land
 in `studio/inbox/`.
+
+## Ping
+
+`send()` finds tmux panes running `claude` whose working directory is inside the receiving
+project (for the studio inbox, bain-studio) and, for each one:
+
+- rings the pane's bell, so tmux flags the window
+- prefixes the window name with 📬 (the original name is kept in the `@postman_name` window option)
+- flashes the subject on every attached tmux client for 8 seconds
+
+It also sends a critical desktop notification. If no session is open on that project, it says
+so on stderr and logs `PING ... panes=none`; the message waits for `/check-inbox` as before.
+Set `POSTMAN_NO_PING=1` to skip all of this (the tests do).
+
+Claude itself learns about the mail from the `inbox-alert.py` hook
+(`.claude/hooks/inbox-alert.py`, wired into both Claude accounts' `settings.json` on
+`UserPromptSubmit`, `SessionStart` and `Stop`). On each prompt and at session start it lists
+unread messages in Claude's context and asks it to tell Mark and run `/check-inbox`. Once the
+inbox is empty, the next hook run removes the 📬 marker. The hook never types into a pane, so an
+idle session acts on the mail at your next prompt, not on its own. To clear a marker by hand:
+`python3 studio/postman.py unmark [--pane %41]`.
+
+The status line (`~/.claude/hooks/statusline.py`) shows the same count as `📬 N unread`.
 
 ## Sending from another session or Claude account
 

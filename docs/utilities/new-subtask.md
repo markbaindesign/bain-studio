@@ -10,6 +10,9 @@ description: Create one or more subtasks under an existing Asana task from the C
 Adds subtasks under an existing Asana task via bainbot. Sibling of [new-task](new-task.md), which creates
 top-level tasks.
 
+Use subtasks only for the steps of a task that fits in one sitting. Anything bigger, and any
+feedback item, is a top-level task. See [ADR 022](../adr/022-asana-tasks-carry-their-own-context.md).
+
 ## Usage
 
 ```bash

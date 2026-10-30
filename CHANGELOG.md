@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-10-30
+
+### Added
+- **Raise invoice** (`studio/tools/raise-invoice/raise_invoice.py`): reports projects with unbilled Harvest hours and creates Harvest draft invoices, either from a project's uninvoiced time or as a fixed milestone line. Drafts only - it never sends - and it refuses to create one without an explicit client type, so IVA and IRPF treatment is always deliberate. See `docs/utilities/raise-invoice.md`.
+- **LinkedIn posting** (`studio/linkedin_post.py`, `/linkedin-post`): publishes an approved post to Mark's LinkedIn profile. Dry run by default, with a lint pass for m-dashes, length and hashtag count. Kairos hands off to it once Mark approves. See `docs/utilities/linkedin-post.md`.
+- **Session status** (`studio/scripts/session-status`): a dense list of every Claude Code session on the machine, which tmux pane it is in, and whether it needs attention, sorted needs-me-first. Reads `claude agents --json`, with no hooks and no database. See `docs/utilities/session-status.md`.
+- **Postman ping:** `send()` now alerts the live Claude session(s) working in the receiving project: tmux bell, a 📬 prefix on the window name, a message flashed on attached tmux clients, and a desktop notification. New `postman.py unmark` clears the marker. See `docs/gods/hermes/postman.md`.
+- **`inbox-alert.py` hook:** lists unread postman mail in Claude's context on each prompt and at session start, and clears the 📬 marker once the inbox is empty.
+- **ADR 022** - Asana tasks carry their own context: subtasks are only for the steps of a task that fits in one sitting; anything larger, and any feedback item, is a top-level task.
+- **ADR 023** - contact form bot protection via Cloudflare Turnstile, with the Hephaestus checklist for wiring it into Contact Form 7.
+- **ADR 024** - cutover hostname sweep.
+- Registered four projects: ASP (Algolia Search Plugin), JBP (Beato Properties), LRET (Lead Retriever) and TIS.
+
+### Changed
+- **`/raise-invoice` now drives Harvest** instead of producing an invoice document by hand. Harvest owns the numbering, the PDF, sending and payment tracking; the skill is a thin trigger for the script.
+
+### Fixed
+- **Postman:** `--project` now resolves a registered prefix (e.g. `ASP`) through `docs/projects/*.md`. Before, only folder names matched, so KF's `ASP` messages fell back to `studio/inbox/` and sat unread.
+- **Bitbucket SSH:** remotes use `ssh.bitbucket.org` (BSTD-834), and TARA is correctly recorded as a GitHub repo rather than Bitbucket.
+
 ## [1.15.1] - 2026-10-20
 
 ### Fixed
@@ -422,7 +442,10 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.14.0...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.16.0...develop
+[1.16.0]: https://github.com/markbaindesign/bain-studio/compare/1.15.1...1.16.0
+[1.15.1]: https://github.com/markbaindesign/bain-studio/compare/1.15.0...1.15.1
+[1.15.0]: https://github.com/markbaindesign/bain-studio/compare/1.14.0...1.15.0
 [1.14.0]: https://github.com/markbaindesign/bain-studio/compare/1.13.1...1.14.0
 [1.13.1]: https://github.com/markbaindesign/bain-studio/compare/1.13.0...1.13.1
 [1.13.0]: https://github.com/markbaindesign/bain-studio/compare/1.12.0...1.13.0

@@ -6,7 +6,7 @@ name: Upwork Pipeline
 status: active
 client: Internal
 type: internal
-repo: git@bitbucket.org:markbaindesign/upwork-proposals.git
+repo: git@ssh.bitbucket.org:markbaindesign/upwork-proposals.git
 sector: Business development
 stack: Python · Automation
 path: /media/data/dev/misc/upwork-proposals

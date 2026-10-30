@@ -88,6 +88,32 @@ site, and WPLSCM.
 
 Stay on the free tier until it is full, then move to the paid tier deliberately.
 
+### Addendum (2026-10-19): uncached KF monitor
+
+KF 2.12.0 (2026-10-01) turned full-page caching back on, so the khyentsefoundation.org monitor
+is now answered from the Cloudflare/WP Engine cache and can no longer see PHP worker
+exhaustion. That matters because WP Engine's 504s only hit uncached requests: when every PHP
+worker is busy and the backlog is full, queued requests are evicted with a 504. That
+explanation comes from WP Engine's own support docs only, not a second independent source.
+
+An eighth monitor (id 5096528) checks the uncached path:
+
+| Site | Project |
+|---|---|
+| https://khyentsefoundation.org/donations-kf/ (POST, uncached) | KF-WEB |
+
+It sends a POST (`uptime_check=1`) because that is the only request found that reliably
+bypasses both caches. Cloudflare caches a query-string variant after its first hit, and it
+ignores both a `Cache-Control: no-cache` request header and a fake login cookie. Other
+settings match the rest, except the timeout is 45 s: on 2026-10-19 the uncached page took
+11-22 s to finish, so 30 s would alert on slowness alone. Each check ties up one WP Engine
+PHP worker for 10-20 s.
+
+If this monitor alerts while the homepage monitor stays green, the cache is hiding a PHP
+capacity problem rather than a full outage.
+
+8 of the 10 free monitors are now used (tara.khyentsefoundation.org is still not added).
+
 ### Note: false "down" reports from Spain
 
 khyentsefoundation.org is behind Cloudflare. On 2026-09-17 it was unreachable from the studio's

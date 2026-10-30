@@ -6,7 +6,7 @@ name: Middle Way Education
 status: active
 client: Middle Way Education
 type: client
-repo: git@bitbucket.org:markbaindesign/middlewayeducation.git
+repo: git@ssh.bitbucket.org:markbaindesign/middlewayeducation.git
 sector: Education · Buddhist-informed curriculum
 stack: WordPress · Custom Theme (middle-way-theme) · custom plugins (mwe-search, mwe-curriculum, mwe-glossary, mwe-member) · bd-search (shared Algolia plugin) · Algolia · VVV · WP Engine
 path: /media/data/dev/vvv/clients/www/middlewayeducation

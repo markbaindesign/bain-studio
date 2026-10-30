@@ -18,6 +18,7 @@ Sweep (run by Hermes):
 import os
 import sys
 import uuid
+import subprocess
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,8 +51,24 @@ def _studio_inbox() -> Path:
     return inbox
 
 
+def _registry_path(project: str):
+    """Project path for a registered prefix (e.g. ASP), from docs/projects/*.md frontmatter."""
+    for doc in (STUDIO_ROOT / 'docs' / 'projects').glob('*.md'):
+        meta, _ = _parse_message(doc)
+        if meta.get('prefix', '').upper() == project.upper() and meta.get('path'):
+            return Path(meta['path'])
+    return None
+
+
 def _project_inbox(project: str):
-    """Find .claude/inbox/ for a project by walking STUDIO_SCAN_ROOTS."""
+    """Find .claude/inbox/ for a project: registry prefix first, then by walking STUDIO_SCAN_ROOTS."""
+    registered = _registry_path(project)
+    if registered and registered.resolve() == STUDIO_ROOT.resolve():
+        return _studio_inbox()
+    if registered and registered.is_dir():
+        inbox = registered / '.claude' / 'inbox'
+        inbox.mkdir(parents=True, exist_ok=True)
+        return inbox
     slug = project.lower()
     for root in SCAN_ROOTS:
         for candidate in root.rglob('.claude/inbox'):
@@ -154,7 +171,103 @@ sent_at: {sent_at}
         except Exception as e:
             print(f'[postman] Slack notify failed: {e}', file=sys.stderr)
 
+    try:
+        panes = ping(inbox, subject=subject, sender=sender, project=project)
+        _log('PING', id=msg_id, panes=','.join(panes) or 'none')
+        if not panes:
+            print('[postman] no live Claude session for that inbox; message waits for /check-inbox',
+                  file=sys.stderr)
+    except Exception as e:
+        print(f'[postman] ping failed: {e}', file=sys.stderr)
+
     return dest
+
+
+# ---------------------------------------------------------------------------
+# Ping — tell the live Claude session(s) that own an inbox that mail arrived
+# ---------------------------------------------------------------------------
+
+MAIL_MARK = '📬 '
+
+
+def _tmux(*args) -> str:
+    return subprocess.run(['tmux', *args], capture_output=True, text=True, timeout=5).stdout
+
+
+def _project_root(inbox: Path) -> Path:
+    """The project directory an inbox belongs to (.claude/inbox and studio/inbox both sit two levels down)."""
+    return inbox.resolve().parent.parent
+
+
+def _claude_panes(root: Path):
+    """tmux panes running Claude Code with a working directory at or under `root`."""
+    out = _tmux('list-panes', '-a', '-F',
+                '#{pane_id}\t#{pane_tty}\t#{pane_current_command}\t#{pane_current_path}\t#{window_id}')
+    panes = []
+    for line in out.splitlines():
+        parts = line.split('\t')
+        if len(parts) != 5 or parts[2] != 'claude':
+            continue
+        path = Path(parts[3]).resolve()
+        if path == root or root in path.parents:
+            panes.append({'id': parts[0], 'tty': parts[1], 'window': parts[4]})
+    return panes
+
+
+def mark_window(window: str):
+    """Prefix the window name with 📬, remembering the original so unmark can restore it."""
+    name, auto = _tmux('display-message', '-p', '-t', window,
+                       '#{window_name}\t#{automatic-rename}').strip().partition('\t')[::2]
+    if name.startswith(MAIL_MARK):
+        return
+    _tmux('set-option', '-w', '-t', window, '@postman_name', name)
+    _tmux('set-option', '-w', '-t', window, '@postman_auto', auto)
+    _tmux('rename-window', '-t', window, MAIL_MARK + name)
+
+
+def unmark_window(window: str):
+    """Undo mark_window: restore the name, and automatic-rename if the window had it on."""
+    name = _tmux('show-options', '-wqv', '-t', window, '@postman_name').strip()
+    if not name:
+        return
+    auto = _tmux('show-options', '-wqv', '-t', window, '@postman_auto').strip()
+    _tmux('rename-window', '-t', window, name)
+    if auto == '1':
+        _tmux('set-option', '-wu', '-t', window, 'automatic-rename')
+    _tmux('set-option', '-wu', '-t', window, '@postman_name')
+    _tmux('set-option', '-wu', '-t', window, '@postman_auto')
+
+
+def ping(inbox: Path, *, subject: str, sender: str = '', project: str = '') -> list:
+    """
+    Alert every live Claude session working in the inbox's project: ring the pane's bell,
+    mark its tmux window 📬, flash a message on attached tmux clients, and send a desktop
+    notification. Claude itself sees the message on its next turn via the inbox-alert hook.
+    Returns the ids of the panes alerted. Never raises for a missing tmux or notify-send.
+    """
+    if os.getenv('POSTMAN_NO_PING'):
+        return []
+    try:
+        panes = _claude_panes(_project_root(inbox))
+    except (OSError, subprocess.SubprocessError):
+        panes = []
+    label = f"{MAIL_MARK}{project or _project_root(inbox).name}: {subject} (from {sender})"
+    for pane in panes:
+        try:
+            with open(pane['tty'], 'w') as tty:
+                tty.write('\a')
+        except OSError:
+            pass
+        mark_window(pane['window'])
+    if panes:
+        for client in _tmux('list-clients', '-F', '#{client_name}').split():
+            _tmux('display-message', '-d', '8000', '-c', client, label)
+    try:
+        subprocess.run(['notify-send', '-u', 'critical', 'Postman', label],
+                       capture_output=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return [p['id'] for p in panes]
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +378,14 @@ def _cmd_sweep(args):
     print(f'[postman] sweep complete — {n} message(s) dispatched')
 
 
+def _cmd_unmark(args):
+    pane = args.pane or os.getenv('TMUX_PANE')
+    if not pane:
+        print('[postman] not in tmux and no --pane given', file=sys.stderr)
+        return
+    unmark_window(_tmux('display-message', '-p', '-t', pane, '#{window_id}').strip())
+
+
 def _cmd_log(args):
     if not LOG_FILE.exists():
         print('[postman] no log yet')
@@ -291,6 +412,10 @@ if __name__ == '__main__':
     p_sweep = sub.add_parser('sweep', help='Post not-yet-notified messages to Slack (does not archive)')
     p_sweep.add_argument('--dry-run', action='store_true',      help='Print without dispatching')
     p_sweep.set_defaults(func=_cmd_sweep)
+
+    p_unmark = sub.add_parser('unmark', help='Remove the 📬 marker from a tmux window')
+    p_unmark.add_argument('--pane', default='',               help='tmux pane id (default: $TMUX_PANE)')
+    p_unmark.set_defaults(func=_cmd_unmark)
 
     p_log = sub.add_parser('log', help='Show recent postman activity')
     p_log.add_argument('-n', type=int, default=20,              help='Number of lines to show')

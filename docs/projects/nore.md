@@ -6,7 +6,7 @@ name: The Nature of Real Estate
 status: active
 client: Suze
 type: client
-repo: git@bitbucket.org:markbaindesign/the-nature-of-real-estate.git
+repo: git@ssh.bitbucket.org:markbaindesign/the-nature-of-real-estate.git
 sector: Education · Real Estate
 stack: WordPress · VVV
 path: /home/bain/code/vvv/clients/www/nore
