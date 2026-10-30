@@ -110,6 +110,9 @@ Quick reference (paths only — see project file for full details):
 | MWE | `/media/data/dev/vvv/clients/www/middlewayeducation` |
 | AW | `/media/data/dev/vvv/clients/www/alex-wright` |
 | ASP | `/media/data/dev/ddev/algolia-search` |
+| LRET | `/media/data/dev/other-wp/lead-retriever` |
+| TIS | `/media/data/dev/ddev/tis` |
+| JBP | `/media/data/dev/vvv/clients/www/beato-properties` |
 
 SL (Studio Looper) is not a codebase — it is the cross-project queue. Tasks are multi-homed into
 it from their home projects and keep their home prefix, so a task listed there is mirrored twice
