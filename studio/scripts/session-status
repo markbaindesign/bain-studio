@@ -10,15 +10,36 @@ misses every session running under a second Claude account. Mark runs KF under
 CLAUDE_CONFIG_DIR=~/.claude-kf. Every ~/.claude* directory holding a projects/
 folder is therefore queried, and the account is shown when there is more than one.
 
-Status comes straight from the CLI:
+Status starts from the CLI but is not trusted as-is:
     waiting  sitting on a permission prompt, needs an answer
-    idle     finished its turn, waiting for a prompt - also needs Mark
-    busy     working, needs nothing
+    shell    turn is over, but a background shell keeps the CLI at "busy"
+    busy     genuinely mid-turn, needs nothing
+    idle     finished its turn and parked, waiting for a prompt
 
-Both waiting and idle mean "needs Mark", so busy sorts last.
+That is also the sort order: whoever is asking for something, then live work,
+then the parked sessions. Idle sits last because a session idle for two days is
+not asking for anything, while busy is work worth watching.
+
+The CLI reports "busy" while any background shell the session spawned is
+alive, even when the model finished its turn an hour ago and asked a
+question. That is the one case this app exists to surface, and it was
+sorting last. The transcript settles it: a session whose newest user or
+assistant entry is an assistant one with stop_reason "end_turn" and no
+outstanding tool_use has finished its turn, whatever the CLI says.
+
+The newest entry has to be checked, not just the newest stop_reason. At the
+start of a turn - prompt in, model still thinking, nothing written yet - the
+previous turn's "end_turn" is still the last one in the file. Replaying one
+real transcript, reading stop_reason alone called 13 of 145 turn-starts
+"finished".
+
+The transcript also carries, in the same read: context size (the last
+assistant usage - input + cache_read + cache_creation + output, which matches
+the figure Claude Code shows in its own footer) and the session's AI title.
 
 Last-activity time comes from the mtime of the session transcript under
-~/.claude/projects/. No hooks, no database.
+~/.claude/projects/. Transcripts are re-parsed only when that mtime moves.
+No hooks, no database.
 
 The `where` column gives the tmux target of each session, so it can be found by
 hand: `tmux select-window -t studio:3` for `studio:3.0`.
@@ -35,9 +56,35 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 POLL_SECONDS = 4
-STATUS_ORDER = {"waiting": 0, "idle": 1, "busy": 2}
-GLYPH = {"waiting": "●", "busy": "◐", "idle": "○"}
+STATUS_ORDER = {"waiting": 0, "shell": 1, "busy": 2, "idle": 3}
+GLYPH = {"waiting": "●", "busy": "◐", "idle": "○", "shell": "◑"}
+
+# Only the statuses that want a human pulse, so movement on screen means
+# "someone is needed" and nothing else. Redrawing is decoupled from polling:
+# the screen ticks at TICK_SECONDS, the CLI is still only asked every
+# POLL_SECONDS. The value is how many ticks the glyph holds before it swaps
+# with PULSE_OFF - waiting flips every tick, shell every third.
+TICK_SECONDS = 0.5
+PULSE_OFF = "◦"
+PULSE = {"waiting": 1, "shell": 3}
+
+# Busy rotates rather than pulses, so work in progress is visibly alive without
+# imitating a status that wants a human. The quadrants run clockwise and are
+# distinct from ◐ (busy at rest) and ◑ (shell), so no status can impersonate
+# another mid-cycle.
+SPIN = {"busy": "◴◷◶◵"}
+ANIMATED = set(PULSE) | set(SPIN)
 DEFAULT_CONFIG = Path.home() / ".claude"
+
+# How much of a transcript's tail to read. Enough to hold the last assistant
+# entry in all observed cases; a session whose tail is filled with
+# api-request-blob lines needs the wider read, so one retry is allowed.
+TAIL_BYTES = 256 * 1024
+TAIL_BYTES_WIDE = 4 * 1024 * 1024
+
+# Parsed transcripts, keyed by path -> (mtime, state). The poll is every few
+# seconds and these files reach megabytes, so an unchanged one is never reread.
+_CACHE = {}
 
 
 def run(cmd, timeout=10, env=None):
@@ -64,10 +111,42 @@ def config_dirs():
     return found or [DEFAULT_CONFIG]
 
 
+# Account label by email domain, the same two names the status line prints
+# (~/.claude/hooks/statusline.py). That file is outside this repo and the app
+# runs from the ops worktree, so the map is duplicated rather than imported.
+ACCOUNT_LABELS = {"bain.design": "bain", "khyentsefoundation.org": "kf"}
+
+# config dir -> label, filled only on a successful read. Claude Code rewrites
+# .claude.json often, so a 4-second poll will occasionally catch it mid-write;
+# without this, the label would fall back for a frame and split the tally. The
+# signed-in account rarely changes while a pane runs - a logout and login in
+# that config dir would do it, and then the pane needs respawning.
+_ACCOUNTS = {}
+
+
 def account_of(config_dir):
-    """~/.claude -> 'main', ~/.claude-kf -> 'kf'."""
-    suffix = config_dir.name[len(".claude"):].lstrip("-.")
-    return suffix or "main"
+    """~/.claude -> 'bain', ~/.claude-kf -> 'kf'.
+
+    Named after the signed-in account, not the directory, so the names match
+    the status line. The email lives in <config dir>/.claude.json, except for
+    the default account, whose file is ~/.claude.json - the same lookup the
+    status line does. There is no fallback from one file to the other: reading
+    the wrong one would label a KF session "bain".
+    """
+    if config_dir in _ACCOUNTS:
+        return _ACCOUNTS[config_dir]
+    account_file = (Path.home() / ".claude.json" if config_dir == DEFAULT_CONFIG
+                    else config_dir / ".claude.json")
+    try:
+        with open(account_file) as f:
+            email = json.load(f).get("oauthAccount", {}).get("emailAddress")
+        domain = email.split("@")[-1]
+        label = ACCOUNT_LABELS.get(domain) or domain.split(".")[0].lower()
+        _ACCOUNTS[config_dir] = label
+        return label
+    except (OSError, ValueError, AttributeError, IndexError):
+        # No readable account file: fall back to the directory suffix.
+        return config_dir.name[len(".claude"):].lstrip("-.") or "default"
 
 
 def sessions_for(config_dir):
@@ -126,14 +205,106 @@ def locate(pid, panes):
     return None
 
 
-def last_activity(root, session_id, started_at_ms):
-    """Transcript mtime, falling back to session start."""
+def transcript(root, session_id):
+    """The session's transcript file, or None if it has none yet."""
     for path in root.glob(f"*/{session_id}.jsonl"):
+        return path
+    return None
+
+
+def last_activity(path, started_at_ms):
+    """Transcript mtime, falling back to session start."""
+    if path is not None:
         try:
             return path.stat().st_mtime
         except OSError:
             pass
     return started_at_ms / 1000
+
+
+def tail_lines(path, size):
+    """The last `size` bytes of a file as whole lines."""
+    with open(path, "rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        start = max(0, handle.tell() - size)
+        handle.seek(start)
+        data = handle.read()
+    lines = data.decode("utf-8", "replace").splitlines()
+    # A non-zero offset lands mid-line; that fragment is not valid JSON.
+    return lines[1:] if start else lines
+
+
+def scan(lines):
+    """Turn state, context size and title from a slice of transcript lines.
+
+    `finished` is the question that matters: has the model stopped and handed
+    back? It is true only when the newest user-or-assistant entry is an
+    assistant one that ended its turn with nothing still in flight. Every user
+    entry - a prompt or a tool result - resets that, which is what keeps a turn
+    in progress from reading as finished.
+    """
+    state = {"finished": False, "ctx": 0, "title": "", "seen_turn": False}
+    for line in lines:
+        if '"type"' not in line:
+            continue
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        kind = entry.get("type")
+        if kind == "ai-title" and entry.get("aiTitle"):
+            state["title"] = entry["aiTitle"]
+        elif kind == "user":
+            state["finished"] = False
+            state["seen_turn"] = True
+        elif kind == "assistant":
+            message = entry.get("message", {})
+            blocks = message.get("content")
+            pending = isinstance(blocks, list) and any(
+                b.get("type") == "tool_use" for b in blocks if isinstance(b, dict)
+            )
+            state["finished"] = message.get("stop_reason") == "end_turn" and not pending
+            state["seen_turn"] = True
+            usage = message.get("usage") or {}
+            if usage:
+                state["ctx"] = (
+                    usage.get("input_tokens", 0)
+                    + usage.get("cache_read_input_tokens", 0)
+                    + usage.get("cache_creation_input_tokens", 0)
+                    + usage.get("output_tokens", 0)
+                )
+    return state
+
+
+def transcript_state(path):
+    """Cached scan() of a transcript, reparsed only when its mtime moves."""
+    if path is None:
+        return None
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return None
+    cached = _CACHE.get(path)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    try:
+        state = scan(tail_lines(path, TAIL_BYTES))
+        if not state["seen_turn"]:
+            # Nothing but blobs in the tail - look further back before giving up.
+            state = scan(tail_lines(path, TAIL_BYTES_WIDE))
+    except OSError:
+        return None
+    _CACHE[path] = (mtime, state)
+    return state
+
+
+def tokens(count):
+    """283000 -> '283k'. Zero means the transcript did not say."""
+    if not count:
+        return "-"
+    if count < 1000:
+        return str(count)
+    return f"{count // 1000}k"
 
 
 def ago(seconds):
@@ -155,13 +326,24 @@ def collect():
         # A crashed session can outlive its entry; trust /proc over the CLI.
         if not Path("/proc", str(s.get("pid", 0))).exists():
             continue
+        path = transcript(s.get("_transcripts", DEFAULT_CONFIG / "projects"),
+                          s.get("sessionId", ""))
+        seen = last_activity(path, s.get("startedAt", 0))
+        state = transcript_state(path)
         status = s.get("status", "?")
-        seen = last_activity(s.get("_transcripts", DEFAULT_CONFIG / "projects"),
-                             s.get("sessionId", ""), s.get("startedAt", 0))
+        # The CLI says busy while a background shell lives on. If the transcript
+        # shows the turn is over, the model is not working - say so, and put it
+        # in the attention group under waiting. It is its own status rather than
+        # idle because a live shell may yet wake the session: it is neither
+        # working nor parked.
+        if status == "busy" and state and state["finished"]:
+            status = "shell"
         rows.append(
             {
                 "status": status,
-                "account": s.get("_account", "main"),
+                "ctx": (state or {}).get("ctx", 0),
+                "title": (state or {}).get("title", ""),
+                "account": s.get("_account", "?"),
                 "where": locate(s.get("pid", 0), panes) or "-",
                 "project": (os.path.basename(s.get("cwd", "")) or "/")
                 + (" (bg)" if s.get("kind") == "background" else ""),
@@ -171,51 +353,101 @@ def collect():
                 "for": now - seen,
             }
         )
-    # Who needs Mark first, and within that the one kept waiting longest.
+    # Attention first, then live work, then the parked ones; within a status,
+    # whoever has been in it longest.
     rows.sort(key=lambda r: (STATUS_ORDER.get(r["status"], 9), -r["for"]))
     return rows
 
 
-def draw(stdscr, rows, cursor, refreshed):
+def glyph_for(status, frame):
+    """The status glyph: spun while working, pulsed when it wants a human, still
+    when parked."""
+    spinner = SPIN.get(status)
+    if spinner:
+        return spinner[frame % len(spinner)]
+    hold = PULSE.get(status)
+    if hold and (frame // hold) % 2:
+        return PULSE_OFF
+    return GLYPH.get(status, "?")
+
+
+def row_text(row, width, show_account, frame=0):
+    """One row, fitted to the pane.
+
+    The columns are given up in order of what can be done without: the title
+    first, then the context size, then the project is squeezed. Status, tmux
+    target and the time in state always survive, because they are what the app
+    is for. A fixed-width row was clipped by curses on the right, which cost
+    the time column on a narrow pane and sliced context sizes in half.
+    """
+    account = "{:<5} ".format(row["account"][:5]) if show_account else ""
+    head = "{} {:<8} {}{:<13} ".format(
+        glyph_for(row["status"], frame), row["status"], account, row["where"])
+    tail = " {:>6}".format(ago(row["for"]))
+    context = " {:>5}".format(tokens(row["ctx"]))
+
+    room = max(0, width - 1 - len(head) - len(tail))
+    if room >= 10 + len(context):
+        project_width = min(24, room - len(context))
+        body = "{:<{w}}".format(row["project"][:project_width], w=project_width) + context
+    else:
+        body = "{:<{w}}".format(row["project"][:room], w=room)
+
+    text = head + body + tail
+    # The title is what the session is actually about, and the first thing worth
+    # reading - but only where it can be shown at a useful length.
+    if row["title"] and width >= len(text) + 24:
+        text += "  " + row["title"][: width - len(text) - 3]
+    # Below roughly 45 columns even the fixed head over-runs; truncate rather
+    # than hand curses a line it would clip at a different place.
+    return text[: max(0, width - 1)]
+
+
+def draw(stdscr, rows, cursor, refreshed, frame=0):
     stdscr.erase()
     height, width = stdscr.getmaxyx()
 
-    waiting = sum(1 for r in rows if r["status"] == "waiting")
-    busy = sum(1 for r in rows if r["status"] == "busy")
-    idle = sum(1 for r in rows if r["status"] == "idle")
+    counts = {name: sum(1 for r in rows if r["status"] == name)
+              for name in ("waiting", "shell", "busy", "idle")}
+    waiting = counts["waiting"]
 
     accounts = sorted({r["account"] for r in rows})
-    head = f"{len(rows)} sessions   {waiting} waiting · {busy} busy · {idle} idle"
+    # A zero shell count is dead space, like the account column.
+    tally = " · ".join(f"{counts[n]} {n}" for n in ("waiting", "shell", "busy", "idle")
+                       if n != "shell" or counts["shell"])
+    head = f"{len(rows)} sessions   {tally}"
+    stamp = f"{ago(time.time() - refreshed)} ago"
     if len(accounts) > 1:
-        head += "   " + " · ".join(
+        per_account = "   " + " · ".join(
             f"{a} {sum(1 for r in rows if r['account'] == a)}" for a in accounts
         )
-    stamp = f"{ago(time.time() - refreshed)} ago"
+        # Half an account tally is worse than none, so it goes only where it fits.
+        if len(head) + len(per_account) + len(stamp) + 1 <= width:
+            head += per_account
     stdscr.addnstr(0, 0, head.ljust(max(0, width - len(stamp) - 1)) + stamp, width - 1,
-                   curses.A_BOLD | (curses.color_pair(1) if waiting else 0))
+                   curses.A_BOLD | (curses.color_pair(1) if waiting
+                                    else curses.color_pair(4) if counts["shell"]
+                                    else 0))
 
     for index, row in enumerate(rows):
         line = index + 1
         if line >= height:
             break
-        selected = index == cursor
+        selected = cursor is not None and index == cursor
         # The account column is dead space on a single-account machine, so it
         # only appears once a second Claude config directory is in play.
-        account = "{:<5} ".format(row["account"][:5]) if len(accounts) > 1 else ""
-        text = "{} {:<8} {}{:<13} {:<24} {:>6}".format(
-            GLYPH.get(row["status"], "?"),
-            row["status"],
-            account,
-            row["where"],
-            row["project"][:24],
-            ago(row["for"]),
-        )
-        attr = curses.color_pair({"waiting": 1, "busy": 2}.get(row["status"], 3))
+        text = row_text(row, width, len(accounts) > 1, frame)
+        attr = curses.color_pair(
+            {"waiting": 1, "busy": 2, "shell": 4}.get(row["status"], 3))
+        # Parked sessions recede: they are the bulk of the list and none of them
+        # is asking for anything.
+        if row["status"] == "idle":
+            attr |= curses.A_DIM
         if selected:
             attr |= curses.A_REVERSE
         stdscr.addnstr(line, 0, text.ljust(width - 1), width - 1, attr)
 
-    if rows and cursor < len(rows) and height > len(rows) + 2:
+    if rows and cursor is not None and cursor < len(rows) and height > len(rows) + 2:
         stdscr.addnstr(height - 1, 0, rows[cursor]["cwd"][: width - 1], width - 1,
                        curses.A_DIM)
     stdscr.refresh()
@@ -224,25 +456,35 @@ def draw(stdscr, rows, cursor, refreshed):
 def main(stdscr):
     curses.curs_set(0)
     curses.use_default_colors()
-    for pair, colour in ((1, curses.COLOR_RED), (2, curses.COLOR_YELLOW), (3, -1)):
+    for pair, colour in ((1, curses.COLOR_RED), (2, curses.COLOR_YELLOW), (3, -1),
+                         (4, curses.COLOR_CYAN)):
         curses.init_pair(pair, colour, -1)
-    stdscr.timeout(int(POLL_SECONDS * 1000))
-
     rows = collect()
     refreshed = time.time()
-    cursor = 0
+    # No cursor until the keyboard is used. Starting at row 0 made the top line
+    # look picked out, which reads as a selection on a screen that is almost
+    # always only read.
+    cursor = None
+    frame = 0
 
     while True:
-        cursor = max(0, min(cursor, max(0, len(rows) - 1)))
-        draw(stdscr, rows, cursor, refreshed)
+        # Nothing moving means nothing to animate, so sit on the poll interval
+        # rather than waking twice a second to redraw an unchanged screen.
+        animating = any(r["status"] in ANIMATED for r in rows)
+        stdscr.timeout(int((TICK_SECONDS if animating else POLL_SECONDS) * 1000))
+
+        if cursor is not None:
+            cursor = max(0, min(cursor, max(0, len(rows) - 1)))
+        draw(stdscr, rows, cursor, refreshed, frame)
 
         key = stdscr.getch()
+        frame += 1
         if key in (ord("q"), 27):
             return
         if key in (ord("j"), curses.KEY_DOWN):
-            cursor += 1
+            cursor = 0 if cursor is None else cursor + 1
         elif key in (ord("k"), curses.KEY_UP):
-            cursor -= 1
+            cursor = 0 if cursor is None else cursor - 1
         elif key == ord("g"):
             cursor = 0
         elif key == ord("G"):
