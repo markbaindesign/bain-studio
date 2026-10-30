@@ -57,10 +57,16 @@ INTEGRATION = ("develop", "main", "master")
 # that exist nowhere else, then stray files, then a repo parked on a feature
 # branch. "ok" and "nogit" ask for nothing, so they sit at the bottom - nogit
 # last because it is a registry fact, not a repo state.
-STATUS_ORDER = {"missing": 0, "dirty": 1, "ahead": 2, "untracked": 3,
-                "branch": 4, "ok": 5, "nogit": 6}
-GLYPH = {"missing": "✕", "dirty": "●", "ahead": "▲", "untracked": "◌",
-         "branch": "◐", "ok": "○", "nogit": "·"}
+STATUS_ORDER = {"missing": 0, "dirty": 1, "ahead": 2, "mirror": 3,
+                "untracked": 4, "branch": 5, "ok": 6, "nogit": 7}
+GLYPH = {"missing": "✕", "dirty": "●", "ahead": "▲", "mirror": "◍",
+         "untracked": "◌", "branch": "◐", "ok": "○", "nogit": "·"}
+
+# sync.py rewrites these at the project root on a schedule, so in half the
+# client repos they are the only thing modified. They are counted apart from
+# real work: with them in the dirty count, ten of nineteen repos sat
+# permanently at the top of the list, which is the same as sorting by nothing.
+MIRROR_FILES = ("asana-mirror.md", "asana-ids.json")
 
 # git reads nothing from a remote here, so index.lock is never worth taking.
 GIT_ENV = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
@@ -104,7 +110,7 @@ def parse_status(text):
     `branch.head` is the literal "(detached)" on a detached HEAD.
     """
     state = {"branch": "", "upstream": "", "ahead": 0,
-             "tracked": 0, "untracked": 0, "conflicts": 0}
+             "tracked": 0, "mirror": 0, "untracked": 0, "conflicts": 0}
     for line in text.splitlines():
         if line.startswith("# branch.head "):
             state["branch"] = line.split(" ", 2)[2]
@@ -115,7 +121,17 @@ def parse_status(text):
                 if field.startswith("+"):
                     state["ahead"] = int(field[1:])
         elif line.startswith(("1 ", "2 ")):
-            state["tracked"] += 1
+            # A changed entry ("1 ") has the path as its ninth field; a rename
+            # ("2 ") carries an extra score field first and appends the old path
+            # after a tab. Splitting a fixed number of times rather than on
+            # every space keeps a path that contains spaces intact.
+            fields = 9 if line.startswith("2 ") else 8
+            parts = line.split(" ", fields)
+            path = parts[fields].split("\t")[0] if len(parts) > fields else ""
+            if os.path.basename(path) in MIRROR_FILES:
+                state["mirror"] += 1
+            else:
+                state["tracked"] += 1
         elif line.startswith("? "):
             state["untracked"] += 1
         elif line.startswith("u "):
@@ -162,6 +178,10 @@ def classify(row):
         return row["state"]
     if row["tracked"] or row["conflicts"]:
         return "dirty"
+    if row["mirror"] and not row["ahead"] and row["upstream"]:
+        # Nothing but a synced mirror waiting to be committed: it still wants a
+        # commit, so not "ok", but it is not work left half-done either.
+        return "mirror"
     # No upstream at all is unpushed work just as surely as commits ahead of
     # one: the branch exists on this machine and nowhere else.
     if row["ahead"] or not row["upstream"]:
@@ -177,7 +197,8 @@ def repo_state(path):
     """Everything shown for one registered path."""
     row = {"path": path, "name": os.path.basename(path.rstrip("/")) or path,
            "top": path, "branch": "", "upstream": "", "ahead": 0, "tracked": 0,
-           "untracked": 0, "conflicts": 0, "worktrees": 1, "unmerged": 0,
+           "mirror": 0, "untracked": 0, "conflicts": 0, "worktrees": 1, "unmerged": 0,
+           "remotes": True,
            "committed": 0, "subject": "", "state": "", "note": ""}
     if not os.path.isdir(path):
         row["state"] = "missing"
@@ -208,6 +229,11 @@ def repo_state(path):
             row["upstream"] = f"origin/{row['branch']}"
             count, _ = git(path, "rev-list", "--count", f"{row['upstream']}..HEAD")
             row["ahead"] = int(count) if count.isdigit() else 0
+        else:
+            # A branch nobody pushed and a repo with nowhere to push to are
+            # different problems: the second wants /repo-create, not a push.
+            remotes, _ = git(path, "remote")
+            row["remotes"] = bool(remotes.strip())
 
     trees, _ = git(path, "worktree", "list", "--porcelain")
     row["worktrees"] = parse_worktrees(trees) or 1
@@ -303,10 +329,12 @@ def ago(seconds):
 
 
 def counts_text(row):
-    """The working tree in one narrow column: tracked changes, then untracked."""
+    """The working tree in one column: real changes, mirror files, untracked."""
     parts = []
     if row["tracked"] or row["conflicts"]:
         parts.append(f"{row['tracked'] + row['conflicts']}M")
+    if row["mirror"]:
+        parts.append(f"{row['mirror']}m")
     if row["untracked"]:
         parts.append(f"{row['untracked']}?")
     return " ".join(parts)
@@ -318,7 +346,7 @@ def ahead_text(row):
     if row["state"] in ("missing", "nogit"):
         return ""
     if not row["upstream"]:
-        return "local"
+        return "local" if row.get("remotes", True) else "no remote"
     return f"↑{row['ahead']}" if row["ahead"] else ""
 
 
@@ -342,9 +370,9 @@ def row_text(row, width):
     """
     head = "{} {:<9} {:<20} ".format(
         GLYPH.get(row["state"], "?"), row["state"], row["name"][:20])
-    tail = " {:>7} {:>5}".format(counts_text(row), ago_or_note(row))
+    tail = " {:>11} {:>5}".format(counts_text(row), ago_or_note(row))
     branch = row["note"] or row["branch"] or "-"
-    extras = " {:>6} {:>8}".format(ahead_text(row), extras_text(row))
+    extras = " {:>9} {:>8}".format(ahead_text(row), extras_text(row))
 
     room = max(0, width - 1 - len(head) - len(tail))
     body = None
@@ -369,7 +397,7 @@ def ago_or_note(row):
     return ago(time.time() - row["committed"]) if row["committed"] else "-"
 
 
-def draw(stdscr, rows, ops, cursor, refreshed, pending):
+def draw(stdscr, rows, ops, cursor, refreshed, pending, error=""):
     stdscr.erase()
     height, width = stdscr.getmaxyx()
 
@@ -382,6 +410,10 @@ def draw(stdscr, rows, ops, cursor, refreshed, pending):
         head = f"no projects read from {REGISTRY}"
     stamp = ("refreshing" if pending else f"{ago(time.time() - refreshed)} ago")
     wants = counts["missing"] + counts["dirty"] + counts["ahead"]
+    if error:
+        # A pass that threw must say so: the alternative is a screen of figures
+        # quietly going stale.
+        head, wants = f"collect failed: {error}", 1
     # The stamp owns the right-hand end, so a long head is cut rather than run
     # into it: a registry path can be longer than the pane is wide.
     head = head[: max(0, width - len(stamp) - 2)]
@@ -427,6 +459,7 @@ class Collector:
         self.ops = {}
         self.refreshed = 0.0
         self.pending = False
+        self.error = ""
         self._lock = threading.Lock()
 
     def start(self):
@@ -437,15 +470,30 @@ class Collector:
         threading.Thread(target=self._work, daemon=True).start()
 
     def _work(self):
-        rows, ops = collect(), ops_state()
-        with self._lock:
-            self.rows, self.ops = rows, ops
-            self.refreshed = time.time()
-            self.pending = False
+        """One pass. Anything thrown is reported and the previous rows kept.
+
+        Without the finally, one unexpected line of git output would kill this
+        thread with `pending` left true: start() would refuse every later
+        refresh and the pane would say "refreshing" until it was respawned - a
+        stuck screen that still looks like a working one.
+        """
+        error = ""
+        rows, ops = None, None
+        try:
+            rows, ops = collect(), ops_state()
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+        finally:
+            with self._lock:
+                if rows is not None:
+                    self.rows, self.ops = rows, ops
+                self.error = error
+                self.refreshed = time.time()
+                self.pending = False
 
     def snapshot(self):
         with self._lock:
-            return self.rows, self.ops, self.refreshed, self.pending
+            return self.rows, self.ops, self.refreshed, self.pending, self.error
 
 
 def main(stdscr):
@@ -461,10 +509,10 @@ def main(stdscr):
     cursor = None
 
     while True:
-        rows, ops, refreshed, pending = collector.snapshot()
+        rows, ops, refreshed, pending, error = collector.snapshot()
         if cursor is not None:
             cursor = max(0, min(cursor, max(0, len(rows) - 1)))
-        draw(stdscr, rows, ops, cursor, refreshed, pending)
+        draw(stdscr, rows, ops, cursor, refreshed, pending, error)
 
         # One tick a second: the only thing moving between polls is the stamp.
         stdscr.timeout(1000)

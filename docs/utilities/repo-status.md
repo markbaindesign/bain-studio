@@ -30,6 +30,7 @@ ops 1.18.0 current
 | `missing` | the registered path is gone - the registry is wrong, or the project was moved |
 | `dirty` | tracked changes in the working tree: staged, unstaged or conflicted |
 | `ahead` | commits that exist only here, or a branch with no upstream at all |
+| `mirror` | nothing changed but the Asana mirror files, waiting to be committed |
 | `untracked` | nothing tracked has changed, but there are untracked files |
 | `branch` | clean, but parked on something other than `develop` / `main` / `master` |
 | `ok` | clean, on the integration branch, everything pushed |
@@ -37,9 +38,10 @@ ops 1.18.0 current
 
 | Column | Means |
 |---|---|
-| `3M 2?` | three tracked changes, two untracked entries |
+| `3M 2m 2?` | three tracked changes, two Asana mirror files, two untracked entries |
 | `↑14` | fourteen commits the upstream does not have |
-| `local` | the branch has no upstream at all, so none of it has been pushed |
+| `local` | the branch has no upstream, so none of it has been pushed |
+| `no remote` | the repo has no remote at all - a push has nowhere to go |
 | `7wt` | seven worktrees besides the main one |
 | `5ub` | five local branches not merged into the integration branch |
 | `15d` | time since the last commit |
@@ -48,12 +50,27 @@ Columns are given up as the pane narrows, in order of what can be done without: 
 commit subject first, then the parked-work counts, then the branch is squeezed. State, repo
 name and the working-tree counts always survive.
 
-## Tracked and untracked are not the same thing
+## Three kinds of "changed", counted apart
 
-`dirty` counts only tracked changes. Untracked files get their own state below it, because
-nearly every project here has an untracked `.claude/` or `.ddev/` that is never going to be
-committed - techstyle alone has 47 untracked entries. Counting those as dirty put almost the
-whole list permanently at the top, which is the same as sorting by nothing.
+A single dirty count made ten of nineteen repos permanently red, which is the same as sorting
+by nothing. Three things were being added together:
+
+- **Real changes** (`3M`) - tracked files Mark edited. This is what `dirty` means.
+- **Asana mirror files** (`2m`) - `asana-mirror.md` and `asana-ids.json`, which `sync.py`
+  rewrites at the project root on a schedule. In half the client repos they were the *only*
+  modified files. A repo with nothing else changed gets the `mirror` state, below `ahead`: it
+  still wants a commit, but nobody left work half-done in it.
+- **Untracked files** (`2?`) - nearly every project carries an untracked `.claude/` or `.ddev/`
+  that will never be committed, and techstyle has 47 of them.
+
+A mirror change alongside real changes is still `dirty`, and unpushed commits still outrank
+both: that is the bigger fact about the repo.
+
+### `local` and `no remote` are different problems
+
+A branch with no upstream has not been pushed; a repo with no remote at all has nowhere to push
+to, and will sit there for ever looking like unpushed work. The second wants
+[repo-create](repo-create.md), not a push, so it is labelled separately.
 
 ## Nothing is fetched
 
@@ -97,7 +114,8 @@ on its HEAD is shown by its commit (`ops @dcdb759`).
 5. `log -1` - the age and subject of the last commit.
 
 A branch with no `branch.upstream` is checked against `origin/<branch>` before being called
-unpushed, because a branch can be pushed without having its upstream configured.
+unpushed, because a branch can be pushed without having its upstream configured. If that ref
+does not exist either, `git remote` decides between `local` and `no remote`.
 
 ### Every call runs with `GIT_OPTIONAL_LOCKS=0`
 
@@ -122,6 +140,11 @@ already running is ignored rather than queued.
 
 The poll is **60 seconds**, not the 4 of session-status. Repo state changes at the speed of
 commits, and twenty repos of git is not something to do every 4 seconds.
+
+A pass that throws keeps the previous rows and puts the error in the header. Without that, one
+unexpected line of git output would kill the collector thread with its refresh flag still set,
+and the pane would say `refreshing` until it was respawned - a stuck screen that still looks
+like a working one.
 
 ## Keys
 

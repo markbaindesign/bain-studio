@@ -59,6 +59,24 @@ def test_tracked_and_untracked_are_counted_apart():
     assert state["untracked"] == 2
 
 
+def test_mirror_files_are_counted_apart_from_real_changes():
+    """sync.py rewrites asana-mirror.md and asana-ids.json on a schedule, so in
+    half the client repos they are the only thing modified. Counting them as
+    work put ten of nineteen repos permanently at the top of the list."""
+    state = s.parse_status(STATUS + "1 .M N... 100644 100644 100644 aaa bbb "
+                           "asana-mirror.md\n1 .M N... 100644 100644 100644 "
+                           "aaa bbb asana-ids.json\n")
+    assert state["mirror"] == 2
+    assert state["tracked"] == 2
+
+
+def test_a_renamed_path_and_a_path_with_spaces_are_read_correctly():
+    state = s.parse_status(
+        "2 R. N... 100644 100644 100644 aaa bbb R100 asana-ids.json\told.json\n"
+        "1 .M N... 100644 100644 100644 aaa bbb some dir/with spaces.php\n")
+    assert state["mirror"] == 1 and state["tracked"] == 1
+
+
 def test_conflicts_are_counted_separately():
     state = s.parse_status("u UU N... 1 1 1 aaa bbb ccc theme/style.css\n")
     assert state["conflicts"] == 1 and state["tracked"] == 0
@@ -129,7 +147,8 @@ def test_an_unmerged_looper_branch_counts():
 
 def repo(**kwargs):
     base = {"state": "", "branch": "develop", "upstream": "origin/develop",
-            "ahead": 0, "tracked": 0, "untracked": 0, "conflicts": 0}
+            "ahead": 0, "tracked": 0, "mirror": 0, "untracked": 0,
+            "conflicts": 0, "remotes": True}
     base.update(kwargs)
     return base
 
@@ -137,6 +156,21 @@ def repo(**kwargs):
 def test_tracked_changes_are_dirty():
     assert s.classify(repo(tracked=2)) == "dirty"
     assert s.classify(repo(conflicts=1)) == "dirty"
+
+
+def test_a_synced_mirror_on_its_own_is_not_dirty():
+    assert s.classify(repo(mirror=2)) == "mirror"
+    assert s.STATUS_ORDER["mirror"] > s.STATUS_ORDER["dirty"]
+
+
+def test_a_mirror_beside_real_changes_is_still_dirty():
+    assert s.classify(repo(mirror=2, tracked=1)) == "dirty"
+
+
+def test_a_mirror_on_an_unpushed_branch_keeps_the_unpushed_state():
+    # Unpushed commits are the bigger fact about that repo.
+    assert s.classify(repo(mirror=2, ahead=3)) == "ahead"
+    assert s.classify(repo(mirror=2, upstream="")) == "ahead"
 
 
 def test_untracked_only_is_its_own_state_below_dirty():
@@ -222,7 +256,8 @@ def test_a_missing_ops_worktree_says_so():
 
 ROW = {"state": "dirty", "name": "middlewayeducation", "branch": "develop",
        "note": "", "upstream": "origin/develop", "ahead": 2, "tracked": 3,
-       "untracked": 2, "conflicts": 0, "worktrees": 2, "unmerged": 2,
+       "mirror": 0, "untracked": 2, "conflicts": 0, "worktrees": 2, "unmerged": 2,
+       "remotes": True,
        "committed": time.time() - 15 * 86400, "subject": "chore: sync Asana mirror",
        "path": "/media/data/dev/vvv/clients/www/middlewayeducation"}
 
@@ -245,9 +280,16 @@ def test_subject_goes_before_the_parked_work_counts():
 
 
 def test_the_working_tree_column_separates_tracked_from_untracked():
+    assert s.counts_text(dict(ROW, mirror=2)) == "3M 2m 2?"
     assert s.counts_text(ROW) == "3M 2?"
     assert s.counts_text(dict(ROW, tracked=0, untracked=0)) == ""
     assert s.counts_text(dict(ROW, tracked=0, conflicts=1, untracked=0)) == "1M"
+
+
+def test_a_repo_with_no_remote_at_all_says_so_rather_than_local():
+    """Two different problems: a branch nobody pushed wants a push, a repo with
+    nowhere to push to wants /repo-create."""
+    assert s.ahead_text(dict(ROW, upstream="", remotes=False)) == "no remote"
 
 
 def test_a_branch_with_no_upstream_reads_local_rather_than_zero():
@@ -270,3 +312,30 @@ def test_extras_count_only_the_extra_worktrees():
 
 def test_a_repo_with_no_commits_shows_no_age():
     assert s.ago_or_note(dict(ROW, committed=0)) == "-"
+
+
+# --- the background collector ----------------------------------------------
+
+def test_a_failed_pass_clears_pending_and_keeps_the_last_rows(monkeypatch):
+    """The bug this guards: one unexpected line of git output kills the thread
+    with pending left true, start() refuses every later refresh, and the pane
+    says "refreshing" for ever - a stuck screen that still looks like a
+    working one."""
+    collector = s.Collector()
+    collector.rows = [dict(ROW)]
+    monkeypatch.setattr(s, "collect", lambda: (_ for _ in ()).throw(ValueError("bad line")))
+    collector.pending = True
+    collector._work()
+    rows, _, refreshed, pending, error = collector.snapshot()
+    assert not pending
+    assert "ValueError: bad line" in error
+    assert rows and refreshed > 0
+
+
+def test_a_good_pass_clears_an_earlier_error(monkeypatch):
+    collector = s.Collector()
+    collector.error = "ValueError: bad line"
+    monkeypatch.setattr(s, "collect", lambda: [dict(ROW)])
+    monkeypatch.setattr(s, "ops_state", lambda: {"note": ""})
+    collector._work()
+    assert collector.snapshot()[4] == ""
