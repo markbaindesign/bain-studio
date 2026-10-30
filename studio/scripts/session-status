@@ -5,6 +5,11 @@ Data comes from `claude agents --json`, which enumerates sessions across all
 projects (the built-in `claude agents` TUI does not: it is scoped to the current
 project and shows background agents only).
 
+That command reports only the config directory it is invoked with, so one call
+misses every session running under a second Claude account. Mark runs KF under
+CLAUDE_CONFIG_DIR=~/.claude-kf. Every ~/.claude* directory holding a projects/
+folder is therefore queried, and the account is shown when there is more than one.
+
 Status comes straight from the CLI:
     waiting  sitting on a permission prompt, needs an answer
     idle     finished its turn, waiting for a prompt - also needs Mark
@@ -15,8 +20,10 @@ Both waiting and idle mean "needs Mark", so busy sorts last.
 Last-activity time comes from the mtime of the session transcript under
 ~/.claude/projects/. No hooks, no database.
 
-Keys: j/k or arrows to move, enter to switch to that tmux pane, r to refresh,
-q to quit.
+The `where` column gives the tmux target of each session, so it can be found by
+hand: `tmux select-window -t studio:3` for `studio:3.0`.
+
+Keys: j/k or arrows to move, r to refresh, q to quit.
 """
 
 import curses
@@ -24,28 +31,64 @@ import json
 import os
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 POLL_SECONDS = 4
-TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
 STATUS_ORDER = {"waiting": 0, "idle": 1, "busy": 2}
 GLYPH = {"waiting": "●", "busy": "◐", "idle": "○"}
+DEFAULT_CONFIG = Path.home() / ".claude"
 
 
-def run(cmd, timeout=5):
+def run(cmd, timeout=10, env=None):
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                             env=env)
         return out.stdout if out.returncode == 0 else ""
     except (subprocess.SubprocessError, OSError):
         return ""
 
 
-def sessions():
-    raw = run(["claude", "agents", "--json"])
+def config_dirs():
+    """Every Claude config directory on this machine, default account first.
+
+    A second account is a sibling of ~/.claude - ~/.claude-kf, say - selected with
+    CLAUDE_CONFIG_DIR. A projects/ folder is what marks one as real rather than a
+    stray backup or a file like ~/.claude.json.
+    """
+    found = [d for d in sorted(Path.home().glob(".claude*"))
+             if d.is_dir() and (d / "projects").is_dir()]
+    if DEFAULT_CONFIG in found:
+        found.remove(DEFAULT_CONFIG)
+        found.insert(0, DEFAULT_CONFIG)
+    return found or [DEFAULT_CONFIG]
+
+
+def account_of(config_dir):
+    """~/.claude -> 'main', ~/.claude-kf -> 'kf'."""
+    suffix = config_dir.name[len(".claude"):].lstrip("-.")
+    return suffix or "main"
+
+
+def sessions_for(config_dir):
+    env = dict(os.environ, CLAUDE_CONFIG_DIR=str(config_dir))
+    raw = run(["claude", "agents", "--json"], env=env)
     try:
-        return json.loads(raw) if raw.strip() else []
+        found = json.loads(raw) if raw.strip() else []
     except json.JSONDecodeError:
         return []
+    for entry in found:
+        entry["_account"] = account_of(config_dir)
+        entry["_transcripts"] = config_dir / "projects"
+    return found
+
+
+def sessions():
+    dirs = config_dirs()
+    # One subprocess per account, in parallel: serialising them would stall the
+    # redraw by ~0.3s each.
+    with ThreadPoolExecutor(max_workers=max(1, len(dirs))) as pool:
+        return [row for batch in pool.map(sessions_for, dirs) for row in batch]
 
 
 def pane_by_pid():
@@ -83,9 +126,9 @@ def locate(pid, panes):
     return None
 
 
-def last_activity(session_id, started_at_ms):
+def last_activity(root, session_id, started_at_ms):
     """Transcript mtime, falling back to session start."""
-    for path in TRANSCRIPT_ROOT.glob(f"*/{session_id}.jsonl"):
+    for path in root.glob(f"*/{session_id}.jsonl"):
         try:
             return path.stat().st_mtime
         except OSError:
@@ -113,10 +156,12 @@ def collect():
         if not Path("/proc", str(s.get("pid", 0))).exists():
             continue
         status = s.get("status", "?")
-        seen = last_activity(s.get("sessionId", ""), s.get("startedAt", 0))
+        seen = last_activity(s.get("_transcripts", DEFAULT_CONFIG / "projects"),
+                             s.get("sessionId", ""), s.get("startedAt", 0))
         rows.append(
             {
                 "status": status,
+                "account": s.get("_account", "main"),
                 "where": locate(s.get("pid", 0), panes) or "-",
                 "project": (os.path.basename(s.get("cwd", "")) or "/")
                 + (" (bg)" if s.get("kind") == "background" else ""),
@@ -131,17 +176,6 @@ def collect():
     return rows
 
 
-def switch_to(target):
-    if not target or target == "-":
-        return
-    if os.environ.get("TMUX"):
-        run(["tmux", "switch-client", "-t", target])
-    else:
-        session, _, window = target.partition(":")
-        run(["tmux", "select-window", "-t", target])
-        run(["tmux", "attach-session", "-t", session])
-
-
 def draw(stdscr, rows, cursor, refreshed):
     stdscr.erase()
     height, width = stdscr.getmaxyx()
@@ -150,7 +184,12 @@ def draw(stdscr, rows, cursor, refreshed):
     busy = sum(1 for r in rows if r["status"] == "busy")
     idle = sum(1 for r in rows if r["status"] == "idle")
 
+    accounts = sorted({r["account"] for r in rows})
     head = f"{len(rows)} sessions   {waiting} waiting · {busy} busy · {idle} idle"
+    if len(accounts) > 1:
+        head += "   " + " · ".join(
+            f"{a} {sum(1 for r in rows if r['account'] == a)}" for a in accounts
+        )
     stamp = f"{ago(time.time() - refreshed)} ago"
     stdscr.addnstr(0, 0, head.ljust(max(0, width - len(stamp) - 1)) + stamp, width - 1,
                    curses.A_BOLD | (curses.color_pair(1) if waiting else 0))
@@ -160,9 +199,13 @@ def draw(stdscr, rows, cursor, refreshed):
         if line >= height:
             break
         selected = index == cursor
-        text = "{} {:<8} {:<11} {:<24} {:>6}".format(
+        # The account column is dead space on a single-account machine, so it
+        # only appears once a second Claude config directory is in play.
+        account = "{:<5} ".format(row["account"][:5]) if len(accounts) > 1 else ""
+        text = "{} {:<8} {}{:<13} {:<24} {:>6}".format(
             GLYPH.get(row["status"], "?"),
             row["status"],
+            account,
             row["where"],
             row["project"][:24],
             ago(row["for"]),
@@ -200,9 +243,6 @@ def main(stdscr):
             cursor += 1
         elif key in (ord("k"), curses.KEY_UP):
             cursor -= 1
-        elif key in (curses.KEY_ENTER, 10, 13):
-            if rows:
-                switch_to(rows[cursor]["where"])
         elif key == ord("g"):
             cursor = 0
         elif key == ord("G"):
