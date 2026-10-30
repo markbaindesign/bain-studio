@@ -30,6 +30,22 @@ first, then the context size, then the project is squeezed. Status, tmux target 
 state always survive. The account column appears only when more than one Claude account has
 sessions running; on a single-account machine it would be dead space.
 
+## What moves on screen
+
+Only `waiting` and `shell` pulse - their glyph swaps with `◦`, waiting every tick and shell
+every third, so it reads as a slower breath. **Movement means a human is needed and nothing
+else**, which is what makes it legible out of the corner of an eye. A spinner on `busy` was
+considered and dropped: on a 12-session machine most of the screen would be in motion, and this
+pane sits in peripheral vision all day.
+
+Redrawing is decoupled from polling. The screen ticks every 0.5s while something is pulsing,
+while `claude agents --json` is still only called every 4s - and with nothing pulsing the loop
+drops back to the poll interval rather than waking twice a second to redraw an unchanged
+screen. The "Ns ago" stamp ticks smoothly as a side effect.
+
+`curses.A_BLINK` is not used: VTE and tmux render it inconsistently or drop it altogether, so
+the pulse is driven by the redraw loop instead.
+
 | Key | Action |
 |---|---|
 | `j` / `k` / arrows | move |

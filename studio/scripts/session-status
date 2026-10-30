@@ -293,9 +293,10 @@ def collect():
         state = transcript_state(path)
         status = s.get("status", "?")
         # The CLI says busy while a background shell lives on. If the transcript
-        # shows the turn is over, the model is not working - say so, and sort it
-        # above busy. It is kept apart from idle because the shell may yet wake
-        # the session, so it does not certainly need Mark.
+        # shows the turn is over, the model is not working - say so, and put it
+        # in the attention group under waiting. It is its own status rather than
+        # idle because a live shell may yet wake the session: it is neither
+        # working nor parked.
         if status == "busy" and state and state["finished"]:
             status = "shell"
         rows.append(
