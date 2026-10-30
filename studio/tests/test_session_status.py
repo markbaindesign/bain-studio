@@ -141,10 +141,24 @@ def test_shell_pulses_more_slowly_than_waiting():
     assert [s.glyph_for("shell", f) for f in range(3, 6)] == [s.PULSE_OFF] * 3
 
 
-def test_busy_and_idle_never_move():
+def test_busy_spins_clockwise_through_four_quadrants():
+    assert [s.glyph_for("busy", f) for f in range(5)] == list("◴◷◶◵◴")
+
+
+def test_a_spinning_busy_never_wears_another_status_glyph():
+    # ◐ is busy at rest, ◑ is shell, ◦ is a pulse's off-frame: none may show up
+    # mid-rotation, or a glance would read the wrong status.
+    spun = {s.glyph_for("busy", f) for f in range(8)}
+    assert not spun & {s.GLYPH["shell"], s.GLYPH["waiting"], s.PULSE_OFF}
+
+
+def test_idle_never_moves():
     for frame in range(12):
-        assert s.glyph_for("busy", frame) == s.GLYPH["busy"]
         assert s.glyph_for("idle", frame) == s.GLYPH["idle"]
+
+
+def test_busy_counts_as_animating_so_the_screen_ticks_for_it():
+    assert "busy" in s.ANIMATED and "idle" not in s.ANIMATED
 
 
 def test_pulse_reaches_the_rendered_row():

@@ -32,15 +32,25 @@ sessions running; on a single-account machine it would be dead space.
 
 ## What moves on screen
 
-Only `waiting` and `shell` pulse - their glyph swaps with `◦`, waiting every tick and shell
-every third, so it reads as a slower breath. **Movement means a human is needed and nothing
-else**, which is what makes it legible out of the corner of an eye. A spinner on `busy` was
-considered and dropped: on a 12-session machine most of the screen would be in motion, and this
-pane sits in peripheral vision all day.
+Each status moves in its own way, so a glance tells you the kind of thing you are looking at
+before you read a word:
 
-Redrawing is decoupled from polling. The screen ticks every 0.5s while something is pulsing,
-while `claude agents --json` is still only called every 4s - and with nothing pulsing the loop
-drops back to the poll interval rather than waking twice a second to redraw an unchanged
+| Status | Motion | Colour |
+|---|---|---|
+| `waiting` | pulses every tick - glyph swaps with `◦` | red |
+| `shell` | pulses every third tick, a slower breath | cyan |
+| `busy` | spins clockwise, `◴ ◷ ◶ ◵` | yellow |
+| `idle` | still | grey (dim) |
+
+Pulsing is reserved for the two statuses that want a human; `busy` spins instead, so work in
+progress is visibly alive without imitating them. The spinner's quadrants are deliberately
+distinct from `◐` (busy at rest) and `◑` (shell) so no status can impersonate another
+mid-cycle - a unit test asserts it. Idle recedes into dim grey: it is the bulk of the list and
+none of it is asking for anything.
+
+Redrawing is decoupled from polling. The screen ticks every 0.5s while anything is moving,
+while `claude agents --json` is still only called every 4s - and with every session parked the
+loop drops back to the poll interval rather than waking twice a second to redraw an unchanged
 screen. The "Ns ago" stamp ticks smoothly as a side effect.
 
 `curses.A_BLINK` is not used: VTE and tmux render it inconsistently or drop it altogether, so
@@ -48,10 +58,14 @@ the pulse is driven by the redraw loop instead.
 
 | Key | Action |
 |---|---|
-| `j` / `k` / arrows | move |
+| `j` / `k` / arrows | move - and summon the cursor, which is hidden until first used |
 | `r` | refresh now |
 | `g` / `G` | top / bottom |
 | `q` | quit |
+
+There is no cursor on launch. It appears on the first `j`/`k` and brings the selected
+session's working directory up on the bottom line; until then nothing is highlighted, because a
+reversed top row reads as a selection on a screen that is almost always only read.
 
 The app does not switch windows for you. The `where` column is the tmux target, so
 `studio:3.0` is reached with `tmux select-window -t studio:3`, or by its number from the
