@@ -116,8 +116,10 @@ job carried on running 1.15.1.
 What does not change:
 
 - **The ops worktree stays on a detached HEAD at a tag, not on `main`.** This is no longer about
-  gating. A named tag means what is live can be stated exactly and rolled back in one command
-  (`ops-deploy.sh 1.15.1`). Tracking `main` would gain nothing over that and lose both.
+  gating, and it is not about risk either: under git flow only release and hotfix branches reach
+  `main`, and both are tagged as they land, so `main` and the newest tag are always the same
+  commit. The choice is about legibility - a detached HEAD at `1.16.0` states what is live in a
+  way a branch name cannot, and rolls back by name (`ops-deploy.sh 1.15.1`).
 - **The dev checkout is still never what cron runs.** That was the actual problem ADR 014 was
   written to solve - a feature branch silently deciding production behaviour at 08:00 - and it
   is untouched by this amendment.
