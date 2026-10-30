@@ -121,3 +121,29 @@ def test_shell_sorts_above_busy_and_below_idle():
     assert s.STATUS_ORDER["waiting"] < s.STATUS_ORDER["idle"]
     assert s.STATUS_ORDER["idle"] < s.STATUS_ORDER["shell"]
     assert s.STATUS_ORDER["shell"] < s.STATUS_ORDER["busy"]
+
+
+# --- the pulse -------------------------------------------------------------
+
+def test_waiting_pulses_every_tick():
+    assert s.glyph_for("waiting", 0) == s.GLYPH["waiting"]
+    assert s.glyph_for("waiting", 1) == s.PULSE_OFF
+    assert s.glyph_for("waiting", 2) == s.GLYPH["waiting"]
+
+
+def test_shell_pulses_more_slowly_than_waiting():
+    # Holds for three ticks either side, so it reads as a slower breath.
+    assert [s.glyph_for("shell", f) for f in range(3)] == [s.GLYPH["shell"]] * 3
+    assert [s.glyph_for("shell", f) for f in range(3, 6)] == [s.PULSE_OFF] * 3
+
+
+def test_busy_and_idle_never_move():
+    for frame in range(12):
+        assert s.glyph_for("busy", frame) == s.GLYPH["busy"]
+        assert s.glyph_for("idle", frame) == s.GLYPH["idle"]
+
+
+def test_pulse_reaches_the_rendered_row():
+    waiting = dict(ROW, status="waiting")
+    assert s.row_text(waiting, 120, True, 0).startswith(s.GLYPH["waiting"])
+    assert s.row_text(waiting, 120, True, 1).startswith(s.PULSE_OFF)

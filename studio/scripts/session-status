@@ -54,6 +54,15 @@ from pathlib import Path
 POLL_SECONDS = 4
 STATUS_ORDER = {"waiting": 0, "idle": 1, "shell": 2, "busy": 3}
 GLYPH = {"waiting": "●", "busy": "◐", "idle": "○", "shell": "◑"}
+
+# Only the statuses that want a human pulse, so movement on screen means
+# "someone is needed" and nothing else. Redrawing is decoupled from polling:
+# the screen ticks at TICK_SECONDS, the CLI is still only asked every
+# POLL_SECONDS. The value is how many ticks the glyph holds before it swaps
+# with PULSE_OFF - waiting flips every tick, shell every third.
+TICK_SECONDS = 0.5
+PULSE_OFF = "◦"
+PULSE = {"waiting": 1, "shell": 3}
 DEFAULT_CONFIG = Path.home() / ".claude"
 
 # How much of a transcript's tail to read. Enough to hold the last assistant
@@ -305,7 +314,15 @@ def collect():
     return rows
 
 
-def row_text(row, width, show_account):
+def glyph_for(status, frame):
+    """The status glyph, pulsed if this status is one that wants a human."""
+    hold = PULSE.get(status)
+    if hold and (frame // hold) % 2:
+        return PULSE_OFF
+    return GLYPH.get(status, "?")
+
+
+def row_text(row, width, show_account, frame=0):
     """One row, fitted to the pane.
 
     The columns are given up in order of what can be done without: the title
@@ -316,7 +333,7 @@ def row_text(row, width, show_account):
     """
     account = "{:<5} ".format(row["account"][:5]) if show_account else ""
     head = "{} {:<8} {}{:<13} ".format(
-        GLYPH.get(row["status"], "?"), row["status"], account, row["where"])
+        glyph_for(row["status"], frame), row["status"], account, row["where"])
     tail = " {:>6}".format(ago(row["for"]))
     context = " {:>5}".format(tokens(row["ctx"]))
 
@@ -337,7 +354,7 @@ def row_text(row, width, show_account):
     return text[: max(0, width - 1)]
 
 
-def draw(stdscr, rows, cursor, refreshed):
+def draw(stdscr, rows, cursor, refreshed, frame=0):
     stdscr.erase()
     height, width = stdscr.getmaxyx()
 
@@ -370,7 +387,7 @@ def draw(stdscr, rows, cursor, refreshed):
         selected = index == cursor
         # The account column is dead space on a single-account machine, so it
         # only appears once a second Claude config directory is in play.
-        text = row_text(row, width, len(accounts) > 1)
+        text = row_text(row, width, len(accounts) > 1, frame)
         attr = curses.color_pair(
             {"waiting": 1, "busy": 2, "shell": 4}.get(row["status"], 3))
         if selected:
@@ -389,17 +406,22 @@ def main(stdscr):
     for pair, colour in ((1, curses.COLOR_RED), (2, curses.COLOR_YELLOW), (3, -1),
                          (4, curses.COLOR_CYAN)):
         curses.init_pair(pair, colour, -1)
-    stdscr.timeout(int(POLL_SECONDS * 1000))
-
     rows = collect()
     refreshed = time.time()
     cursor = 0
+    frame = 0
 
     while True:
+        # Nothing pulsing means nothing to animate, so sit on the poll interval
+        # rather than waking twice a second to redraw an unchanged screen.
+        pulsing = any(r["status"] in PULSE for r in rows)
+        stdscr.timeout(int((TICK_SECONDS if pulsing else POLL_SECONDS) * 1000))
+
         cursor = max(0, min(cursor, max(0, len(rows) - 1)))
-        draw(stdscr, rows, cursor, refreshed)
+        draw(stdscr, rows, cursor, refreshed, frame)
 
         key = stdscr.getch()
+        frame += 1
         if key in (ord("q"), 27):
             return
         if key in (ord("j"), curses.KEY_DOWN):
