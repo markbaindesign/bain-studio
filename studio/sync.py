@@ -186,6 +186,10 @@ def discover_projects(filter_prefix=None, include_inactive=False, quiet=False) -
         if status in ("paused", "archived") and not filter_prefix and not include_inactive:
             continue
         root = Path(raw).expanduser()
+        if not root.exists():
+            if not quiet:
+                log.warning(f"  Skipping {raw} — path not found; remove it from projects.json")
+            continue
         claude_md = root / "CLAUDE.md"
         if not claude_md.exists():
             if not quiet:
