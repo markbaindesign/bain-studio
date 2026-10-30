@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""Dense, always-on list of every Claude Code session on this machine.
+
+Data comes from `claude agents --json`, which enumerates sessions across all
+projects (the built-in `claude agents` TUI does not: it is scoped to the current
+project and shows background agents only).
+
+Status comes straight from the CLI:
+    waiting  sitting on a permission prompt, needs an answer
+    idle     finished its turn, waiting for a prompt - also needs Mark
+    busy     working, needs nothing
+
+Both waiting and idle mean "needs Mark", so busy sorts last.
+
+Last-activity time comes from the mtime of the session transcript under
+~/.claude/projects/. No hooks, no database.
+
+Keys: j/k or arrows to move, enter to switch to that tmux pane, r to refresh,
+q to quit.
+"""
+
+import curses
+import json
+import os
+import subprocess
+import time
+from pathlib import Path
+
+POLL_SECONDS = 4
+TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
+STATUS_ORDER = {"waiting": 0, "idle": 1, "busy": 2}
+GLYPH = {"waiting": "●", "busy": "◐", "idle": "○"}
+
+
+def run(cmd, timeout=5):
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return out.stdout if out.returncode == 0 else ""
+    except (subprocess.SubprocessError, OSError):
+        return ""
+
+
+def sessions():
+    raw = run(["claude", "agents", "--json"])
+    try:
+        return json.loads(raw) if raw.strip() else []
+    except json.JSONDecodeError:
+        return []
+
+
+def pane_by_pid():
+    """Map every pid that owns a tmux pane to its session:window.pane target."""
+    fmt = "#{session_name}:#{window_index}.#{pane_index} #{pane_pid}"
+    out = run(["tmux", "list-panes", "-a", "-F", fmt])
+    panes = {}
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].isdigit():
+            panes[int(parts[1])] = parts[0]
+    return panes
+
+
+def ancestors(pid, limit=12):
+    """Walk up /proc to the pane's own process. Claude runs as a child of the shell."""
+    chain = []
+    for _ in range(limit):
+        try:
+            stat = (Path("/proc") / str(pid) / "stat").read_text()
+            ppid = int(stat.rsplit(")", 1)[1].split()[1])
+        except (OSError, IndexError, ValueError):
+            break
+        if ppid <= 1:
+            break
+        chain.append(ppid)
+        pid = ppid
+    return chain
+
+
+def locate(pid, panes):
+    for candidate in [pid] + ancestors(pid):
+        if candidate in panes:
+            return panes[candidate]
+    return None
+
+
+def last_activity(session_id, started_at_ms):
+    """Transcript mtime, falling back to session start."""
+    for path in TRANSCRIPT_ROOT.glob(f"*/{session_id}.jsonl"):
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            pass
+    return started_at_ms / 1000
+
+
+def ago(seconds):
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}"
+    return f"{seconds // 86400}d"
+
+
+def collect():
+    panes = pane_by_pid()
+    now = time.time()
+    rows = []
+    for s in sessions():
+        # A crashed session can outlive its entry; trust /proc over the CLI.
+        if not Path("/proc", str(s.get("pid", 0))).exists():
+            continue
+        status = s.get("status", "?")
+        seen = last_activity(s.get("sessionId", ""), s.get("startedAt", 0))
+        rows.append(
+            {
+                "status": status,
+                "where": locate(s.get("pid", 0), panes) or "-",
+                "project": (os.path.basename(s.get("cwd", "")) or "/")
+                + (" (bg)" if s.get("kind") == "background" else ""),
+                "cwd": s.get("cwd", ""),
+                "name": s.get("name", ""),
+                "kind": s.get("kind", ""),
+                "for": now - seen,
+            }
+        )
+    # Who needs Mark first, and within that the one kept waiting longest.
+    rows.sort(key=lambda r: (STATUS_ORDER.get(r["status"], 9), -r["for"]))
+    return rows
+
+
+def switch_to(target):
+    if not target or target == "-":
+        return
+    if os.environ.get("TMUX"):
+        run(["tmux", "switch-client", "-t", target])
+    else:
+        session, _, window = target.partition(":")
+        run(["tmux", "select-window", "-t", target])
+        run(["tmux", "attach-session", "-t", session])
+
+
+def draw(stdscr, rows, cursor, refreshed):
+    stdscr.erase()
+    height, width = stdscr.getmaxyx()
+
+    waiting = sum(1 for r in rows if r["status"] == "waiting")
+    busy = sum(1 for r in rows if r["status"] == "busy")
+    idle = sum(1 for r in rows if r["status"] == "idle")
+
+    head = f"{len(rows)} sessions   {waiting} waiting · {busy} busy · {idle} idle"
+    stamp = f"{ago(time.time() - refreshed)} ago"
+    stdscr.addnstr(0, 0, head.ljust(max(0, width - len(stamp) - 1)) + stamp, width - 1,
+                   curses.A_BOLD | (curses.color_pair(1) if waiting else 0))
+
+    for index, row in enumerate(rows):
+        line = index + 1
+        if line >= height:
+            break
+        selected = index == cursor
+        text = "{} {:<8} {:<11} {:<24} {:>6}".format(
+            GLYPH.get(row["status"], "?"),
+            row["status"],
+            row["where"],
+            row["project"][:24],
+            ago(row["for"]),
+        )
+        attr = curses.color_pair({"waiting": 1, "busy": 2}.get(row["status"], 3))
+        if selected:
+            attr |= curses.A_REVERSE
+        stdscr.addnstr(line, 0, text.ljust(width - 1), width - 1, attr)
+
+    if rows and cursor < len(rows) and height > len(rows) + 2:
+        stdscr.addnstr(height - 1, 0, rows[cursor]["cwd"][: width - 1], width - 1,
+                       curses.A_DIM)
+    stdscr.refresh()
+
+
+def main(stdscr):
+    curses.curs_set(0)
+    curses.use_default_colors()
+    for pair, colour in ((1, curses.COLOR_RED), (2, curses.COLOR_YELLOW), (3, -1)):
+        curses.init_pair(pair, colour, -1)
+    stdscr.timeout(int(POLL_SECONDS * 1000))
+
+    rows = collect()
+    refreshed = time.time()
+    cursor = 0
+
+    while True:
+        cursor = max(0, min(cursor, max(0, len(rows) - 1)))
+        draw(stdscr, rows, cursor, refreshed)
+
+        key = stdscr.getch()
+        if key in (ord("q"), 27):
+            return
+        if key in (ord("j"), curses.KEY_DOWN):
+            cursor += 1
+        elif key in (ord("k"), curses.KEY_UP):
+            cursor -= 1
+        elif key in (curses.KEY_ENTER, 10, 13):
+            if rows:
+                switch_to(rows[cursor]["where"])
+        elif key == ord("g"):
+            cursor = 0
+        elif key == ord("G"):
+            cursor = len(rows) - 1
+
+        if key == ord("r") or time.time() - refreshed >= POLL_SECONDS:
+            rows = collect()
+            refreshed = time.time()
+
+
+if __name__ == "__main__":
+    try:
+        curses.wrapper(main)
+    except KeyboardInterrupt:
+        pass
