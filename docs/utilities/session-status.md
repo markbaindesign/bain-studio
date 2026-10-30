@@ -2,35 +2,57 @@
 tags: [utility, terminal, tmux, claude]
 command: studio/scripts/session-status
 invoke: tmux window `sessions`
-description: Dense always-on list of every Claude Code session on the machine, sorted by which one needs Mark first, showing each one's tmux target, context size and what it is working on
+description: Dense always-on list of every Claude Code session on the machine, sorted by which one needs Mark first, showing each one's tmux target, model, context size and what it is working on, over a quota header for every account
 ---
 
 # session-status
 
 One screen showing every Claude Code session running on this machine, **across every Claude
-account**: its status, which tmux pane it is in, its project, how much context it is holding,
-how long it has been in that state, and what it is working on. Sorted attention first, then live work, then the parked
-sessions - `waiting`, `shell`, `busy`, `idle` - and within a status, longest first. Idle sits
-last because a session idle for two days is not asking for anything, while busy is work worth
-watching.
+account**: its status, which tmux pane it is in, its project, the model it is on, how much
+context it is holding, how long it has been in that state, and what it is working on - under a
+header giving each account's five-hour and weekly quota. Sorted attention first, then live
+work, then the parked sessions - `waiting`, `shell`, `busy`, `idle` - and within a status,
+longest first. Idle sits last because a session idle for two days is not asking for anything,
+while busy is work worth watching.
 
 ```
 12 sessions   1 waiting · 1 shell · 1 busy · 9 idle   bain 10 · kf 2        1s ago
-● waiting  bain  mwe:1.1       middlewayeducation        118k    12m  Passiko project setup
-◑ shell    bain  studio:1.0    Work                      282k    54m  Invoices bookkeeping
-◐ busy     bain  infra:0.0     bain-studio               159k     3s  Session dashboard rebuild
-○ idle     bain  ebiz:0.0      ebiz-global               103k    53m  EBiz Japan email migration
-○ idle     kf    kf:0.0        kf-21                      82k    49m  Ticket reply directly
-○ idle     kf    KF:1.0        kf-21                     168k    49m  Budget update
-○ idle     bain  infra:0.1     bain-studio (bg)           31k     7m  -
+bain 5h 42% →22:20 · wk 64% →Tue   kf 5h 4% →23:40 · wk 11% →Sun
+● waiting  bain  mwe:1.1       middlewayeducation  o5.5  118k  12%   12m  Passiko project setup
+◑ shell    bain  studio:1.0    Work                o5.5  282k  28%   54m  Invoices bookkeeping
+◐ busy     bain  infra:0.0     bain-studio           o5  159k  16%    3s  Session dashboard rebuild
+○ idle     bain  ebiz:0.0      ebiz-global         s5.5  103k  10%   53m  EBiz Japan email migration
+○ idle     kf    kf:0.0        kf-21                 o5   82k   8%   49m  Ticket reply directly
+○ idle     kf    KF:1.0        kf-21               o5.5  168k  17%   49m  Budget update
+○ idle     bain  infra:0.1     bain-studio (bg)    s5.5   31k   3%    7m  -
 ```
 
 Columns are given up as the pane narrows, in order of what can be done without: the title
-first, then the context size, then the project is squeezed. Status, tmux target and time in
-state always survive. The account column appears only when more than one Claude account has
-sessions running; on a single-account machine it would be dead space. Each account is named
-after the domain of the signed-in email - `bain`, `kf` - the same names the status line shows,
-so a row here and a prompt there are obviously the same account.
+first, then the context percentage, then the model, then the context size, then the project is
+squeezed. Status, tmux target and time in state always survive. Every row keeps the same column
+widths whether or not it has a model and a percentage to show, so a session that has not
+reported one does not pull the rest of its row out of line. The account column appears only
+when more than one Claude account has sessions running; on a single-account machine it would be
+dead space. Each account is named after the domain of the signed-in email - `bain`, `kf` - the
+same names the status line shows, so a row here and a prompt there are obviously the same
+account.
+
+## The quota header
+
+The second line is the rate limit of every account: the five-hour window with the clock time it
+resets, and the weekly window with the day it resets. It is the figure that decides whether to
+start something or finish what is open, and it belongs next to the sessions that are spending
+it.
+
+```
+bain 5h 42% →22:20 · wk 64% →Tue   kf 5h 4% →23:40 · wk 11% →Sun
+```
+
+The line is dim until it matters: amber from 70%, red from 90%, taking whichever is worst of
+either window of either account, since any one of them can be the thing that stops work.
+
+Where the five-hour window has already reset since the figure was taken, the percentage is a
+dead number from a window that is gone, so the line says `5h reset` rather than quoting it.
 
 ## What moves on screen
 
@@ -155,6 +177,31 @@ reach megabytes and the poll is every 4 seconds. A full cold collect of 12 sessi
 - The tail read is 256KB, retried at 4MB when it holds no user or assistant entry at all. One
   session needed the wider read: its last 256KB were entirely `api-request-blob` lines.
 
+### Quota and context percentage, from the status line's own files
+
+Two things neither the CLI nor the transcript can give are read from files
+`~/.claude/hooks/statusline.py` already writes on every render:
+
+- **The quota**, from `<config dir>/ratelimit-current.json` - `current_pct`, `reset_ts`,
+  `weekly_pct`, `weekly_reset_ts`. One file per account, written to the config directory the
+  session is running under, so the two accounts' quotas never overwrite each other.
+- **The model and context percentage**, from `~/.claude/logs/sessions/<sessionId>.json`,
+  which joins to a row on the `sessionId` the CLI already reports. That path is hardcoded in
+  the hook rather than resolved per account, so a KF session's snapshot lands there too -
+  one directory to read, not one per account.
+
+The transcript gives a token count; the percentage needs the size of the context window, which
+only the status line is told. Both figures are therefore snapshots **taken at the last
+status-line render**, not live readings - fresh for anything that has been working, and as old
+as its last turn for a session that has been parked for a day. That is why a five-hour window
+whose reset time has passed is shown as `reset`: the file is not wrong, it is just describing a
+window that has since rolled over.
+
+There is a second writer of `ratelimit-current.json`, `~/.claude/hooks/save-ratelimit.sh`,
+which writes only the two five-hour fields and would blank the weekly ones. It is not wired
+into any `settings.json`, so nothing clobbers them today - but if it is ever hooked up, the
+weekly half of this header goes with it.
+
 The seven fields in `claude agents --json` (`pid`, `cwd`, `kind`, `startedAt`, `sessionId`,
 `name`, `status`) are all it offers - there is no background-shell count and no context figure
 in it, which is why the transcript is read at all.
@@ -207,6 +254,11 @@ Run it directly with `studio/scripts/session-status`. Pure stdlib, no dependenci
 ## Limits
 
 - Linux only (reads `/proc`).
+- The quota, model and context percentage are **as fresh as the last status-line render of
+  that session or account**, not live. A session that has been parked all day reports the
+  context it had when it stopped.
+- The quota header depends on `~/.claude/hooks/statusline.py`, which lives outside this repo.
+  Replace the status line and the header goes blank - the sessions list carries on.
 - **Context is shown in tokens, not as a percentage.** The denominator is unsettled: the
   cached model table in the `claude-api` skill gives Opus 5 a 1M window, but that is a single
   source (the Models API's `max_input_tokens` needs API credentials this machine does not

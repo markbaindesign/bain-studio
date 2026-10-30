@@ -1,6 +1,7 @@
 import importlib.machinery
 import importlib.util
 import json
+import time
 from pathlib import Path
 
 SCRIPT = Path(__file__).parent.parent / "scripts" / "session-status"
@@ -8,6 +9,8 @@ _loader = importlib.machinery.SourceFileLoader("session_status", str(SCRIPT))
 _spec = importlib.util.spec_from_loader("session_status", _loader)
 s = importlib.util.module_from_spec(_spec)
 _loader.exec_module(s)
+
+NOW = time.time()
 
 
 def assistant(stop_reason, tool_use=False, usage=None):
@@ -92,8 +95,8 @@ def test_latest_ai_title_wins():
 # --- fitting the row to the pane ------------------------------------------
 
 ROW = {"status": "shell", "account": "bain", "where": "studio:1.0",
-       "project": "middlewayeducation", "ctx": 282744, "for": 480,
-       "title": "Invoices bookkeeping"}
+       "project": "middlewayeducation", "ctx": 282744, "ctx_pct": 63,
+       "model": "Opus 5.5", "for": 480, "title": "Invoices bookkeeping"}
 
 
 def test_row_never_exceeds_the_pane():
@@ -110,6 +113,95 @@ def test_context_is_dropped_before_the_time_column():
     text = s.row_text(ROW, 46, True)
     assert "282k" not in text
     assert "8m" in text
+
+
+def test_percentage_and_model_go_before_the_token_count():
+    """Order of sacrifice as the pane narrows: percentage, then model, then the
+    token count, which is the one that is always there to give."""
+    assert "63%" in s.row_text(ROW, 120, True)
+    assert "63%" not in s.row_text(ROW, 64, True)
+    assert "o5.5" in s.row_text(ROW, 64, True)
+    assert "o5.5" not in s.row_text(ROW, 60, True)
+    assert "282k" in s.row_text(ROW, 60, True)
+
+
+def test_a_missing_percentage_does_not_shift_the_columns():
+    """Fixed-width columns even when empty: the pane is read as a block, and a
+    session that has not reported one must not pull the rest of its row left."""
+    blank = dict(ROW, ctx_pct=0, model="")
+    assert len(s.row_text(blank, 120, True)) == len(s.row_text(ROW, 120, True))
+
+
+# --- the model column ------------------------------------------------------
+
+def test_model_is_shortened_to_initial_and_version():
+    assert s.short_model("Opus 5.5") == "o5.5"
+    assert s.short_model("Sonnet 5") == "s5"
+    assert s.short_model("Haiku 5.5") == "h5.5"
+
+
+def test_an_unversioned_model_keeps_its_initial():
+    assert s.short_model("Opus") == "o"
+    assert s.short_model("") == ""
+
+
+# --- the quota line --------------------------------------------------------
+
+def quota(**kwargs):
+    base = {"account": "bain", "pct": 40, "reset_ts": NOW + 3600,
+            "weekly_pct": 64, "weekly_reset_ts": NOW + 3 * 86400}
+    base.update(kwargs)
+    return base
+
+
+def test_quota_line_shows_both_windows():
+    text, _ = s.quota_text([quota()])
+    assert "bain" in text and "5h 40%" in text and "wk 64%" in text
+
+
+def test_a_rolled_over_window_is_not_quoted():
+    """The snapshot is only written when a status line renders. Once its reset
+    time has passed the percentage belongs to a window that is gone, and 99%
+    from an hour ago would read as 99% now."""
+    text, worst = s.quota_text([quota(pct=99, reset_ts=NOW - 60, weekly_pct=10)])
+    assert "99%" not in text and "5h reset" in text
+    assert worst == 10
+
+
+def test_a_missing_reset_time_is_left_out_rather_than_formatted():
+    # An unset timestamp would format as the epoch and read as a clock time.
+    text, _ = s.quota_text([quota(reset_ts=0, weekly_reset_ts=0)])
+    assert "5h 40%" in text and "\u2192" not in text
+
+
+def test_quota_severity_is_the_worst_figure_of_any_account():
+    """Either window of either account can be the one that stops work, so the
+    line is coloured by whichever is worst - and the figure is returned rather
+    than a colour, because curses will not hand out a pair without a screen."""
+    _, weekly = s.quota_text([quota(pct=10, weekly_pct=82)])
+    _, five = s.quota_text([quota(pct=95, weekly_pct=10)])
+    _, second_account = s.quota_text([quota(pct=10, weekly_pct=10),
+                                      quota(account="kf", pct=91, weekly_pct=3)])
+    assert weekly == 82 and five == 95 and second_account == 91
+
+
+def test_every_account_appears_on_the_quota_line():
+    text, _ = s.quota_text([quota(), quota(account="kf", pct=4, weekly_pct=11)])
+    assert "bain" in text and "kf" in text
+
+
+# --- the per-session snapshot ----------------------------------------------
+
+def test_snapshot_reads_the_model_and_context_percentage(tmp_path, monkeypatch):
+    monkeypatch.setattr(s, "SNAPSHOTS", tmp_path)
+    (tmp_path / "abc.json").write_text(json.dumps(
+        {"model": "Opus 5.5", "last_context_pct": 63, "cost_usd": 1.2}))
+    assert s.snapshot("abc") == {"model": "Opus 5.5", "ctx_pct": 63}
+
+
+def test_a_session_with_no_snapshot_yet_is_empty_not_an_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(s, "SNAPSHOTS", tmp_path)
+    assert s.snapshot("nothing-here") == {}
 
 
 def test_title_only_appears_when_there_is_room():
