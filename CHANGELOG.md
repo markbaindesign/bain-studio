@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-10-30
+
+### Added
+- **Repo status** (`studio/scripts/repo-status`, tmux window `repos`): one screen showing every registered project's repo and what is unfinished in it - uncommitted changes, commits that exist only on this machine, branches not merged into the integration branch, extra worktrees - sorted so whatever is holding unfinished work sits at the top. The companion to session status: that one answers which session needs attention, this one answers where work was left. Nothing is fetched, so "behind" is not shown at all; without a fetch it would be a stale number dressed as a fact. See `docs/utilities/repo-status.md`.
+- **Repo status** counts three kinds of change apart: files Mark edited, the `asana-mirror.md` and `asana-ids.json` that `sync.py` rewrites on a schedule, and untracked `.claude/` and `.ddev/` directories that will never be committed. Counted together, ten of nineteen repos sat permanently at the top of the list, which is the same as sorting by nothing. A repo with nothing modified but its mirror gets its own state below "ahead".
+- **Repo status** reports ops drift on its second line: which tag the ops worktree holds, whether a newer one exists, and whether it has local changes that would stop `ops-deploy.sh`. A tagged release is not done until ops is running it (ADR 014).
+- **Session status** gains a quota header: each Claude account's five-hour and weekly rate limit, with the time each resets. Dim until 70%, amber there, red at 90%, taking whichever window of whichever account is worst. A window whose reset has already passed reports "reset" rather than quoting a percentage from a window that has gone.
+- **Session status** gains a model column and a context percentage per session, joined to each row by session id. Model choice is the largest lever on quota, so it earns a column. Both come from the files the status line already writes, so there are still no hooks and no database.
+
 ## [1.18.0] - 2026-10-30
 
 ### Added
@@ -465,7 +474,9 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.17.0...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.19.0...develop
+[1.19.0]: https://github.com/markbaindesign/bain-studio/compare/1.18.0...1.19.0
+[1.18.0]: https://github.com/markbaindesign/bain-studio/compare/1.17.0...1.18.0
 [1.17.0]: https://github.com/markbaindesign/bain-studio/compare/1.16.0...1.17.0
 [1.16.0]: https://github.com/markbaindesign/bain-studio/compare/1.15.1...1.16.0
 [1.15.1]: https://github.com/markbaindesign/bain-studio/compare/1.15.0...1.15.1

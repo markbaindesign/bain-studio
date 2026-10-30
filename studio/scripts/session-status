@@ -41,6 +41,12 @@ Last-activity time comes from the mtime of the session transcript under
 ~/.claude/projects/. Transcripts are re-parsed only when that mtime moves.
 No hooks, no database.
 
+Two things the transcript cannot say are read from files the status line
+already writes: the model in use and the context percentage, per session, from
+~/.claude/logs/sessions/<sessionId>.json; and the quota header - the five-hour
+and weekly rate limit of every account - from <config dir>/ratelimit-current.json.
+Both are snapshots taken on the last status-line render, not live figures.
+
 The `where` column gives the tmux target of each session, so it can be found by
 hand: `tmux select-window -t studio:3` for `studio:3.0`.
 
@@ -75,6 +81,16 @@ PULSE = {"waiting": 1, "shell": 3}
 SPIN = {"busy": "◴◷◶◵"}
 ANIMATED = set(PULSE) | set(SPIN)
 DEFAULT_CONFIG = Path.home() / ".claude"
+
+# Per-session snapshots written by ~/.claude/hooks/statusline.py on every
+# render. That path is hardcoded in the hook, so sessions on a second account
+# land here too, not under their own config directory.
+SNAPSHOTS = DEFAULT_CONFIG / "logs" / "sessions"
+
+# Quota percentages are only worth colouring once they are close enough to
+# change what to do next: amber is "finish the task", red is "stop starting things".
+QUOTA_AMBER = 70
+QUOTA_RED = 90
 
 # How much of a transcript's tail to read. Enough to hold the last assistant
 # entry in all observed cases; a session whose tail is filled with
@@ -298,6 +314,59 @@ def transcript_state(path):
     return state
 
 
+def snapshot(session_id):
+    """Model and context percentage for one session, or {} if not recorded yet.
+
+    The context figure the transcript gives is a token count; the percentage
+    needs the window size, which only the status line is told. These files are
+    small and only the live sessions are read, so no caching is needed.
+    """
+    try:
+        with open(SNAPSHOTS / f"{session_id}.json") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return {"model": data.get("model") or "",
+            "ctx_pct": data.get("last_context_pct") or 0}
+
+
+def quota_for(config_dir):
+    """One account's rate limit snapshot, or None if it has none.
+
+    Written by the status line, so it is only as fresh as the last render on
+    that account. A reset timestamp in the past means the window has rolled
+    over since and the percentage belongs to the old one - the caller says
+    "reset" rather than quoting it.
+    """
+    try:
+        with open(config_dir / "ratelimit-current.json") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return {
+        "account": account_of(config_dir),
+        "pct": data.get("current_pct"),
+        "reset_ts": data.get("reset_ts") or 0,
+        "weekly_pct": data.get("weekly_pct"),
+        "weekly_reset_ts": data.get("weekly_reset_ts") or 0,
+    }
+
+
+def quotas():
+    """Every account's rate limit snapshot, default account first."""
+    return [q for q in (quota_for(d) for d in config_dirs()) if q]
+
+
+def short_model(name):
+    """'Opus 5.5' -> 'o5.5'. Model choice is the biggest lever on quota, so it
+    earns a column, but only a narrow one."""
+    parts = name.split()
+    if not parts:
+        return ""
+    version = parts[-1] if parts[-1][:1].isdigit() else ""
+    return parts[0][:1].lower() + version
+
+
 def tokens(count):
     """283000 -> '283k'. Zero means the transcript did not say."""
     if not count:
@@ -338,10 +407,13 @@ def collect():
         # working nor parked.
         if status == "busy" and state and state["finished"]:
             status = "shell"
+        snap = snapshot(s.get("sessionId", ""))
         rows.append(
             {
                 "status": status,
                 "ctx": (state or {}).get("ctx", 0),
+                "ctx_pct": snap.get("ctx_pct", 0),
+                "model": snap.get("model", ""),
                 "title": (state or {}).get("title", ""),
                 "account": s.get("_account", "?"),
                 "where": locate(s.get("pid", 0), panes) or "-",
@@ -375,22 +447,31 @@ def row_text(row, width, show_account, frame=0):
     """One row, fitted to the pane.
 
     The columns are given up in order of what can be done without: the title
-    first, then the context size, then the project is squeezed. Status, tmux
-    target and the time in state always survive, because they are what the app
-    is for. A fixed-width row was clipped by curses on the right, which cost
-    the time column on a narrow pane and sliced context sizes in half.
+    first, then the context percentage, then the model, then the context size,
+    then the project is squeezed. Status, tmux target and the time in state
+    always survive, because they are what the app is for. A fixed-width row was
+    clipped by curses on the right, which cost the time column on a narrow pane
+    and sliced context sizes in half.
     """
     account = "{:<5} ".format(row["account"][:5]) if show_account else ""
     head = "{} {:<8} {}{:<13} ".format(
         glyph_for(row["status"], frame), row["status"], account, row["where"])
     tail = " {:>6}".format(ago(row["for"]))
+    # Fixed widths even when a value is missing: every row has the same head
+    # and tail, so all of them drop the same columns and the rest stay aligned.
+    model = " {:>5}".format(short_model(row["model"])[:5])
     context = " {:>5}".format(tokens(row["ctx"]))
+    percent = " {:>4}".format(f"{row['ctx_pct']}%" if row["ctx_pct"] else "")
 
     room = max(0, width - 1 - len(head) - len(tail))
-    if room >= 10 + len(context):
-        project_width = min(24, room - len(context))
-        body = "{:<{w}}".format(row["project"][:project_width], w=project_width) + context
-    else:
+    body = None
+    for extra in (model + context + percent, model + context, context, ""):
+        if room >= 10 + len(extra):
+            project_width = min(24, room - len(extra))
+            body = "{:<{w}}".format(
+                row["project"][:project_width], w=project_width) + extra
+            break
+    if body is None:
         body = "{:<{w}}".format(row["project"][:room], w=room)
 
     text = head + body + tail
@@ -403,7 +484,47 @@ def row_text(row, width, show_account, frame=0):
     return text[: max(0, width - 1)]
 
 
-def draw(stdscr, rows, cursor, refreshed, frame=0):
+def quota_text(found):
+    """The quota line, with the worst percentage on it.
+
+    Five-hour resets are hours away, so they get a clock time; weekly resets
+    are days away, so a weekday is enough. The colour is left to the caller:
+    curses needs a screen before it will hand out a colour pair, and this
+    needs to be readable without one.
+    """
+    now = time.time()
+    worst = 0
+    parts = []
+    for q in found:
+        if q["reset_ts"] and q["reset_ts"] <= now:
+            # Window rolled over since the snapshot: the figure is the old one.
+            five = "5h reset"
+        else:
+            five = f"5h {q['pct']}%"
+            # No reset time rather than a wrong one: an unset timestamp would
+            # format as the epoch and read as a real clock time.
+            if q["reset_ts"]:
+                five += " \u2192" + time.strftime("%H:%M", time.localtime(q["reset_ts"]))
+            worst = max(worst, q["pct"] or 0)
+        week = ""
+        if q["weekly_reset_ts"] and q["weekly_reset_ts"] <= now:
+            # Same as the five-hour window: a week that has rolled over since
+            # the snapshot leaves last week's figure in the file. An account
+            # left unused past its reset would otherwise colour the whole line.
+            week = " \u00b7 wk reset"
+        elif q["weekly_pct"] is not None:
+            week = f" \u00b7 wk {q['weekly_pct']}%"
+            if q["weekly_reset_ts"]:
+                # A weekday is enough for a reset days out, but "\u2192Fri" on a
+                # Friday reads as next Friday, so the last day gets a clock time.
+                fmt = "%H:%M" if q["weekly_reset_ts"] - now < 86400 else "%a"
+                week += " \u2192" + time.strftime(fmt, time.localtime(q["weekly_reset_ts"]))
+            worst = max(worst, q["weekly_pct"])
+        parts.append(f"{q['account']} {five}{week}")
+    return "   ".join(parts), worst
+
+
+def draw(stdscr, rows, cursor, refreshed, quota=(), frame=0):
     stdscr.erase()
     height, width = stdscr.getmaxyx()
 
@@ -429,8 +550,17 @@ def draw(stdscr, rows, cursor, refreshed, frame=0):
                                     else curses.color_pair(4) if counts["shell"]
                                     else 0))
 
+    first_row = 1
+    if quota and height > 2:
+        text, worst = quota_text(quota)
+        attr = (curses.color_pair(1) if worst >= QUOTA_RED
+                else curses.color_pair(2) if worst >= QUOTA_AMBER
+                else curses.A_DIM)
+        stdscr.addnstr(1, 0, text.ljust(width - 1), width - 1, attr)
+        first_row = 2
+
     for index, row in enumerate(rows):
-        line = index + 1
+        line = index + first_row
         if line >= height:
             break
         selected = cursor is not None and index == cursor
@@ -447,7 +577,8 @@ def draw(stdscr, rows, cursor, refreshed, frame=0):
             attr |= curses.A_REVERSE
         stdscr.addnstr(line, 0, text.ljust(width - 1), width - 1, attr)
 
-    if rows and cursor is not None and cursor < len(rows) and height > len(rows) + 2:
+    if (rows and cursor is not None and cursor < len(rows)
+            and height > len(rows) + first_row + 1):
         stdscr.addnstr(height - 1, 0, rows[cursor]["cwd"][: width - 1], width - 1,
                        curses.A_DIM)
     stdscr.refresh()
@@ -460,6 +591,7 @@ def main(stdscr):
                          (4, curses.COLOR_CYAN)):
         curses.init_pair(pair, colour, -1)
     rows = collect()
+    quota = quotas()
     refreshed = time.time()
     # No cursor until the keyboard is used. Starting at row 0 made the top line
     # look picked out, which reads as a selection on a screen that is almost
@@ -475,7 +607,7 @@ def main(stdscr):
 
         if cursor is not None:
             cursor = max(0, min(cursor, max(0, len(rows) - 1)))
-        draw(stdscr, rows, cursor, refreshed, frame)
+        draw(stdscr, rows, cursor, refreshed, quota, frame)
 
         key = stdscr.getch()
         frame += 1
@@ -492,6 +624,7 @@ def main(stdscr):
 
         if key == ord("r") or time.time() - refreshed >= POLL_SECONDS:
             rows = collect()
+            quota = quotas()
             refreshed = time.time()
 
 
