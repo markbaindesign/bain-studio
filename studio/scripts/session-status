@@ -15,8 +15,10 @@ Both waiting and idle mean "needs Mark", so busy sorts last.
 Last-activity time comes from the mtime of the session transcript under
 ~/.claude/projects/. No hooks, no database.
 
-Keys: j/k or arrows to move, enter to switch to that tmux pane, r to refresh,
-q to quit.
+The `where` column gives the tmux target of each session, so it can be found by
+hand: `tmux select-window -t studio:3` for `studio:3.0`.
+
+Keys: j/k or arrows to move, r to refresh, q to quit.
 """
 
 import curses
@@ -131,17 +133,6 @@ def collect():
     return rows
 
 
-def switch_to(target):
-    if not target or target == "-":
-        return
-    if os.environ.get("TMUX"):
-        run(["tmux", "switch-client", "-t", target])
-    else:
-        session, _, window = target.partition(":")
-        run(["tmux", "select-window", "-t", target])
-        run(["tmux", "attach-session", "-t", session])
-
-
 def draw(stdscr, rows, cursor, refreshed):
     stdscr.erase()
     height, width = stdscr.getmaxyx()
@@ -160,7 +151,7 @@ def draw(stdscr, rows, cursor, refreshed):
         if line >= height:
             break
         selected = index == cursor
-        text = "{} {:<8} {:<11} {:<24} {:>6}".format(
+        text = "{} {:<8} {:<13} {:<24} {:>6}".format(
             GLYPH.get(row["status"], "?"),
             row["status"],
             row["where"],
@@ -200,9 +191,6 @@ def main(stdscr):
             cursor += 1
         elif key in (ord("k"), curses.KEY_UP):
             cursor -= 1
-        elif key in (curses.KEY_ENTER, 10, 13):
-            if rows:
-                switch_to(rows[cursor]["where"])
         elif key == ord("g"):
             cursor = 0
         elif key == ord("G"):

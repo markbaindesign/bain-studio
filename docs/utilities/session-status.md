@@ -2,7 +2,7 @@
 tags: [utility, terminal, tmux, claude]
 command: studio/scripts/session-status
 invoke: tmux window `sessions`
-description: Dense always-on list of every Claude Code session on the machine, sorted by which one needs Mark first, with enter to jump to its tmux pane
+description: Dense always-on list of every Claude Code session on the machine, sorted by which one needs Mark first, showing the tmux target of each
 ---
 
 # session-status
@@ -25,10 +25,13 @@ the top - `waiting`, then `idle`, both of which want a human - and `busy` last, 
 | Key | Action |
 |---|---|
 | `j` / `k` / arrows | move |
-| `enter` | switch to that session's tmux pane |
 | `r` | refresh now |
 | `g` / `G` | top / bottom |
 | `q` | quit |
+
+The app does not switch windows for you. The `where` column is the tmux target, so
+`studio:3.0` is reached with `tmux select-window -t studio:3`, or by its number from the
+tmux prefix.
 
 ## Where the data comes from
 
@@ -68,11 +71,19 @@ this script exists.
 Add a window to `~/.config/bain-studio/tmux.json`:
 
 ```json
-{"name": "sessions", "dir": "/media/data/dev/bain-studio",
+{"name": "sessions", "dir": "/home/bain/ops/bain-studio",
  "cmd": "studio/scripts/session-status"}
 ```
 
-Then run `studio-tmux` to pick it up. See [studio-tmux](studio-tmux.md).
+It points at the ops worktree, not the development checkout, for the same reason the
+`monitor` window does: an always-on window should run a released tag, not whatever branch
+is checked out. It therefore picks up changes at deploy time, not at commit time. See
+[ops-worktree](ops-worktree.md).
+
+`studio-tmux` creates the window on the next full run, but it also selects the first window
+and switches the client, which moves the view of anyone attached. To add it to a running
+session without that, use `tmux new-window -d -t "=studio:" -n sessions -c /home/bain/ops/bain-studio
+studio/scripts/session-status`. See [studio-tmux](studio-tmux.md).
 
 Run it directly with `studio/scripts/session-status`. Pure stdlib, no dependencies.
 
@@ -80,5 +91,6 @@ Run it directly with `studio/scripts/session-status`. Pure stdlib, no dependenci
 
 - Linux only (reads `/proc`).
 - Local machine only. Cloud sessions are not covered.
-- `enter` is not yet exercised; it uses `tmux switch-client`, which moves the client the app is running in. With several
-  attached clients, it moves that one.
+- Read-only. It shows where a session is; it does not switch to it. Jumping by key was
+  dropped deliberately - `tmux switch-client` moves whichever client the app runs in, which
+  with several attached clients is not reliably the one in front of you.
