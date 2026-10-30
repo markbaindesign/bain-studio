@@ -168,6 +168,23 @@ def test_a_rolled_over_window_is_not_quoted():
     assert worst == 10
 
 
+def test_a_rolled_over_week_is_not_quoted_either():
+    """The likelier of the two: an account left unused past its weekly reset
+    keeps last week's figure, and a high one would colour the whole line."""
+    text, worst = s.quota_text(
+        [quota(pct=20, weekly_pct=96, weekly_reset_ts=NOW - 3600)])
+    assert "96%" not in text and "wk reset" in text
+    assert worst == 20
+
+
+def test_a_weekly_reset_within_the_day_gets_a_clock_time():
+    # "->Fri" on a Friday reads as next Friday.
+    soon, _ = s.quota_text([quota(weekly_reset_ts=NOW + 3600)])
+    later, _ = s.quota_text([quota(weekly_reset_ts=NOW + 3 * 86400)])
+    assert ":" in soon.split("wk")[1]
+    assert ":" not in later.split("wk")[1]
+
+
 def test_a_missing_reset_time_is_left_out_rather_than_formatted():
     # An unset timestamp would format as the epoch and read as a clock time.
     text, _ = s.quota_text([quota(reset_ts=0, weekly_reset_ts=0)])

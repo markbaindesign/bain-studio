@@ -507,10 +507,18 @@ def quota_text(found):
                 five += " \u2192" + time.strftime("%H:%M", time.localtime(q["reset_ts"]))
             worst = max(worst, q["pct"] or 0)
         week = ""
-        if q["weekly_pct"] is not None:
+        if q["weekly_reset_ts"] and q["weekly_reset_ts"] <= now:
+            # Same as the five-hour window: a week that has rolled over since
+            # the snapshot leaves last week's figure in the file. An account
+            # left unused past its reset would otherwise colour the whole line.
+            week = " \u00b7 wk reset"
+        elif q["weekly_pct"] is not None:
             week = f" \u00b7 wk {q['weekly_pct']}%"
-            if q["weekly_reset_ts"] and q["weekly_reset_ts"] > now:
-                week += " \u2192" + time.strftime("%a", time.localtime(q["weekly_reset_ts"]))
+            if q["weekly_reset_ts"]:
+                # A weekday is enough for a reset days out, but "\u2192Fri" on a
+                # Friday reads as next Friday, so the last day gets a clock time.
+                fmt = "%H:%M" if q["weekly_reset_ts"] - now < 86400 else "%a"
+                week += " \u2192" + time.strftime(fmt, time.localtime(q["weekly_reset_ts"]))
             worst = max(worst, q["weekly_pct"])
         parts.append(f"{q['account']} {five}{week}")
     return "   ".join(parts), worst

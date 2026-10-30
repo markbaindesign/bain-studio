@@ -51,8 +51,12 @@ bain 5h 42% →22:20 · wk 64% →Tue   kf 5h 4% →23:40 · wk 11% →Sun
 The line is dim until it matters: amber from 70%, red from 90%, taking whichever is worst of
 either window of either account, since any one of them can be the thing that stops work.
 
-Where the five-hour window has already reset since the figure was taken, the percentage is a
-dead number from a window that is gone, so the line says `5h reset` rather than quoting it.
+Where a window has already reset since the figure was taken, the percentage is a dead number
+from a window that is gone, so the line says `5h reset` or `wk reset` rather than quoting it,
+and that figure is left out of the colour. The weekly one is the likelier of the two: an
+account left unused past its reset keeps last week's percentage in the file. A weekly reset
+less than a day out is given a clock time rather than a weekday, because "→Fri" on a Friday
+reads as next Friday.
 
 ## What moves on screen
 
@@ -198,9 +202,9 @@ whose reset time has passed is shown as `reset`: the file is not wrong, it is ju
 window that has since rolled over.
 
 There is a second writer of `ratelimit-current.json`, `~/.claude/hooks/save-ratelimit.sh`,
-which writes only the two five-hour fields and would blank the weekly ones. It is not wired
-into any `settings.json`, so nothing clobbers them today - but if it is ever hooked up, the
-weekly half of this header goes with it.
+which writes only the two five-hour fields and would blank the weekly ones. Nothing calls it:
+no `settings.json` under `~/.claude*` or any project in `/media/data/dev`, no crontab, no user
+systemd unit. If it is ever hooked up, the weekly half of this header goes with it.
 
 The seven fields in `claude agents --json` (`pid`, `cwd`, `kind`, `startedAt`, `sessionId`,
 `name`, `status`) are all it offers - there is no background-shell count and no context figure
