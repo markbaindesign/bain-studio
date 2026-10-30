@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-10-30
+
+### Changed
+- **Session status** now covers every Claude account on the machine. `claude agents --json` reports only the config directory it is invoked with, so sessions running under a second account (KF, under `CLAUDE_CONFIG_DIR=~/.claude-kf`) were missing from the list with nothing to say so - 10 shown against 12 running. Every `~/.claude*` directory holding a `projects/` folder is now queried. An account column appears once more than one account has sessions.
+- **Session status** setup points the always-on `sessions` tmux window at the ops worktree rather than the development checkout, matching the `monitor` window. The pane must be respawned after a deploy to pick up a new version.
+
+### Removed
+- **Session status:** jump-to-pane on `enter`. `tmux switch-client` moves whichever client the app is running in, which with several clients attached is not reliably the one in front of you. The tmux target is displayed instead and the session is found by hand.
+
 ## [1.16.0] - 2026-10-30
 
 ### Added
@@ -442,7 +451,8 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.16.0...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.17.0...develop
+[1.17.0]: https://github.com/markbaindesign/bain-studio/compare/1.16.0...1.17.0
 [1.16.0]: https://github.com/markbaindesign/bain-studio/compare/1.15.1...1.16.0
 [1.15.1]: https://github.com/markbaindesign/bain-studio/compare/1.15.0...1.15.1
 [1.15.0]: https://github.com/markbaindesign/bain-studio/compare/1.14.0...1.15.0
