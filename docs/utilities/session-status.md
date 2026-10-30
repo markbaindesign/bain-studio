@@ -9,18 +9,20 @@ description: Dense always-on list of every Claude Code session on the machine, s
 
 One screen showing every Claude Code session running on this machine, **across every Claude
 account**: its status, which tmux pane it is in, its project, how much context it is holding,
-how long it has been in that state, and what it is working on. Sorted so anything needing Mark
-is at the top - `waiting`, then `idle`, then `shell` - and `busy` last, longest first.
+how long it has been in that state, and what it is working on. Sorted attention first, then live work, then the parked
+sessions - `waiting`, `shell`, `busy`, `idle` - and within a status, longest first. Idle sits
+last because a session idle for two days is not asking for anything, while busy is work worth
+watching.
 
 ```
 12 sessions   1 waiting · 1 shell · 1 busy · 9 idle   kf 2 · main 10        1s ago
 ● waiting  main  mwe:1.1       middlewayeducation        118k    12m  Passiko project setup
+◑ shell    main  studio:1.0    Work                      282k    54m  Invoices bookkeeping
+◐ busy     main  infra:0.0     bain-studio               159k     3s  Session dashboard rebuild
 ○ idle     main  ebiz:0.0      ebiz-global               103k    53m  EBiz Japan email migration
 ○ idle     kf    kf:0.0        kf-21                      82k    49m  Ticket reply directly
 ○ idle     kf    KF:1.0        kf-21                     168k    49m  Budget update
 ○ idle     main  infra:0.1     bain-studio (bg)           31k     7m  -
-◑ shell    main  studio:1.0    Work                      282k    54m  Invoices bookkeeping
-◐ busy     main  infra:0.0     bain-studio               159k     3s  Session dashboard rebuild
 ```
 
 Columns are given up as the pane narrows, in order of what can be done without: the title
@@ -52,9 +54,9 @@ entry is an **assistant** entry whose `stop_reason` is `end_turn` with no outsta
 `tool_use`. Where the CLI says `busy` and the transcript says finished, the status shown is
 `shell`.
 
-It sits above `busy` but below `idle`, and deliberately not merged into either: the model is
-not working, so `busy` is wrong, but a live background shell may yet wake the session, so
-unlike `idle` it does not certainly need Mark. The two cases are indistinguishable from the
+It sits in the attention group, directly under `waiting`, and deliberately not merged into
+either neighbour: the model is not working, so `busy` is wrong, but a live background shell may
+yet wake the session, so it is not simply parked either. The two cases are indistinguishable from the
 transcript - a turn that ended with a question and a turn that ended pending a job look
 identical - so the label states what is known and leaves the judgement to the reader.
 

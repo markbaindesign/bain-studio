@@ -12,9 +12,13 @@ folder is therefore queried, and the account is shown when there is more than on
 
 Status starts from the CLI but is not trusted as-is:
     waiting  sitting on a permission prompt, needs an answer
-    idle     finished its turn, waiting for a prompt - also needs Mark
     shell    turn is over, but a background shell keeps the CLI at "busy"
     busy     genuinely mid-turn, needs nothing
+    idle     finished its turn and parked, waiting for a prompt
+
+That is also the sort order: whoever is asking for something, then live work,
+then the parked sessions. Idle sits last because a session idle for two days is
+not asking for anything, while busy is work worth watching.
 
 The CLI reports "busy" while any background shell the session spawned is
 alive, even when the model finished its turn an hour ago and asked a
@@ -52,7 +56,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 POLL_SECONDS = 4
-STATUS_ORDER = {"waiting": 0, "idle": 1, "shell": 2, "busy": 3}
+STATUS_ORDER = {"waiting": 0, "shell": 1, "busy": 2, "idle": 3}
 GLYPH = {"waiting": "●", "busy": "◐", "idle": "○", "shell": "◑"}
 
 # Only the statuses that want a human pulse, so movement on screen means
@@ -309,7 +313,8 @@ def collect():
                 "for": now - seen,
             }
         )
-    # Who needs Mark first, and within that the one kept waiting longest.
+    # Attention first, then live work, then the parked ones; within a status,
+    # whoever has been in it longest.
     rows.sort(key=lambda r: (STATUS_ORDER.get(r["status"], 9), -r["for"]))
     return rows
 

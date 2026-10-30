@@ -117,10 +117,14 @@ def test_title_only_appears_when_there_is_room():
     assert "Invoices bookkeeping" in s.row_text(ROW, 120, True)
 
 
-def test_shell_sorts_above_busy_and_below_idle():
-    assert s.STATUS_ORDER["waiting"] < s.STATUS_ORDER["idle"]
-    assert s.STATUS_ORDER["idle"] < s.STATUS_ORDER["shell"]
-    assert s.STATUS_ORDER["shell"] < s.STATUS_ORDER["busy"]
+def test_sort_is_attention_then_live_work_then_parked():
+    order = ["waiting", "shell", "busy", "idle"]
+    assert [s.STATUS_ORDER[name] for name in order] == [0, 1, 2, 3]
+
+
+def test_idle_sorts_last():
+    # A session idle for two days is asking for nothing; busy is worth watching.
+    assert s.STATUS_ORDER["idle"] > s.STATUS_ORDER["busy"]
 
 
 # --- the pulse -------------------------------------------------------------
