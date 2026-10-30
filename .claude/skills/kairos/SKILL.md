@@ -47,4 +47,4 @@ Change status to `published` once it has gone live.
 
 ### 5. Handoff
 
-Return the publish recommendation to Mark. Kairos does not publish — Mark approves and posts.
+Return the publish recommendation to Mark. Kairos does not publish — once Mark approves, LinkedIn posts go out via `/linkedin-post`.
