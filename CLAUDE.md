@@ -75,7 +75,7 @@ Studio output (specs, finance, pipeline, portfolio, briefs, research) lives in D
 
 Note: the canonical project database (estimation comps, all completed projects) is **not** under
 `$STUDIO_CONTENT_DIR` - it lives in a separate repo at
-`/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv`. Don't confuse it with the
+`/media/data/dev/misc/upwork-proposals/context/portfolio/projects/` (one Markdown file per project, read via `pipeline/project_db.py` — see ADR-007). Don't confuse it with the
 per-project case study folders above.
 
 `context/` is gitignored — all content is Dropbox-synced only.

@@ -33,7 +33,7 @@ Search for:
 
 ### 4. Query Mnemosyne
 
-Read `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv`. Find rows matching:
+Load the project ledger from `/media/data/dev/misc/upwork-proposals/context/portfolio/projects/` (via `pipeline/project_db.load_all()`). Find projects matching:
 - Same primary tech stack
 - Same or adjacent sector
 - Completed in the last 3 years

@@ -38,7 +38,7 @@ Each is scored and noted — not just summarised:
 - **Stack fit** — does the brief mention WordPress, WooCommerce, PHP, React, Next.js, Astro, headless, or web design/dev?
 - **Budget signal** — any indication of budget: explicit figure, reference range, or implicit (enterprise client vs solo founder)
 - **Timeline signal** — urgency, runway, whether it's greenfield or ongoing
-- **Client quality** — professionalism of the brief, clarity, prior project history in `project-database.csv`
+- **Client quality** — professionalism of the brief, clarity, prior project history in `context/portfolio/projects/`
 
 ## Output
 
