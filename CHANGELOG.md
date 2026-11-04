@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-11-04
+
+### Added
+- **Session status** gains a column legend above the rows, naming each column. It is laid out by the same code as the rows, so it names only the columns that fit and breaks where they break at any width.
+
+### Changed
+- **Session status** calls the CLI's `busy` status `working`, in a muted green. The rename happens at display time: the CLI still emits `busy`, so the `shell` detection that depends on its word is untouched.
+- **Session status** sorts waiting, shell, idle, working. Working moved to the bottom because a session mid-turn is asking for nothing, while a parked one may be waiting to be picked up - which is also why idle is now orange, and no longer dimmed, since dim turned the orange brown. Within every group the most recently active session is at the top rather than the longest-standing one.
+- **Copywriter** is an agent (`.claude/agents/copywriter.md`) rather than a skill holding an abbreviated copy of the voice rules; the skill becomes a convenience trigger pointing at it. One definition of the voice instead of a skill-sized summary drifting from the master document.
+- **Four PM skills load again.** `pm-asana-sync`, `pm-onboard`, `pm-retro` and `pm-todos` existed only in the stale `skills/` directory, which was shadowed by `.claude/skills/`, and were therefore unloadable. Two of them want review against current practice: `pm-asana-sync` runs `sync.py` after mirror edits, and `pm-todos` writes task state to `TODO.md` alongside the Asana mirror.
+
+### Fixed
+- **Studio docs and skills point at the project ledger.** ADR-007 retired `context/portfolio/project-database.csv` on 2026-07-15 in favour of one Markdown file per project under `context/portfolio/projects/`, read through `pipeline/project_db.py`. Fifteen files still named the CSV, so `/harvest` and others were reading a path that no longer exists. The references are rewritten rather than repointed, since the data model changed too: rows became project files, columns became frontmatter fields, and the skills that load the ledger now go through `project_db.load_all()`.
+
+### Removed
+- The stale `skills/` directory, a June copy of the skill set shadowed by the actively maintained `.claude/skills/`. Eight of its thirteen entries were duplicates, `interview-brief` now lives in `bain-skills`, and `skills/athena` was a symlink.
+
 ## [1.19.0] - 2026-10-30
 
 ### Added
@@ -474,7 +491,8 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.19.0...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.20.0...develop
+[1.20.0]: https://github.com/markbaindesign/bain-studio/compare/1.19.0...1.20.0
 [1.19.0]: https://github.com/markbaindesign/bain-studio/compare/1.18.0...1.19.0
 [1.18.0]: https://github.com/markbaindesign/bain-studio/compare/1.17.0...1.18.0
 [1.17.0]: https://github.com/markbaindesign/bain-studio/compare/1.16.0...1.17.0
