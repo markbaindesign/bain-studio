@@ -2,7 +2,7 @@
 tags: [utility, terminal, tmux, claude]
 command: studio/scripts/session-status
 invoke: tmux window `sessions`
-description: Dense always-on list of every Claude Code session on the machine, sorted by which one needs Mark first, showing each one's tmux target, model, context size and what it is working on, over a quota header for every account
+description: Dense always-on list of every Claude Code session on the machine, sorted by which one needs Mark first, under a column legend, showing each one's tmux target, model, context size and what it is working on, over a quota header for every account
 ---
 
 # session-status
@@ -10,22 +10,26 @@ description: Dense always-on list of every Claude Code session on the machine, s
 One screen showing every Claude Code session running on this machine, **across every Claude
 account**: its status, which tmux pane it is in, its project, the model it is on, how much
 context it is holding, how long it has been in that state, and what it is working on - under a
-header giving each account's five-hour and weekly quota. Sorted attention first, then live
-work, then the parked sessions - `waiting`, `shell`, `busy`, `idle` - and within a status,
-longest first. Idle sits last because a session idle for two days is not asking for anything,
-while busy is work worth watching.
+header giving each account's five-hour and weekly quota, over a legend naming each column.
+Sorted blocked first, then the parked sessions, then the ones working - `waiting`, `shell`,
+`idle`, `working` - and within a status, most recently active first. Working sits last because
+a session mid-turn is asking for nothing, while an idle one may be waiting to be picked up.
 
 ```
-12 sessions   1 waiting · 1 shell · 1 busy · 9 idle   bain 10 · kf 2        1s ago
+12 sessions   1 waiting · 1 shell · 9 idle · 1 working   bain 10 · kf 2     1s ago
 bain 5h 42% →22:20 · wk 64% →Tue   kf 5h 4% →23:40 · wk 11% →Sun
-● waiting  bain  mwe:1.1       middlewayeducation  o5.5  118k  12%   12m  Passiko project setup
-◑ shell    bain  studio:1.0    Work                o5.5  282k  28%   54m  Invoices bookkeeping
-◐ busy     bain  infra:0.0     bain-studio           o5  159k  16%    3s  Session dashboard rebuild
-○ idle     bain  ebiz:0.0      ebiz-global         s5.5  103k  10%   53m  EBiz Japan email migration
-○ idle     kf    kf:0.0        kf-21                 o5   82k   8%   49m  Ticket reply directly
-○ idle     kf    KF:1.0        kf-21               o5.5  168k  17%   49m  Budget update
-○ idle     bain  infra:0.1     bain-studio (bg)    s5.5   31k   3%    7m  -
+  status   acct  where         project                  model   ctx ctx%   last  title
+● waiting  bain  mwe:1.1       middlewayeducation        o5.5  118k  12%    12m  Passiko project setup
+◑ shell    bain  studio:1.0    Work                      o5.5  282k  28%    54m  Invoices bookkeeping
+○ idle     bain  infra:0.1     bain-studio (bg)          s5.5   31k   3%     7m  -
+○ idle     kf    kf:0.0        kf-21                       o5   82k   8%    49m  Ticket reply directly
+○ idle     kf    KF:1.0        kf-21                     o5.5  168k  17%    49m  Budget update
+○ idle     bain  ebiz:0.0      ebiz-global               s5.5  103k  10%    53m  EBiz Japan email migration
+◴ working  bain  infra:0.0     bain-studio                 o5  159k  16%     3s  Session dashboard rebuild
 ```
+
+The legend is laid out by the same code as the rows, so it names only the columns that fit and
+breaks where they break at every width.
 
 Columns are given up as the pane narrows, in order of what can be done without: the title
 first, then the context percentage, then the model, then the context size, then the project is
@@ -67,14 +71,19 @@ before you read a word:
 |---|---|---|
 | `waiting` | pulses every tick - glyph swaps with `◦` | red |
 | `shell` | pulses every third tick, a slower breath | cyan |
-| `busy` | spins clockwise, `◴ ◷ ◶ ◵` | yellow |
-| `idle` | still | grey (dim) |
+| `idle` | still | orange |
+| `working` | spins clockwise, `◴ ◷ ◶ ◵` | green |
 
-Pulsing is reserved for the two statuses that want a human; `busy` spins instead, so work in
+Pulsing is reserved for the two statuses that want a human; `working` spins instead, so work in
 progress is visibly alive without imitating them. The spinner's quadrants are deliberately
-distinct from `◐` (busy at rest) and `◑` (shell) so no status can impersonate another
-mid-cycle - a unit test asserts it. Idle recedes into dim grey: it is the bulk of the list and
-none of it is asking for anything.
+distinct from `◐` (working at rest) and `◑` (shell) so no status can impersonate another
+mid-cycle - a unit test asserts it.
+
+Green on `working` and orange on `idle` say which rows need reading: a session mid-turn needs
+nothing, a parked one may be waiting for a prompt. Orange is the 256-colour index 208, with
+yellow as the fallback on an eight-colour terminal; green is index 71, a muted one rather than
+the basic green. The quota header keeps its own amber on colour pair 2, so recolouring the rows
+does not touch it.
 
 Redrawing is decoupled from polling. The screen ticks every 0.5s while anything is moving,
 while `claude agents --json` is still only called every 4s - and with every session parked the
@@ -110,7 +119,8 @@ for 54 minutes, reported `busy`, and therefore sorted *last*, under the heading 
 The transcript settles it. A session has finished its turn when its newest user-or-assistant
 entry is an **assistant** entry whose `stop_reason` is `end_turn` with no outstanding
 `tool_use`. Where the CLI says `busy` and the transcript says finished, the status shown is
-`shell`.
+`shell`. Everywhere else the CLI's `busy` is shown as `working`, which is what it means to a
+reader; `busy` below is always the CLI's own word, never a status on screen.
 
 It sits in the attention group, directly under `waiting`, and deliberately not merged into
 either neighbour: the model is not working, so `busy` is wrong, but a live background shell may

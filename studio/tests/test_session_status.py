@@ -226,14 +226,14 @@ def test_title_only_appears_when_there_is_room():
     assert "Invoices bookkeeping" in s.row_text(ROW, 120, True)
 
 
-def test_sort_is_attention_then_live_work_then_parked():
-    order = ["waiting", "shell", "busy", "idle"]
+def test_sort_is_blocked_then_parked_then_working():
+    order = ["waiting", "shell", "idle", "working"]
     assert [s.STATUS_ORDER[name] for name in order] == [0, 1, 2, 3]
 
 
-def test_idle_sorts_last():
-    # A session idle for two days is asking for nothing; busy is worth watching.
-    assert s.STATUS_ORDER["idle"] > s.STATUS_ORDER["busy"]
+def test_working_sorts_last():
+    # A session mid-turn is asking for nothing; an idle one may want picking up.
+    assert s.STATUS_ORDER["working"] > s.STATUS_ORDER["idle"]
 
 
 # --- the pulse -------------------------------------------------------------
@@ -250,14 +250,14 @@ def test_shell_pulses_more_slowly_than_waiting():
     assert [s.glyph_for("shell", f) for f in range(3, 6)] == [s.PULSE_OFF] * 3
 
 
-def test_busy_spins_clockwise_through_four_quadrants():
-    assert [s.glyph_for("busy", f) for f in range(5)] == list("◴◷◶◵◴")
+def test_working_spins_clockwise_through_four_quadrants():
+    assert [s.glyph_for("working", f) for f in range(5)] == list("◴◷◶◵◴")
 
 
-def test_a_spinning_busy_never_wears_another_status_glyph():
-    # ◐ is busy at rest, ◑ is shell, ◦ is a pulse's off-frame: none may show up
-    # mid-rotation, or a glance would read the wrong status.
-    spun = {s.glyph_for("busy", f) for f in range(8)}
+def test_a_spinning_working_never_wears_another_status_glyph():
+    # ◐ is working at rest, ◑ is shell, ◦ is a pulse's off-frame: none may show
+    # up mid-rotation, or a glance would read the wrong status.
+    spun = {s.glyph_for("working", f) for f in range(8)}
     assert not spun & {s.GLYPH["shell"], s.GLYPH["waiting"], s.PULSE_OFF}
 
 
@@ -266,11 +266,73 @@ def test_idle_never_moves():
         assert s.glyph_for("idle", frame) == s.GLYPH["idle"]
 
 
-def test_busy_counts_as_animating_so_the_screen_ticks_for_it():
-    assert "busy" in s.ANIMATED and "idle" not in s.ANIMATED
+def test_working_counts_as_animating_so_the_screen_ticks_for_it():
+    assert "working" in s.ANIMATED and "idle" not in s.ANIMATED
 
 
 def test_pulse_reaches_the_rendered_row():
     waiting = dict(ROW, status="waiting")
     assert s.row_text(waiting, 120, True, 0).startswith(s.GLYPH["waiting"])
     assert s.row_text(waiting, 120, True, 1).startswith(s.PULSE_OFF)
+
+
+# --- the column legend -----------------------------------------------------
+
+def test_header_breaks_at_the_same_columns_as_a_row():
+    """The legend is only worth having if it sits over the right columns, at
+    every width where a column is dropped."""
+    for width in (50, 80, 140):
+        header = s.header_text(width, True)
+        row = s.row_text(ROW, width, True)
+        assert header.index("where") == row.index("studio:1.0")
+        # Prefix, not the whole name: a narrow pane clips the project column.
+        assert header.index("project") == row.index("middleway")
+        if "282k" in row:
+            # Numbers and their labels are both right-aligned, so it is the
+            # right-hand edges that have to meet.
+            assert header.index("ctx") + 3 == row.index("282k") + 4
+            assert header.index("last") + 4 == row.index("8m") + 2
+
+
+def test_header_never_exceeds_the_pane():
+    for width in range(30, 200):
+        assert len(s.header_text(width, True)) < width
+
+
+def test_header_names_only_the_columns_that_fit():
+    assert "ctx%" in s.header_text(140, True)
+    assert "ctx%" not in s.header_text(64, True)
+    assert "model" not in s.header_text(60, True)
+    assert "status" in s.header_text(60, True)
+
+
+def test_header_drops_the_account_label_with_the_account_column():
+    assert "acct" in s.header_text(140, True)
+    assert "acct" not in s.header_text(140, False)
+
+
+# --- what the CLI calls busy ----------------------------------------------
+
+def _one_session(monkeypatch, finished):
+    """collect() over a single live session, with everything it reads stubbed."""
+    monkeypatch.setattr(s, "pane_by_pid", lambda: {})
+    monkeypatch.setattr(s, "sessions", lambda: [
+        {"pid": 1, "sessionId": "abc", "status": "busy", "cwd": "/tmp/p",
+         "kind": "interactive", "_account": "bain", "startedAt": NOW}])
+    monkeypatch.setattr(s, "transcript", lambda *a: Path("/nonexistent"))
+    monkeypatch.setattr(s, "last_activity", lambda *a: NOW)
+    monkeypatch.setattr(s, "transcript_state",
+                        lambda *a: {"finished": finished, "ctx": 0, "title": ""})
+    monkeypatch.setattr(s, "snapshot", lambda *a: {})
+    monkeypatch.setattr(s, "locate", lambda *a: "-")
+    monkeypatch.setattr(s.Path, "exists", lambda self: True)
+    return s.collect()[0]["status"]
+
+
+def test_a_cli_busy_session_mid_turn_is_shown_as_working(monkeypatch):
+    assert _one_session(monkeypatch, finished=False) == "working"
+
+
+def test_a_cli_busy_session_whose_turn_is_over_is_still_shell(monkeypatch):
+    # A live background shell holding the CLI at busy is the case this exists for.
+    assert _one_session(monkeypatch, finished=True) == "shell"

@@ -13,12 +13,13 @@ folder is therefore queried, and the account is shown when there is more than on
 Status starts from the CLI but is not trusted as-is:
     waiting  sitting on a permission prompt, needs an answer
     shell    turn is over, but a background shell keeps the CLI at "busy"
-    busy     genuinely mid-turn, needs nothing
     idle     finished its turn and parked, waiting for a prompt
+    working  genuinely mid-turn, needs nothing
 
-That is also the sort order: whoever is asking for something, then live work,
-then the parked sessions. Idle sits last because a session idle for two days is
-not asking for anything, while busy is work worth watching.
+That is also the sort order: whoever is blocked on an answer first, then the
+parked sessions, then the ones working. Working sits last because a session
+mid-turn is asking for nothing; an idle one may well be waiting to be picked
+up. Within a group the most recently active session is at the top.
 
 The CLI reports "busy" while any background shell the session spawned is
 alive, even when the model finished its turn an hour ago and asked a
@@ -62,8 +63,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 POLL_SECONDS = 4
-STATUS_ORDER = {"waiting": 0, "shell": 1, "busy": 2, "idle": 3}
-GLYPH = {"waiting": "●", "busy": "◐", "idle": "○", "shell": "◑"}
+STATUS_ORDER = {"waiting": 0, "shell": 1, "idle": 2, "working": 3}
+GLYPH = {"waiting": "●", "working": "◐", "idle": "○", "shell": "◑"}
 
 # Only the statuses that want a human pulse, so movement on screen means
 # "someone is needed" and nothing else. Redrawing is decoupled from polling:
@@ -74,11 +75,11 @@ TICK_SECONDS = 0.5
 PULSE_OFF = "◦"
 PULSE = {"waiting": 1, "shell": 3}
 
-# Busy rotates rather than pulses, so work in progress is visibly alive without
-# imitating a status that wants a human. The quadrants run clockwise and are
-# distinct from ◐ (busy at rest) and ◑ (shell), so no status can impersonate
-# another mid-cycle.
-SPIN = {"busy": "◴◷◶◵"}
+# Working rotates rather than pulses, so work in progress is visibly alive
+# without imitating a status that wants a human. The quadrants run clockwise and
+# are distinct from ◐ (working at rest) and ◑ (shell), so no status can
+# impersonate another mid-cycle.
+SPIN = {"working": "◴◷◶◵"}
 ANIMATED = set(PULSE) | set(SPIN)
 DEFAULT_CONFIG = Path.home() / ".claude"
 
@@ -91,6 +92,12 @@ SNAPSHOTS = DEFAULT_CONFIG / "logs" / "sessions"
 # change what to do next: amber is "finish the task", red is "stop starting things".
 QUOTA_AMBER = 70
 QUOTA_RED = 90
+
+# Row colours. Curses' eight basic colours hold no orange, and basic green is
+# brighter than a status that wants nothing deserves, so the 256-colour indexes
+# are used where the terminal has them and the nearest basic colour otherwise.
+GREEN_256 = 71
+ORANGE_256 = 208
 
 # How much of a transcript's tail to read. Enough to hold the last assistant
 # entry in all observed cases; a session whose tail is filled with
@@ -407,6 +414,9 @@ def collect():
         # working nor parked.
         if status == "busy" and state and state["finished"]:
             status = "shell"
+        elif status == "busy":
+            # The CLI's word for it; "working" is what it means to a reader.
+            status = "working"
         snap = snapshot(s.get("sessionId", ""))
         rows.append(
             {
@@ -425,9 +435,9 @@ def collect():
                 "for": now - seen,
             }
         )
-    # Attention first, then live work, then the parked ones; within a status,
-    # whoever has been in it longest.
-    rows.sort(key=lambda r: (STATUS_ORDER.get(r["status"], 9), -r["for"]))
+    # Whoever is blocked first, then the parked ones, then the sessions that
+    # need nothing; within a status, the most recently active at the top.
+    rows.sort(key=lambda r: (STATUS_ORDER.get(r["status"], 9), r["for"]))
     return rows
 
 
@@ -443,6 +453,42 @@ def glyph_for(status, frame):
     return GLYPH.get(status, "?")
 
 
+# Width of each optional column, including its leading space.
+EXTRA_WIDTH = {"model": 6, "ctx": 6, "pct": 5}
+# The order they are given up in: context size survives longest of the three.
+EXTRA_SETS = (("model", "ctx", "pct"), ("model", "ctx"), ("ctx",), ())
+
+
+def layout(width, show_account):
+    """Which optional columns fit at this width, and the project column's width.
+
+    One place decides it, so the header and the rows below it always break at
+    the same place.
+    """
+    head_width = 25 + (6 if show_account else 0)
+    room = max(0, width - 1 - head_width - 7)
+    for extras in EXTRA_SETS:
+        size = sum(EXTRA_WIDTH[name] for name in extras)
+        if room >= 10 + size:
+            return extras, min(24, room - size)
+    return (), room
+
+
+def header_text(width, show_account):
+    """The column legend, laid out by the same rules as the rows."""
+    extras, project_width = layout(width, show_account)
+    account = "{:<5} ".format("acct") if show_account else ""
+    text = "{} {:<8} {}{:<13} ".format(" ", "status", account, "where")
+    text += "{:<{w}}".format("project"[:project_width], w=project_width)
+    labels = {"model": " {:>5}".format("model"), "ctx": " {:>5}".format("ctx"),
+              "pct": " {:>4}".format("ctx%")}
+    text += "".join(labels[name] for name in extras)
+    text += " {:>6}".format("last")
+    if width >= len(text) + 24:
+        text += "  " + "title"
+    return text[: max(0, width - 1)]
+
+
 def row_text(row, width, show_account, frame=0):
     """One row, fitted to the pane.
 
@@ -451,30 +497,24 @@ def row_text(row, width, show_account, frame=0):
     then the project is squeezed. Status, tmux target and the time in state
     always survive, because they are what the app is for. A fixed-width row was
     clipped by curses on the right, which cost the time column on a narrow pane
-    and sliced context sizes in half.
+    and sliced context sizes in half. `layout` makes that choice for the header
+    too.
     """
+    extras, project_width = layout(width, show_account)
     account = "{:<5} ".format(row["account"][:5]) if show_account else ""
     head = "{} {:<8} {}{:<13} ".format(
         glyph_for(row["status"], frame), row["status"], account, row["where"])
-    tail = " {:>6}".format(ago(row["for"]))
     # Fixed widths even when a value is missing: every row has the same head
     # and tail, so all of them drop the same columns and the rest stay aligned.
-    model = " {:>5}".format(short_model(row["model"])[:5])
-    context = " {:>5}".format(tokens(row["ctx"]))
-    percent = " {:>4}".format(f"{row['ctx_pct']}%" if row["ctx_pct"] else "")
+    cells = {
+        "model": " {:>5}".format(short_model(row["model"])[:5]),
+        "ctx": " {:>5}".format(tokens(row["ctx"])),
+        "pct": " {:>4}".format(f"{row['ctx_pct']}%" if row["ctx_pct"] else ""),
+    }
+    body = "{:<{w}}".format(row["project"][:project_width], w=project_width)
+    body += "".join(cells[name] for name in extras)
 
-    room = max(0, width - 1 - len(head) - len(tail))
-    body = None
-    for extra in (model + context + percent, model + context, context, ""):
-        if room >= 10 + len(extra):
-            project_width = min(24, room - len(extra))
-            body = "{:<{w}}".format(
-                row["project"][:project_width], w=project_width) + extra
-            break
-    if body is None:
-        body = "{:<{w}}".format(row["project"][:room], w=room)
-
-    text = head + body + tail
+    text = head + body + " {:>6}".format(ago(row["for"]))
     # The title is what the session is actually about, and the first thing worth
     # reading - but only where it can be shown at a useful length.
     if row["title"] and width >= len(text) + 24:
@@ -529,12 +569,13 @@ def draw(stdscr, rows, cursor, refreshed, quota=(), frame=0):
     height, width = stdscr.getmaxyx()
 
     counts = {name: sum(1 for r in rows if r["status"] == name)
-              for name in ("waiting", "shell", "busy", "idle")}
+              for name in ("waiting", "shell", "idle", "working")}
     waiting = counts["waiting"]
 
     accounts = sorted({r["account"] for r in rows})
     # A zero shell count is dead space, like the account column.
-    tally = " · ".join(f"{counts[n]} {n}" for n in ("waiting", "shell", "busy", "idle")
+    tally = " · ".join(f"{counts[n]} {n}"
+                       for n in ("waiting", "shell", "idle", "working")
                        if n != "shell" or counts["shell"])
     head = f"{len(rows)} sessions   {tally}"
     stamp = f"{ago(time.time() - refreshed)} ago"
@@ -559,6 +600,14 @@ def draw(stdscr, rows, cursor, refreshed, quota=(), frame=0):
         stdscr.addnstr(1, 0, text.ljust(width - 1), width - 1, attr)
         first_row = 2
 
+    # The legend sits directly over the rows it names. Dim, never reverse:
+    # reverse is the cursor.
+    if height > first_row + 1:
+        stdscr.addnstr(first_row, 0,
+                       header_text(width, len(accounts) > 1).ljust(width - 1),
+                       width - 1, curses.A_DIM)
+        first_row += 1
+
     for index, row in enumerate(rows):
         line = index + first_row
         if line >= height:
@@ -567,12 +616,11 @@ def draw(stdscr, rows, cursor, refreshed, quota=(), frame=0):
         # The account column is dead space on a single-account machine, so it
         # only appears once a second Claude config directory is in play.
         text = row_text(row, width, len(accounts) > 1, frame)
+        # Working is green because it needs nothing; idle is orange because a
+        # session parked with no prompt is the one that may want picking up.
         attr = curses.color_pair(
-            {"waiting": 1, "busy": 2, "shell": 4}.get(row["status"], 3))
-        # Parked sessions recede: they are the bulk of the list and none of them
-        # is asking for anything.
-        if row["status"] == "idle":
-            attr |= curses.A_DIM
+            {"waiting": 1, "shell": 4, "idle": 6, "working": 5}.get(
+                row["status"], 3))
         if selected:
             attr |= curses.A_REVERSE
         stdscr.addnstr(line, 0, text.ljust(width - 1), width - 1, attr)
@@ -587,9 +635,15 @@ def draw(stdscr, rows, cursor, refreshed, quota=(), frame=0):
 def main(stdscr):
     curses.curs_set(0)
     curses.use_default_colors()
+    # Pair 2 stays yellow for the quota line, which has its own thresholds.
+    green = GREEN_256 if curses.COLORS > GREEN_256 else curses.COLOR_GREEN
+    orange = ORANGE_256 if curses.COLORS > ORANGE_256 else curses.COLOR_YELLOW
     for pair, colour in ((1, curses.COLOR_RED), (2, curses.COLOR_YELLOW), (3, -1),
-                         (4, curses.COLOR_CYAN)):
-        curses.init_pair(pair, colour, -1)
+                         (4, curses.COLOR_CYAN), (5, green), (6, orange)):
+        try:
+            curses.init_pair(pair, colour, -1)
+        except curses.error:
+            curses.init_pair(pair, -1, -1)
     rows = collect()
     quota = quotas()
     refreshed = time.time()
