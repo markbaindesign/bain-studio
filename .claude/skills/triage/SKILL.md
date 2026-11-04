@@ -27,7 +27,7 @@ If the signal is ambiguous, note the ambiguity and classify as the most likely t
 
 ### 2. Check for known client
 
-Scan `{CONTENT_DIR}/portfolio/project-database.csv` for the client name or company. If found, note the project history: year, outcome grade, would-repeat flag. This is relevant context for qualification.
+Scan the project ledger at `{CONTENT_DIR}/portfolio/projects/` for the client name or company. If found, note the project history: year, outcome grade, would-repeat flag. This is relevant context for qualification.
 
 ### 3. Qualify (RFQs and general enquiries only)
 
@@ -76,7 +76,7 @@ List the 1–3 questions that need answers before a routing decision can be made
 Draft a polite decline (format below). Log and continue.
 
 **If Support:**
-Note which project this relates to (check project-database.csv). Route to Hephaestus: flag what's needed and which project directory it likely lives in.
+Note which project this relates to (check the project ledger at `{CONTENT_DIR}/portfolio/projects/`). Route to Hephaestus: flag what's needed and which project directory it likely lives in.
 
 **If Referral intro:**
 Draft a warm acknowledgement reply. Note the referral source — this is useful for Mnemosyne over time.

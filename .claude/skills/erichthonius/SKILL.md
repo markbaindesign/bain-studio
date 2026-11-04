@@ -18,7 +18,7 @@ Extract: primary tech stack, scope signals (e.g. WooCommerce site, custom plugin
 
 ### 2. Query Mnemosyne
 
-Read `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv`.
+Load the project ledger from `/media/data/dev/misc/upwork-proposals/context/portfolio/projects/` (via `pipeline/project_db.load_all()`).
 
 Find 2–4 rows matching on:
 - Same primary tech (e.g. WordPress + WooCommerce, Next.js, React)

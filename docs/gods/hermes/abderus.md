@@ -25,7 +25,7 @@ Usually called automatically by `/studio-startup`, but can be run standalone for
 
 | Source | What it checks |
 |---|---|
-| `project-database.csv` | End Date, harvest status per project |
+| `context/portfolio/projects/` | End Date, harvest status per project |
 | `{CONTENT_DIR}/pipeline/triage-log.md` | Investigate verdicts with no follow-up |
 | Active project Asana mirrors | `asana-mirror.md` per project |
 
