@@ -18,7 +18,7 @@ Generates the three harvest outputs for a completed project: a case study, a blo
 /harvest {project name}
 ```
 
-If no project name is given, reads `project-database.csv` and shows the last 5 entries to choose from.
+If no project name is given, reads the project ledger at `context/portfolio/projects/` and shows the last 5 entries to choose from.
 
 ## Law V
 
@@ -52,7 +52,7 @@ Saved to `{CONTENT_DIR}/portfolio/harvest/{slug}/testimonial-request.md`:
 
 ## Harvest status tracking
 
-Each project in `project-database.csv` has three harvest columns:
+Each project file in `context/portfolio/projects/` has three harvest fields:
 - `Case Study` — `none` / `draft` / `published`
 - `Blog Post` — `none` / `draft` / `published`
 - `Testimonial Status` — `none` / `requested` / `received` / `published`

@@ -45,7 +45,7 @@ Perform a web search for:
 2. Their current tech stack (CMS, hosting provider, plugins visible in headers, APIs mentioned)
 3. Any relevant competitors or adjacent projects
 
-Record findings in the Research section. Cross-reference with `{CONTENT_DIR}/portfolio/project-database.csv` (Mnemosyne) to find prior studio projects in the same sector or with the same tech stack. Note whether this is repeat business (same client) or a new sector/tech for the studio.
+Record findings in the Research section. Cross-reference with the project ledger at `{CONTENT_DIR}/portfolio/projects/` (Mnemosyne) to find prior studio projects in the same sector or with the same tech stack. Note whether this is repeat business (same client) or a new sector/tech for the studio.
 
 ### 3. Erichthonius: Qualify and estimate
 
@@ -66,7 +66,7 @@ Produce a fit score (1–10) and a qualification verdict:
 - **Watch** — Interesting but not now. Recommend revisiting in N weeks (state timeframe) when capacity/market conditions change.
 - **Pass** — Decline. State the reason clearly (outside tech fit, insufficient budget, timeline mismatch, risk too high).
 
-**Estimation:** Find 2–4 comparable projects in `{CONTENT_DIR}/portfolio/project-database.csv` with:
+**Estimation:** Find 2–4 comparable projects in `{CONTENT_DIR}/portfolio/projects/` with:
 - Same primary tech (e.g. WordPress + WooCommerce)
 - Similar scope signals (e.g. e-commerce site, CMS migration, custom plugin)
 - Ideally, same or adjacent sector
@@ -102,7 +102,7 @@ Write the full proposal in plain text following `{CONTENT_DIR}/AGENT_INSTRUCTION
 
 **Mandatory sections:**
 
-1. **SKILL VERIFICATION table** — Required by `ACCURACY.md`. For each claimed skill, cite where it was used (e.g. "React: {Project A} (2024)"). Skills must exist in `{CONTENT_DIR}/portfolio/project-database.csv` or `{CONTENT_DIR}/profile/PROFILE.md`. Never invent.
+1. **SKILL VERIFICATION table** — Required by `ACCURACY.md`. For each claimed skill, cite where it was used (e.g. "React: {Project A} (2024)"). Skills must exist in `{CONTENT_DIR}/portfolio/projects/` or `{CONTENT_DIR}/profile/PROFILE.md`. Never invent.
 
 2. **PROJECT BRIEF** — Client, project scope, key requirements, tech stack, timeline, deliverables.
 
@@ -199,7 +199,7 @@ Status: Ready for proposal gate (Mark review)
 
 - **The law of the gate:** Mark holds the proposal gate. Never send a proposal to a client without Mark's approval.
 - **The law of voice:** All external text (proposal, questions) comes from the Proposal Writer, then passes through the Copywriter. Never invent alternative phrasing; use approved snippets only.
-- **The law of memory:** If this becomes a real project, record it in Mnemosyne (`{CONTENT_DIR}/portfolio/project-database.csv`) after completion.
+- **The law of memory:** If this becomes a real project, record it in Mnemosyne (`{CONTENT_DIR}/portfolio/projects/`) after completion.
 - **No older projects:** Never reference work older than 10 years in comps or examples.
 - **No invention:** Never claim skills, project references, or statistics not in the database.
 - **Phased rollout:** Fixed-price proposals must include milestones; hourly proposals must not. This is a format requirement in ACCURACY.md.

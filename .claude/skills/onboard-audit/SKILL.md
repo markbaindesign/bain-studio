@@ -33,7 +33,7 @@ For each project, check the following. Mark each ✓ (present), ✗ (missing), o
 - [ ] At least one ADR in `.claude/adr/` or `docs/adr/`
 
 **Mnemosyne**
-- [ ] Row exists in `context/portfolio/project-database.csv` — match on project name or prefix
+- [ ] Project file exists in `context/portfolio/projects/` — match on Project Name or prefix
 
 ### 3. Output the report
 
@@ -63,5 +63,5 @@ Flag any project where more than 3 items are missing as **needs attention**.
 ## Notes
 
 - Mirror staleness threshold is 7 days — projects synced by Hermes on a schedule should never hit this.
-- ADR absence is a soft flag — new projects may not have any yet. Flag only if the project is older than 30 days (check mirror's first sync date or project-database.csv start date).
-- Mnemosyne check: scan `context/portfolio/project-database.csv` for a row whose Project Name or Prefix column matches. If the CSV doesn't exist yet, note it and skip.
+- ADR absence is a soft flag — new projects may not have any yet. Flag only if the project is older than 30 days (check mirror's first sync date or the project file's Start Date).
+- Mnemosyne check: scan `context/portfolio/projects/` for a project file whose Project Name or prefix matches. If no project file exists yet, note it and skip.

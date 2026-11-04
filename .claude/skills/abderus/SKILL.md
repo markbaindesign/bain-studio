@@ -11,7 +11,7 @@ Check every time-sensitive obligation in the studio and surface what needs actio
 
 Read all of the following that exist:
 
-1. `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv` — End Date, harvest status fields (Case Study, Blog Post, Testimonial Status)
+1. `/media/data/dev/misc/upwork-proposals/context/portfolio/projects/` — End Date, harvest status fields (Case Study, Blog Post, Testimonial Status)
 2. `{CONTENT_DIR}/pipeline/triage-log.md` — inbound signals logged as "Investigate" with no follow-up recorded
 3. Active project Asana mirrors — `asana-mirror.md` in each active project directory (paths from CLAUDE.md active projects table)
 
@@ -21,7 +21,7 @@ Today's date is available from context. Use it to calculate days elapsed.
 
 ### 1. Harvest gaps
 
-For every row in project-database.csv where End Date is set:
+For every project file in the ledger where End Date is set:
 - Calculate days since End Date
 - Flag if any of Case Study, Blog Post, or Testimonial Status is `none` or `draft` AND End Date was more than 14 days ago
 - Flag more urgently if End Date was more than 60 days ago
@@ -80,7 +80,7 @@ Produce a concise sweep report. Omit any section that has nothing to flag — no
 
 ## Notes
 
-- If project-database.csv has no rows yet, note it and suggest running `/log-project` to backfill past projects.
+- If the ledger has no project files yet, note it and suggest running `/log-project` to backfill past projects.
 - If triage-log.md does not exist, skip that check silently.
 - Do not flag projects where Would Repeat = FALSE for testimonial follow-ups — don't chase testimonials from clients you wouldn't work with again.
 - Abderus reports facts. He does not make decisions. Routing and response drafting belongs to the invoked skill (/harvest, /triage, /pm-asana-sync).

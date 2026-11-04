@@ -29,7 +29,7 @@ Runs the onboarding checklist against every project in the studio registry and r
 - At least one ADR (`.claude/adr/` or `docs/adr/`)
 
 **Mnemosyne**
-- Row in `context/portfolio/project-database.csv`
+- Project file in `context/portfolio/projects/`
 
 ## Output
 

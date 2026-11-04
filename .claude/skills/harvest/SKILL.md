@@ -13,11 +13,11 @@ Generate the three harvest outputs for a completed project and update Mnemosyne.
 
 ### 1. Identify the project
 
-If invoked with a project name argument, use it. Otherwise read `{CONTENT_DIR}/portfolio/project-database.csv` and show the last 5 entries — ask which project to harvest.
+If invoked with a project name argument, use it. Otherwise load the project ledger via `pipeline/project_db.load_all()` and show the last 5 entries — ask which project to harvest.
 
 ### 2. Read the project record
 
-Read the row from `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv` for the named project. Extract all fields.
+Read the project file from `/media/data/dev/misc/upwork-proposals/context/portfolio/projects/{slug}.md` (find it with `project_db.find(name)`). Extract all frontmatter fields and body sections.
 
 Check current harvest status:
 - If all three harvest fields (Case Study, Blog Post, Testimonial Status) are already `published`, report harvest is complete and ask if the user wants to regenerate anything.
@@ -96,7 +96,7 @@ Keep the body under 100 words. Specific to this project, not a template.
 
 ### 7. Update Mnemosyne
 
-Edit `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv` — find the row by Project Name and update:
+Edit `/media/data/dev/misc/upwork-proposals/context/portfolio/projects/{slug}.md` — update these frontmatter fields:
 - **Case Study** → `draft` (if it was `none`)
 - **Blog Post** → `draft` (if it was `none`)
 - **Testimonial Status** → `requested` (if it was `none`) — never downgrade an existing status
