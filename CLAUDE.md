@@ -134,6 +134,12 @@ The PM workflow is:
 2. Edit mirrors if changes are needed
 3. Run `python3 studio/sync.py` to push changes to Asana via bainbot
 
+**Comments have a required format.** Mark's Asana inbox is filtered to "Mentioned", so a
+comment without a `@mark` token never reaches him — and a plain-text comment cannot mention
+anyone. The template, and the rule that reasoning goes in the commit message rather than the
+comment, are in `~/.claude/rules/asana-comments.md` (loaded in every session) and
+`docs/utilities/asana-comments.md`.
+
 ## Asana
 
 ASANA_PROJECT_GID: 1215208851588912

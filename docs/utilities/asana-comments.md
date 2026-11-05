@@ -2,13 +2,14 @@
 tags: [utility, reference]
 god: hermes
 command: python3 studio/sync.py --project {PREFIX}
-description: How the looper reports finished work in Asana — the review note template, the @mark mention signal, and the one-task-one-comment rule
+description: How Claude comments on an Asana task from any project — the note template, the @mark mention signal, and the one-task-one-comment rule
 ---
 
-# Looper review comments
+# Asana comments
 
-How finished looper work reaches Mark in Asana. Replaces the free-form progress notes that
-produced unscannable walls of text.
+How any Claude session comments on an Asana task. **Not a looper rule** — the wall-of-text
+comment that prompted this came from an ordinary bain.design session. The global rule that
+every session loads is `~/.claude/rules/asana-comments.md`; this is the reference behind it.
 
 ## The problem it fixes
 
@@ -110,6 +111,39 @@ test needs no name parsing and still matches a note posted without one exactly.
   duplicate-work guard in the looper skill already treats a comment dated after completion
   as "re-work needed", and the next note posts fresh rather than editing.
 
+## The two write paths
+
+Both go through `sync.py` — never the Asana API directly (ADR 002: all mutations use the
+bainbot PAT).
+
+| Path | Used by | How |
+|---|---|---|
+| A task's `**Progress:**` line in `asana-mirror.md` | Any project session; the scheduled sync posts it | One mirror line, `\|\|`-separated |
+| `sync.py --comment --task-gid {GID} --comment-text "…"` | `blocked-sweep`, one-off posts | Same renderer, same template |
+
+`--comment` used to post raw text, so a `@mark` token in it was literal and never reached a
+filtered inbox. It now runs through `leave_progress_comment` like any Progress note.
+
+## Enforcement
+
+`validate_progress_note` runs before anything is posted, on **both** write paths. A note over
+a limit is **not posted at all** — an error naming the task goes to `studio/sync.log`, the
+note stays in the mirror to be rewritten, and the task's own state (section, assignee, fields)
+still syncs, so the work still appears in Mark's task list. `--comment` exits 1.
+
+| Limit | Value | Catches |
+|---|---|---|
+| Whole note | 900 chars | The narrative dump |
+| Any one block | 200 chars | A paragraph where a line belongs |
+| Block count | 8 | More than 5 `Check:` items |
+
+Set loose on purpose: these catch a wall of text, not a slightly long note. A note under every
+limit passes whatever its shape, so skills with their own short formats keep working. A
+`Checked {date}.` heartbeat is exempt.
+
+Posting a wall of text with a warning was considered and rejected: it puts Mark back where he
+started, which is the whole problem.
+
 ## Not built
 
 - **Screenshot attachments.** `sync.py` downloads attachments (`fetch_task_attachments`) but
@@ -120,7 +154,7 @@ test needs no name parsing and still matches a note posted without one exactly.
 - **Silent auto-close for low-risk fixes.** Considered and dropped: everything goes to review
   for now. The mention filter already keeps routine notes off Mark's radar without Claude
   having to judge its own risk.
-- **The other three Progress writers** — `studio-delivery-gate`, `feature`, `end-session` —
-  still write free-form notes. They inherit the `sync.py` plumbing (mention support,
-  edit-in-place) but not the template, because "finished a build, needs review" is not their
-  shape. They post without a mention, so they are now silent in a filtered inbox.
+- **The other three skills with their own note formats** — `studio-delivery-gate`, `feature`,
+  `end-session` — inherit the plumbing (mention support, edit-in-place) but still write
+  free-form notes, because "finished a build, needs review" is not their shape. They post
+  without a mention, so they are silent in a filtered inbox until given the token.

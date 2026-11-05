@@ -130,6 +130,41 @@ def _render_progress(text: str) -> tuple:
     return f"<body>{body}</body>", wants_mention
 
 
+# Limits on a note that becomes an Asana comment. Set loose on purpose: these
+# catch a wall of text, not a slightly long note. A note that trips one is NOT
+# posted — the audit trail for a fix is not the review instructions for it, and
+# posting it anyway puts Mark back where he started.
+NOTE_MAX_CHARS  = 900   # whole note
+BLOCK_MAX_CHARS = 200   # any one || block
+NOTE_MAX_BLOCKS = 8     # Review + Where + Check: + 5 checks is 8
+
+
+def validate_progress_note(text: str) -> str:
+    """Why this note may not be posted as a comment, or "" when it is fine.
+
+    Only genuine walls of text are rejected. A note under every limit passes
+    whatever its shape, so notes written by tools with their own formats
+    (studio-delivery-gate, feature, end-session) keep working.
+    """
+    plain = _progress_plain(text)
+    if not plain:
+        return ""
+    if PLAIN_CHECK.match(plain):      # "Checked {date}." — a heartbeat, not a note
+        return ""
+    blocks = plain.split("\n")
+    if len(plain) > NOTE_MAX_CHARS:
+        return (f"{len(plain)} chars exceeds the {NOTE_MAX_CHARS}-char limit — "
+                f"the reasoning belongs in the commit message, not the comment")
+    if len(blocks) > NOTE_MAX_BLOCKS:
+        return (f"{len(blocks)} blocks exceeds the {NOTE_MAX_BLOCKS}-block limit "
+                f"(max 5 Check items)")
+    worst = max(blocks, key=len)
+    if len(worst) > BLOCK_MAX_CHARS:
+        return (f"a block runs to {len(worst)} chars, over the {BLOCK_MAX_CHARS}-char "
+                f"limit — one line each: {worst[:60]!r}...")
+    return ""
+
+
 def _progress_plain(text: str) -> str:
     """The mention-stripped, BLOCK_SEP-expanded plain text of a Progress note.
 
@@ -1031,7 +1066,7 @@ def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
     `mirror_text` is the single mirror line, BLOCK_SEP-encoded. When `story_gid`
     is given, bainbot's existing comment is edited rather than a second one
     posted: a correction must not double the reading (see docs/utilities/
-    looper-review-comments.md). Returns the story GID the text now lives on.
+    asana-comments.md). Returns the story GID the text now lives on.
     """
     html, wants_mention = _render_progress(mirror_text)
     if html is None:
@@ -1393,6 +1428,12 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                 # Compare the NORMALISED bodies: an @-mention comes back from
                 # Asana as the display name ("@Mark Bain ..."), so the raw mirror
                 # text never matches its own posted comment again.
+                bad = validate_progress_note(curr_p)
+                if bad:
+                    log.error(f"  [{proj.prefix}] NOT posting the note on {local_id} — {bad}. "
+                              f"Rewrite the Progress line in the mirror; task state still synced.")
+                    continue
+
                 want = _progress_plain(curr_p)
                 bot_stories = t.get("_bot_stories") or []
                 dup = next((b for b in bot_stories
@@ -2038,7 +2079,10 @@ def main():
     parser.add_argument("--task-gid", metavar="GID", default="",
                         help="Asana task GID to comment on (required with --comment)")
     parser.add_argument("--comment-text", metavar="TEXT", default="",
-                        help="Comment text to post (required with --comment)")
+                        help="Comment text to post (required with --comment). "
+                             "Supports the review-note format: a leading @mark "
+                             "becomes a real Asana @-mention, and || separates "
+                             "blocks. See docs/utilities/asana-comments.md")
     parser.add_argument("--get-task", metavar="REF",
                         help="Read-only: print one task (notes + comments) via bainbot. "
                              "REF is an Asana task URL, a GID, or a local ID like BD-152")
@@ -2068,7 +2112,14 @@ def main():
     if args.comment:
         if not args.task_gid or not args.comment_text:
             parser.error("--comment requires --task-gid and --comment-text")
-        leave_comment(args.task_gid, args.comment_text, dry_run=args.dry_run)
+        # Same renderer as a Progress note, so a one-off comment gets the same
+        # @mark mention and || block expansion. Mark's Asana inbox is filtered
+        # to "Mentioned": a plain-text comment from any tool is invisible to him.
+        bad = validate_progress_note(args.comment_text)
+        if bad:
+            log.error(f"Not posting: {bad}")
+            sys.exit(1)
+        leave_progress_comment(args.task_gid, args.comment_text, dry_run=args.dry_run)
         log.info(f"Commented on task {args.task_gid}.")
         sys.exit(0)
 

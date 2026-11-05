@@ -1235,3 +1235,46 @@ def test_comment_matches_rejects_a_tail_of_a_longer_comment():
     older = ("Review: header fix\nWhere: looper/a3f2c1\n"
              + "x" * 200 + "\nGaps: 320px only")
     assert not sync._comment_matches(older, "Gaps: 320px only")
+
+
+# ---------------------------------------------------------------------------
+# Note validation — a wall of text is not posted at all
+# ---------------------------------------------------------------------------
+
+# The comment that prompted all of this, from a real bain.design session.
+REAL_WALL = (
+    "Correction 2026-11-05, replacing my earlier note, which contradicted itself "
+    "and was based on a scan of three pages. Commits 2252ad1 and 38cf615. The "
+    "clients index itself was already responsive; the sideways scroll came from "
+    "the site header, which only fits on one line from 1000px up. Below that it "
+    "wrapped to two and three lines, and under about 720px the nav ran past the "
+    "page edge, so every template scrolled sideways between 641px and 720px."
+)
+
+
+def test_validate_rejects_the_wall_of_text_that_prompted_this():
+    assert "200-char limit" in sync.validate_progress_note(REAL_WALL)
+
+
+def test_validate_passes_a_templated_review_note():
+    assert sync.validate_progress_note(REVIEW_NOTE) == ""
+
+
+def test_validate_passes_heartbeats_and_short_free_form_notes():
+    # Other skills (studio-delivery-gate, feature, end-session) write their own
+    # short formats. A note under every limit passes whatever its shape.
+    assert sync.validate_progress_note("Checked 2026-11-05.") == ""
+    assert sync.validate_progress_note("") == ""
+    assert sync.validate_progress_note(
+        "Blocked 2026-11-05. Gravity Forms licence key missing.") == ""
+
+
+def test_validate_rejects_too_many_blocks():
+    note = "@mark Review 2026-11-05: x || " + " || ".join(
+        f"{i}. do a thing" for i in range(1, 10))
+    assert "block limit" in sync.validate_progress_note(note)
+
+
+def test_validate_rejects_an_overlong_note_under_the_block_limit():
+    note = " || ".join(["x" * 150] * 7)   # each block legal, total is not
+    assert "exceeds the 900-char limit" in sync.validate_progress_note(note)
