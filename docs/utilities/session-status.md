@@ -131,8 +131,13 @@ of covering it.
 | | |
 |---|---|
 | Panel | `~/.config/conky/studio-claude.conf` |
+| Background | `~/.config/conky/studio-claude-bg.lua` |
 | Launcher | `~/bin/studio-claude-dash {start\|stop\|restart\|toggle\|status}` |
 | Autostart | `~/.config/autostart/studio-claude-dash.desktop`, 10s after login |
+
+It needs the **`conky-all`** package, not `conky-std`. Both are 1.10.8 and `conky-std` has the
+Lua interpreter, but only `conky-all` ships the cairo binding (`/usr/lib/conky/libcairo.so`)
+that `require 'cairo'` loads, and the rounded background is drawn with cairo.
 
 Those three are desktop configuration, so they sit with the other studio panels rather than in
 this repo; only the `--conky` mode is here. The panel invokes the **ops worktree** copy, like
@@ -175,11 +180,30 @@ toggled with `Super+c`, and hiding them should not take the dash down.
   interval absorbs. `claude` is found on the session PATH at login (`~/.local/bin` is on it),
   which matters because `run()` swallows a failed call and the panel would read "no sessions"
   rather than saying anything was wrong.
-  The panel sits at `own_window_argb_value = 240` of 255, about 94%, over Tokyo Night's darker
-  background. That is **real** transparency, not the root-pixmap kind: a dock window takes an
-  ARGB visual quite happily. An *override-redirect* window is the one that cannot - conky dies
-  with a BadMatch on `X_CreateWindow` - which was tried first and is a property of that type,
-  not of panels. 205 was too far: the wallpaper competed with the dim text.
+  The window itself draws nothing (`own_window_argb_value = 0`); the background is a rounded
+  rectangle filled by `studio-claude-bg.lua` from `lua_draw_hook_pre`, which carries both the
+  colour and the 94% opacity. That is **real** transparency, not the root-pixmap kind: a dock
+  window takes an ARGB visual quite happily. An *override-redirect* window is the one that
+  cannot - conky dies with a BadMatch on `X_CreateWindow` - which was tried first and is a
+  property of that type, not of panels. 205 of 255 was too far: the wallpaper competed with
+  the dim text; 240 leaves it a ghost.
+
+### Two traps in the rounded background
+
+Both cost an hour, and both look like "nothing is drawing":
+
+1. **A background PNG cannot work.** `${image}` does render, alpha and all, but conky draws
+   Imlib2 images **after** the text, so a full-window background covers every row.
+   `lua_draw_hook_pre` is the only layer that lands behind it.
+2. **`CAIRO_OPERATOR_SOURCE` fills the whole window, not the path.** It is one of cairo's
+   *unbounded* operators: it paints the entire clip region regardless of the path, so the
+   corners it was meant to cut come out square. The default `OVER` is bounded, and over a
+   transparent destination it keeps the source's alpha anyway, which is all `SOURCE` was
+   wanted for.
+
+   Checking either one by eye is unreliable, because the desktop wallpaper is a slideshow and
+   `#16161e` over a dark frame is indistinguishable from no background at all. Fill with
+   magenta while testing.
 
 ## The `shell` status, and why the CLI cannot be trusted alone
 
