@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.24.1] - 2026-11-05
+
+### Fixed
+- **`VERSION` tracks the release again.** It still read `1.23.0` after 1.24.0 shipped: that release's `chore(release):` commit, which is where the bump belongs, never existed on its own - a concurrent session's `git add -A` swept the changelog edit into its commit, so there was nothing left for the release commit to carry. `ops-deploy.sh` prints `VERSION`, so a deployed ops worktree reported the wrong release.
+
 ## [1.24.0] - 2026-11-05
 
 ### Changed
