@@ -102,6 +102,8 @@ BLOCK_SEP      = "||"
 # the token post plain and stay silent — that is the whole signalling mechanism,
 # so do not add the mention unconditionally.
 MENTION_RE     = re.compile(r"^\s*@(?:mark|me)\b[:,]?\s*", re.IGNORECASE)
+# Longest plausible rendered mention prefix ("@Mark Bain Design " and the like).
+MENTION_PREFIX_MAX = 64
 
 
 def _render_progress(text: str) -> tuple:
@@ -152,7 +154,13 @@ def _comment_matches(story_text: str, want_plain: str) -> bool:
     want = _normalise_comment(want_plain)
     if not want:
         return False
-    return _normalise_comment(story_text).endswith(want)
+    have = _normalise_comment(story_text)
+    if not have.endswith(want):
+        return False
+    # Only a rendered mention may precede the body. Without this cap, a short
+    # new note that happens to be the tail of an older, longer comment would
+    # read as a duplicate and never get posted.
+    return len(have) - len(want) <= MENTION_PREFIX_MAX
 
 
 # ---------------------------------------------------------------------------

@@ -1217,3 +1217,11 @@ def test_bot_comment_stories_returns_gid_and_timestamp():
     got = sync.bot_comment_stories(stories)
     assert got == [{"gid": "S1", "text": "hello",
                     "created_at": "2026-11-05T10:00:00.000Z"}]
+
+
+def test_comment_matches_rejects_a_tail_of_a_longer_comment():
+    # A short note that happens to be the tail of an older, longer comment is
+    # not a duplicate of it — only a rendered mention may precede the body.
+    older = ("Review: header fix\nWhere: looper/a3f2c1\n"
+             + "x" * 200 + "\nGaps: 320px only")
+    assert not sync._comment_matches(older, "Gaps: 320px only")
