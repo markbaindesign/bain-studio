@@ -120,8 +120,11 @@ def _render_progress(text: str) -> tuple:
     raw = MENTION_RE.sub("", raw, count=1)
     lines = [seg.strip() for seg in raw.split(BLOCK_SEP)]
     lines = [l for l in lines if l]
-    # Asana rejects bare &, < and > in html_text with a 400.
-    body = "\n".join(html_escape(l) for l in lines)
+    # Asana rejects bare &, < and > in html_text with a 400, but it does NOT
+    # decode the numeric entity Python emits for an apostrophe: escaping quotes
+    # put a literal "&#x27;" in the comment (verified against SLT-001,
+    # 2026-11-05). quote=False escapes & < > only; body text needs no more.
+    body = "\n".join(html_escape(l, quote=False) for l in lines)
     if wants_mention and USER_GID:
         body = f'<a data-asana-gid="{USER_GID}"/> {body}'
     return f"<body>{body}</body>", wants_mention

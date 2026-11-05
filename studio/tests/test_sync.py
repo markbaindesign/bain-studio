@@ -1161,6 +1161,16 @@ def test_render_progress_adds_mention_and_escapes_html():
     assert "<menu>" not in html
 
 
+def test_render_progress_leaves_quotes_and_apostrophes_alone():
+    # Asana does not decode the numeric entity Python emits for an apostrophe:
+    # escaping quotes put a literal "&#x27;" in the comment (verified against
+    # SLT-001, 2026-11-05). Only & < > may be escaped.
+    html, _ = sync._render_progress("""Review: Mark's "quoted" & <tag> test""")
+    assert "&#x27;" not in html and "&quot;" not in html
+    assert "Mark's" in html and '"quoted"' in html
+    assert "&amp;" in html and "&lt;tag&gt;" in html
+
+
 def test_render_progress_without_token_posts_no_mention():
     # Mark's Asana inbox is filtered to "Mentioned": a note without the token
     # must still post, but it must NOT mention him.
