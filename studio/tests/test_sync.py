@@ -1207,7 +1207,10 @@ def test_leave_progress_comment_edits_existing_story_in_place():
 
 def test_leave_progress_comment_falls_back_to_new_post_when_edit_fails():
     # A deleted or foreign story must not swallow the note.
-    with patch.object(sync, "_put", side_effect=RuntimeError("404")), \
+    # USER_GID is patched off so the follower lookup cannot reach live Asana:
+    # sync.py runs load_dotenv at import, so the real GID is set under pytest.
+    with patch.object(sync, "USER_GID", None), \
+         patch.object(sync, "_put", side_effect=RuntimeError("404")), \
          patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}) as post:
         got = sync.leave_progress_comment("TASK1", REVIEW_NOTE, story_gid="GONE")
     assert got == "NEW1"
