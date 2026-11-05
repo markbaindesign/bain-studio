@@ -2545,6 +2545,8 @@ def main():
                                            args.story_gid, dry_run=args.dry_run)
         if args.story_gid:
             log.info(f"Edited comment {args.story_gid} on task {args.task_gid}.")
+        elif not new_story:
+            log.info(f"Commented on task {args.task_gid}.")
         else:
             log.info(f"Commented on task {args.task_gid} (story {new_story}). To correct "
                      f"this note, re-run with --story-gid {new_story}; without it a second "
