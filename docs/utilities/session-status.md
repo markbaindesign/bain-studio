@@ -1,7 +1,7 @@
 ---
 tags: [utility, terminal, tmux, claude]
 command: studio/scripts/session-status
-invoke: tmux window `sessions`
+invoke: tmux window `sessions`, or the pinned conky panel on the third monitor (`--conky`)
 description: Dense always-on list of every Claude Code session on the machine, sorted by which one needs Mark first, under a column legend, showing each one's tmux target, model, context size and what it is working on, over a quota header for every account
 ---
 
@@ -107,6 +107,173 @@ reversed top row reads as a selection on a screen that is almost always only rea
 The app does not switch windows for you. The `where` column is the tmux target, so
 `studio:3.0` is reached with `tmux select-window -t studio:3`, or by its number from the
 tmux prefix.
+
+## The pinned panel on the third monitor
+
+`session-status --conky` prints the same sessions once as conky markup and exits - as a column
+of cards rather than a table, which is what fits. It is what feeds
+`~/.config/conky/studio-claude.conf`, a panel filling the right quarter of the third monitor,
+the screen a second Terminator window used to sit on.
+
+**The reason is focus, not space.** Running the app in a terminal on that screen made it a
+second Terminator window, and getting back to the one holding the tmux sessions meant cycling
+*within* the app: `switch-windows` is disabled and `switch-applications` is `<Super>Tab`, which
+groups both windows under Terminator. Clicking the Terminator launcher icon had the same
+problem - it raised whichever of the two it felt like. A dash is read, not typed into, so the
+fix is to stop it being a window at all.
+
+Conky's `panel` window type is `_NET_WM_WINDOW_TYPE_DOCK` with `SKIP_TASKBAR`, `SKIP_PAGER`
+and `STICKY` set (verified with `xprop` on the running panel), which keeps it out of
+`Super+Tab` and out of the launcher icon's reach - that icon now has only the working terminal
+to raise.
+
+### The reserved quarter
+
+A dock also publishes `_NET_WM_STRUT_PARTIAL`, which asks the window manager to keep that band
+free, and mutter takes it out of the work area that maximize uses. **That is deliberate**: the
+right quarter of the third monitor belongs to the panels. The window's left edge is what sets
+the band - the strut runs from there to the edge of the screen - so the panel is placed at
+x=5280 on a monitor starting at 3840, reserving exactly 480px.
+
+Measured, with a probe window on each monitor:
+
+| | Monitor 3, struts off | Monitor 3, struts on | Monitors 1 and 2 |
+|---|---|---|---|
+| Maximize | 1920px | **1440px** | 1920px, unaffected |
+| Fullscreen | 1920x1080 | **1920x1080** | 1920x1080 |
+
+**Struts do not block fullscreen.** They constrain maximize. The two were confused once here,
+and the dash was briefly rebuilt as a `normal` window to fix a problem it did not have; the
+numbers above are what settled it. A fullscreen window still covers the whole monitor,
+panel included.
+
+The dash fills its band - full height, no gutter, square corners - because a reserved column
+is not a card floating on the desktop. It is opaque for the same reason: nothing can sit under
+it, so the translucency it had was only ever letting the wallpaper through. `ALPHA` in
+`studio-claude-bg.lua` is the one place to change that.
+
+## One card a session
+
+The column is 480px wide, which is about 51 characters: a table does not fit, so each session
+is a card instead - a rounded surface a shade lighter than the panel, with its status colour
+as a bar down the left edge.
+
+```
+CLAUDE                              5 sessions
+1 waiting · 1 shell · 2 idle · 1 working
+bain 5h 42% →22:20 · wk 64% →Tue
+kf 5h 4% →23:40 · wk 11% →Sun
+
+┃ ● waiting      mwe:1.1                  12m
+┃ middlewayeducation       o5.5 · 118k · 12%
+┃ Passiko project setup
+
+┃ ◑ shell        studio:1.0               54m
+┃ bain-studio              o5.5 · 282k · 28%
+┃ Invoices bookkeeping
+```
+
+**Three lines a card**, because the card's height is what decides how many sessions the column
+holds: three fits 13, four fits 10, and 12 sessions have been seen running at once. The
+padding and the gap were tightened from 6 and 8 to 5 and 6 for exactly that - at the first
+numbers the count came out at 12, which would have pushed the twelfth session into an
+overflow line.
+
+Anything beyond the thirteenth is counted on a `+N more` line rather than dropped. A session
+that is not on screen still has to be accounted for; the app exists because one can otherwise
+go unnoticed.
+
+The quota is one line an account. It runs to about 60 characters for two accounts and the
+column holds 51, so they are stacked rather than compressed: the reset times are half of what
+the header is for. Each account colours on its own worst window, so one going red does not
+drag the other with it.
+
+### Account usage, as bars
+
+Under each account's quota line sit two bars - the five-hour window and the week - each
+filled to its percentage with a **marker where the budget says it should be by now**. Where
+the fill has passed the marker, that account is spending faster than the window allows for.
+
+The pace rules come from the studio dashboard's Claude usage card, and now live in
+`studio/claude_pace.py` so they exist once:
+
+| | Budget | |
+|---|---|---|
+| Weekly | 20% a work day, Monday to Friday | a weekend budgets nothing, so a quiet Sunday does not make Monday look frugal |
+| Five-hour | 20% an hour, linear | no weekend in five hours |
+
+Over budget by more than 5 points colours amber, more than 15 red. **Plus one rule the
+dashboard does not have**: a window at 90% or more is red whatever its pace. Pace alone
+reports green at 95% on a Friday afternoon, because spending the last of the week on the last
+day is exactly on budget - and that is the moment the warning is most wanted.
+`claude_pace.colour_state` is where that floor lives.
+
+`server.py` now serves `five_pace` and `weekly_pace` from the same module and `dashboard.html`
+renders them, so the two displays cannot drift apart. The port was checked against the
+JavaScript it replaced on 40 randomised cases before the JavaScript was deleted: no
+disagreement in either `expected` or `state`.
+
+A window whose reset time has already passed gets **no bar**. Its figure belongs to a window
+that is gone - the text says `reset` rather than quoting it, and a bar would be drawn against
+a budget that no longer applies.
+
+### Who owns the measurements
+
+`session-status --conky` owns every pixel on the panel and `studio-claude-bg.lua` owns none.
+The script lays out the lines, so it is the only thing that can know where a card's three
+lines fall; it computes every rectangle and writes them to
+`~/.cache/bain-studio/claude-dash-cards.txt`, one a line, typed by its first word:
+
+```
+card <y> <height> <colour> <pulse>
+bar  <y> <x> <width> <height> <fill> <colour> <marker>
+```
+
+The hook paints what it is told. A marker of `-1` means the window has no known budget.
+
+**A bar's height exists twice** - once as a `${voffset}` in the text and once in the pixel
+total the cards are placed from - because a painted bar takes no space in the text and has to
+have space made for it. If those two disagree, every card below the header is wrong, so a
+test adds up the voffsets in the header and asserts they come to the header's stated height.
+The same holds for the gap between cards.
+
+A read of that file can be one refresh behind the text, and only in the moment a session
+appears or disappears: conky builds its text before it draws.
+
+### The pulse is on the bar, not the glyph
+
+`waiting` pulses once a second, and it is the only thing on the panel that moves - a thing in
+the corner of the eye all day has to spend movement carefully, or the eye learns to ignore all
+of it. The pulse is drawn by the hook, dimming that card's status bar on alternate seconds.
+
+conky's `${blink}` was tried on the glyph first. **In its off phase it does not occupy the
+width of the glyph it hides**, so the rest of the line jumped sideways every tick. A bar
+cannot move anything.
+
+Because the hook redraws every second while `execpi` only reruns the script every five, the
+panel's `update_interval` is 1 and its `execpi` interval is 5.
+
+### Two traps in the cairo background
+
+Both cost an hour, and both look like "nothing is drawing":
+
+1. **A background PNG cannot work.** `${image}` does render, alpha and all, but conky draws
+   Imlib2 images **after** the text, so a full-window background covers every row.
+   `lua_draw_hook_pre` is the only layer that lands behind it.
+2. **`CAIRO_OPERATOR_SOURCE` fills the whole window, not the path.** It is one of cairo's
+   *unbounded* operators: it paints the entire clip region regardless of the path, so the
+   rounded corners it was meant to cut come out square. The default `OVER` is bounded, and
+   over a transparent destination it keeps the source's alpha anyway, which is all `SOURCE`
+   was wanted for.
+
+**Check the result with `gnome-screenshot`, not `import -window root`.** Under mutter's
+compositor the root window does not reliably hold what is on screen for a translucent window,
+and `import` returned images that disagreed with each other and with the screen - which is
+what made the first two diagnoses of this wrong.
+
+One more, in the text rather than the paint: **`${goto}` measures from the window's left edge,
+not from the text area**, so a card's body lines have to repeat the 20px inner margin or they
+slide under the status bar. A unit test pins `CARD_BODY_X` to the margin.
 
 ## The `shell` status, and why the CLI cannot be trusted alone
 
@@ -264,6 +431,8 @@ session without that, use `tmux new-window -d -t "=studio:" -n sessions -c /home
 studio/scripts/session-status`. See [studio-tmux](studio-tmux.md).
 
 Run it directly with `studio/scripts/session-status`. Pure stdlib, no dependencies.
+
+For the pinned panel instead of a tmux window, see [the panel section](#the-pinned-panel-on-the-third-monitor): `studio-claude-dash start`.
 
 ## Limits
 

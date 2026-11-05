@@ -1505,29 +1505,11 @@ async function loadKF() {
   }
 }
 
-// Weekly quota budget: 5 work days (Mon-Fri) at 20% each, weekends budget nothing.
-// Elapsed budget counts whole work days since the window opened plus today's fraction.
-function weeklyPace(resetTs, pct, now = new Date()) {
-  const start = new Date((resetTs - 7 * 86400) * 1000);
-  let days = 0;
-  for (let d = new Date(start); d < now; d = new Date(d.getTime() + 86400000)) {
-    const end = new Date(Math.min(d.getTime() + 86400000, now.getTime()));
-    const dow = d.getDay();
-    if (dow >= 1 && dow <= 5) days += (end - d) / 86400000;
-  }
-  const expected = Math.min(100, days * 20);
-  const over = pct - expected;
-  const state = over > 15 ? 'fast' : over > 5 ? 'slightly-fast' : 'ok';
-  return { expected, over, state };
-}
-
-// 5-hour window: budget is linear, 20% per hour from the moment the window opened.
-function windowPace(resetTs, pct, now = new Date()) {
-  const elapsed = Math.min(5 * 3600, Math.max(0, now.getTime() / 1000 - (resetTs - 5 * 3600)));
-  const expected = elapsed / (5 * 3600) * 100;
-  const over = pct - expected;
-  return { expected, over, state: over > 15 ? 'fast' : over > 5 ? 'slightly-fast' : 'ok' };
-}
+// The quota budget rules live in studio/claude_pace.py and reach the page
+// through /api/claude as five_pace and weekly_pace: 20% a work day for the
+// week, 20% an hour for the five-hour window, amber 5 points over the
+// budgeted figure and red 15. They used to be two functions here, and the
+// session dash needed them too.
 
 // ── Highlights: what needs attention, drawn from the other tabs ──────────
 async function loadHighlights() {
@@ -1573,13 +1555,13 @@ async function loadHighlights() {
     add(2, 'pipeline', `${open.length} brief${open.length === 1 ? '' : 's'} pending in total`);
   } else add(1, 'pipeline', 'Pipeline API unreachable: ' + briefs.reason.message);
 
-  if (claude.status === 'fulfilled' && claude.value.weekly_pct != null && claude.value.weekly_reset_ts) {
-    const c = claude.value, p = weeklyPace(c.weekly_reset_ts, c.weekly_pct);
+  if (claude.status === 'fulfilled' && claude.value.weekly_pct != null && claude.value.weekly_pace) {
+    const c = claude.value, p = c.weekly_pace;
     if (p.state !== 'ok') add(p.state === 'fast' ? 0 : 1, 'highlights', `Claude weekly quota burning ${p.state === 'fast' ? 'too fast' : 'slightly fast'}: ${c.weekly_pct}% used vs ${Math.round(p.expected)}% budgeted (5 work days at 20%)`);
   }
 
-  if (claude.status === 'fulfilled' && claude.value.reset_ts) {
-    const c = claude.value, p = windowPace(c.reset_ts, c.pct);
+  if (claude.status === 'fulfilled' && claude.value.five_pace) {
+    const c = claude.value, p = c.five_pace;
     if (p.state !== 'ok') add(p.state === 'fast' ? 1 : 2, 'highlights', `Claude 5-hour window burning ${p.state === 'fast' ? 'too fast' : 'slightly fast'}: ${c.pct}% used vs ${Math.round(p.expected)}% budgeted`);
   }
 
@@ -1593,11 +1575,15 @@ async function loadHighlights() {
     const c = claude.value;
     const when = ts => new Date(ts * 1000).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     const colour = p => p >= 80 ? 'negative' : p >= 50 ? 'warning' : 'positive';
+    // colour_state is the pace, floored by the level: a window at 90% or more
+    // reads red however well paced it is.
+    const paceClass = pace => (pace.colour_state || pace.state) === 'fast' ? 'negative'
+      : (pace.colour_state || pace.state) === 'slightly-fast' ? 'warning' : 'positive';
     const bar = p => `<div class="kf-progress-track" style="margin-top:8px;"><div class="kf-progress-fill" style="width:${Math.min(p, 100)}%"></div></div>`;
     let weekly;
     if (c.weekly_pct != null) {
-      const pace = c.weekly_reset_ts ? weeklyPace(c.weekly_reset_ts, c.weekly_pct) : null;
-      const cls = !pace ? colour(c.weekly_pct) : pace.state === 'fast' ? 'negative' : pace.state === 'slightly-fast' ? 'warning' : 'positive';
+      const pace = c.weekly_pace;
+      const cls = !pace ? colour(c.weekly_pct) : paceClass(pace);
       const verdict = !pace ? '' : pace.state === 'ok'
         ? `On pace: ${Math.round(pace.expected)}% budgeted so far, ${Math.abs(Math.round(pace.over))} pts ${pace.over <= 0 ? 'under' : 'over'}`
         : `Burning too fast: ${Math.round(pace.over)} pts over the ${Math.round(pace.expected)}% budgeted so far`;
@@ -1611,8 +1597,8 @@ async function loadHighlights() {
     }
     let five;
     {
-      const pace = c.reset_ts ? windowPace(c.reset_ts, c.pct) : null;
-      const cls = !pace ? colour(c.pct) : pace.state === 'fast' ? 'negative' : pace.state === 'slightly-fast' ? 'warning' : 'positive';
+      const pace = c.five_pace;
+      const cls = !pace ? colour(c.pct) : paceClass(pace);
       const verdict = !pace ? '' : pace.state === 'ok'
         ? `On pace: ${Math.round(pace.expected)}% budgeted so far, ${Math.abs(Math.round(pace.over))} pts ${pace.over <= 0 ? 'under' : 'over'}`
         : `Burning too fast: ${Math.round(pace.over)} pts over the ${Math.round(pace.expected)}% budgeted so far`;
