@@ -36,6 +36,7 @@ import json
 import time
 import requests
 from dataclasses import dataclass
+from html import escape as html_escape
 from datetime import date, datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -89,6 +90,69 @@ PLAIN_CHECK    = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
 NO_PROGRESS    = re.compile(r"^\s*none\s*$", re.IGNORECASE)
 GID_IN_PARENS  = re.compile(r'\((\d+)\)')
 FIELD_RE       = re.compile(r"- \*\*(.+?):\*\* (.+)")
+
+# --- Progress note rendering -------------------------------------------------
+# FIELD_RE above is not DOTALL, so a Progress note is strictly ONE mirror line:
+# a literal newline truncates it, and a continuation line starting "- **X:**"
+# is misparsed as another field. Multi-line review notes are therefore encoded
+# on that single line with BLOCK_SEP and expanded here at post time.
+BLOCK_SEP      = "||"
+# A leading @mark (or @me) asks for an Asana @-mention of ASANA_USER_GID, which
+# is the only thing that reaches an inbox filtered to "Mentioned". Notes without
+# the token post plain and stay silent — that is the whole signalling mechanism,
+# so do not add the mention unconditionally.
+MENTION_RE     = re.compile(r"^\s*@(?:mark|me)\b[:,]?\s*", re.IGNORECASE)
+
+
+def _render_progress(text: str) -> tuple:
+    """Turn a one-line mirror Progress note into (html_text, wants_mention).
+
+    Splits on BLOCK_SEP into lines, escapes the result for Asana's rich text,
+    and prefixes an @-mention when the note opened with @mark. Returns
+    (None, False) for an empty note.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return None, False
+    wants_mention = bool(MENTION_RE.match(raw))
+    raw = MENTION_RE.sub("", raw, count=1)
+    lines = [seg.strip() for seg in raw.split(BLOCK_SEP)]
+    lines = [l for l in lines if l]
+    # Asana rejects bare &, < and > in html_text with a 400.
+    body = "\n".join(html_escape(l) for l in lines)
+    if wants_mention and USER_GID:
+        body = f'<a data-asana-gid="{USER_GID}"/> {body}'
+    return f"<body>{body}</body>", wants_mention
+
+
+def _progress_plain(text: str) -> str:
+    """The mention-stripped, BLOCK_SEP-expanded plain text of a Progress note.
+
+    This is what Asana stores as a story's `text` once html_text is posted, so
+    it is the form to compare against when checking for a duplicate.
+    """
+    raw = MENTION_RE.sub("", (text or "").strip(), count=1)
+    return "\n".join(seg.strip() for seg in raw.split(BLOCK_SEP) if seg.strip())
+
+
+def _normalise_comment(text: str) -> str:
+    """Whitespace-collapsed form of a comment body, for comparison."""
+    return re.sub(r"\s+", " ", (text or "")).strip()
+
+
+def _comment_matches(story_text: str, want_plain: str) -> bool:
+    """Is `story_text` the comment that `want_plain` would produce?
+
+    Asana renders an @-mention as the user's display name ("@Mark Bain ..."), so
+    a posted comment never again equals the mirror text that produced it. The
+    mention is only ever a prefix, and trying to strip it by pattern ate real
+    words after the name, so compare by suffix instead: no name parsing, and a
+    note posted without a mention still matches exactly.
+    """
+    want = _normalise_comment(want_plain)
+    if not want:
+        return False
+    return _normalise_comment(story_text).endswith(want)
 
 
 # ---------------------------------------------------------------------------
@@ -525,6 +589,27 @@ def bot_comment_texts(stories: list) -> set:
     }
 
 
+def bot_comment_stories(stories: list) -> list:
+    """bainbot's own comments as {gid, text, created_at}, oldest first.
+
+    bot_comment_texts answers "did we already say this"; this answers "which
+    comment do we edit, and was it superseded". Asana's story list is the one
+    record every project's sync shares, so it is the only safe place to look.
+    """
+    out = []
+    for s in stories:
+        if s.get("resource_subtype") != "comment_added":
+            continue
+        if (s.get("created_by") or {}).get("gid") != BAINBOT_GID:
+            continue
+        out.append({
+            "gid": s.get("gid"),
+            "text": (s.get("text") or "").strip(),
+            "created_at": s.get("created_at") or "",
+        })
+    return out
+
+
 def human_comments(stories: list) -> list:
     """Human-written comments, excluding bainbot's own progress notes.
 
@@ -920,10 +1005,48 @@ def priorities_table(tasks: list) -> str:
 # ---------------------------------------------------------------------------
 
 def leave_comment(task_gid: str, text: str, dry_run=False):
+    """Post a plain-text comment. Returns the new story GID (None on dry run)."""
     if dry_run:
         log.info(f"    [DRY-RUN] Would comment on {task_gid}: {text[:80]}...")
-        return
-    _post(f"/tasks/{task_gid}/stories", {"data": {"text": text}})
+        return None
+    resp = _post(f"/tasks/{task_gid}/stories", {"data": {"text": text}})
+    return (resp.get("data") or {}).get("gid")
+
+
+def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
+                           dry_run=False) -> str:
+    """Post (or edit in place) the review comment built from a Progress note.
+
+    `mirror_text` is the single mirror line, BLOCK_SEP-encoded. When `story_gid`
+    is given, bainbot's existing comment is edited rather than a second one
+    posted: a correction must not double the reading (see docs/utilities/
+    looper-review-comments.md). Returns the story GID the text now lives on.
+    """
+    html, wants_mention = _render_progress(mirror_text)
+    if html is None:
+        return story_gid
+    if wants_mention and not USER_GID:
+        log.warning("    Progress note asked for an @-mention but ASANA_USER_GID "
+                    "is unset — posting without one, so a 'Mentioned' inbox "
+                    "filter will not show it")
+    if dry_run:
+        verb = f"edit story {story_gid}" if story_gid else "comment"
+        log.info(f"    [DRY-RUN] Would {verb} on {task_gid}"
+                 f"{' with @-mention' if wants_mention else ''}: {html[:120]}...")
+        return story_gid
+    if story_gid:
+        # PUT /stories/{gid} only works on a story the caller authored, which is
+        # always true here (bainbot posted it). A 403/404 means the comment was
+        # deleted or authored by someone else — fall through to a fresh post
+        # rather than losing the note.
+        try:
+            _put(f"/stories/{story_gid}", {"data": {"html_text": html}})
+            log.info(f"    Edited existing comment {story_gid} on {task_gid}")
+            return story_gid
+        except Exception as e:
+            log.warning(f"    Could not edit story {story_gid} ({e}) — posting a new comment")
+    resp = _post(f"/tasks/{task_gid}/stories", {"data": {"html_text": html}})
+    return (resp.get("data") or {}).get("gid")
 
 
 # ---------------------------------------------------------------------------
@@ -1131,6 +1254,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
             stories = fetch_stories(t["gid"])
             t["_comments"] = human_comments(stories)
             t["_bot_comments"] = bot_comment_texts(stories)
+            t["_bot_stories"]  = bot_comment_stories(stories)
 
         prev_gids    = parse_existing_task_gids(proj)
         curr_gids    = {t["gid"] for t in tasks}
@@ -1234,26 +1358,61 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
             curr_p   = (prev or {}).get("progress", "")
             local_id = t.get("_local_id", "?")
 
+            # posted_progress entries used to be a bare text string; they are now
+            # {"text", "story"} so a correction can edit the comment it replaces.
+            # Read both shapes — the state file survives the upgrade.
+            rec = posted_progress.get(gid)
+            if isinstance(rec, str):
+                rec = {"text": rec, "story": ""}
+            rec = rec or {}
+            prev_text, prev_story = rec.get("text", ""), rec.get("story", "")
+
             if (curr_p
                     and not PLAIN_CHECK.match(curr_p)
-                    and curr_p != posted_progress.get(gid)):
+                    and curr_p != prev_text):
                 if progress_counts[curr_p] > 2:
                     log.warning(f"  [{proj.prefix}] Skipping comment for {local_id} — same progress text on {progress_counts[curr_p]} tasks (mirror edit bug?)")
                     continue
+
                 # Asana-side dedupe. posted_progress is per-project state, so for
                 # a task multi-homed into two boards (its home project and Studio
                 # Looper) the second project's sync has no record of the first
                 # having already posted this exact text, and duplicates it.
-                if curr_p.strip() in (t.get("_bot_comments") or set()):
+                # Compare the NORMALISED bodies: an @-mention comes back from
+                # Asana as the display name ("@Mark Bain ..."), so the raw mirror
+                # text never matches its own posted comment again.
+                want = _progress_plain(curr_p)
+                bot_stories = t.get("_bot_stories") or []
+                dup = next((b for b in bot_stories
+                            if _comment_matches(b["text"], want)), None)
+                if dup:
                     log.info(f"  [{proj.prefix}] Skipping comment for {local_id} — identical bainbot comment already on the task")
                     if not dry_run:
-                        posted_progress[gid] = curr_p
+                        posted_progress[gid] = {"text": curr_p, "story": dup["gid"]}
                     continue
+
+                # Edit in place, or post afresh? A human comment dated after our
+                # last note means Mark has responded (a rejection, a question),
+                # so the next note is a NEW round of work and must raise its own
+                # notification. Without an intervening human comment it is a
+                # correction of the same work: edit, so the thread stays one
+                # current note instead of a note plus a contradiction.
+                edit_story = ""
+                if prev_story:
+                    ours = next((b for b in bot_stories if b["gid"] == prev_story), None)
+                    since = (ours or {}).get("created_at", "")
+                    answered = any(c.get("created_at", "") > since
+                                   for c in (t.get("_comments") or [])) if since else False
+                    if not answered:
+                        edit_story = prev_story
+
                 try:
-                    log.info(f"  [{proj.prefix}] Posting progress comment for {local_id}...")
-                    leave_comment(gid, curr_p, dry_run)
+                    verb = "Editing" if edit_story else "Posting"
+                    log.info(f"  [{proj.prefix}] {verb} progress comment for {local_id}...")
+                    new_story = leave_progress_comment(gid, curr_p, edit_story, dry_run)
                     if not dry_run:
-                        posted_progress[gid] = curr_p
+                        posted_progress[gid] = {"text": curr_p,
+                                                "story": new_story or edit_story}
                     commented += 1
                     touched_gids.add(gid)
                 except Exception as e:
