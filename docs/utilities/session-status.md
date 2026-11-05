@@ -1,7 +1,7 @@
 ---
 tags: [utility, terminal, tmux, claude]
 command: studio/scripts/session-status
-invoke: tmux window `sessions`
+invoke: tmux window `sessions`, or the pinned conky panel on the third monitor (`--conky`)
 description: Dense always-on list of every Claude Code session on the machine, sorted by which one needs Mark first, under a column legend, showing each one's tmux target, model, context size and what it is working on, over a quota header for every account
 ---
 
@@ -107,6 +107,66 @@ reversed top row reads as a selection on a screen that is almost always only rea
 The app does not switch windows for you. The `where` column is the tmux target, so
 `studio:3.0` is reached with `tmux select-window -t studio:3`, or by its number from the
 tmux prefix.
+
+## The pinned panel on the third monitor
+
+`session-status --conky` prints the same screen once as conky markup and exits. It is what
+feeds `~/.config/conky/studio-claude.conf`, a panel pinned to the right half of the third
+monitor - the slot a second Terminator window used to hold.
+
+**The reason is focus, not space.** Running the app in a terminal on that screen made it a
+second Terminator window, and getting back to the one holding the tmux sessions meant cycling
+*within* the app: `switch-windows` is disabled and `switch-applications` is `<Super>Tab`, which
+groups both windows under Terminator. Clicking the Terminator launcher icon had the same
+problem - it raised whichever of the two it felt like. A dash is read, not typed into, so the
+fix is to stop it being a window at all.
+
+Conky's `panel` window type is `_NET_WM_WINDOW_TYPE_DOCK` with `SKIP_TASKBAR`, `SKIP_PAGER` and
+`STICKY` set, so **nothing can hand it focus**: not a click, not `Super+Tab`, not the launcher
+icon, which now only has the working terminal to raise. It also defines struts, which is the
+other half of the bargain: the work area shrinks from 5760 to 4796 px wide, so a maximized
+window on that monitor stops at the panel's edge instead of covering it.
+
+| | |
+|---|---|
+| Panel | `~/.config/conky/studio-claude.conf` |
+| Launcher | `~/bin/studio-claude-dash {start\|stop\|restart\|toggle\|status}` |
+| Autostart | `~/.config/autostart/studio-claude-dash.desktop`, 10s after login |
+
+Those three are desktop configuration, so they sit with the other studio panels rather than in
+this repo; only the `--conky` mode is here. The panel invokes the **ops worktree** copy, like
+the `claude-sessions-status` alias, so it runs a released tag. Unlike the tmux window, it needs
+no respawn after a deploy: every refresh is a new process, so the next tick picks the new
+script up.
+
+It is deliberately **not** in `studio-conky`'s `PANELS` list. Those panels are a cheatsheet
+toggled with `Super+c`, and hiding them should not take the dash down.
+
+### What is different on a panel
+
+- **Only `waiting` moves.** It blinks, with conky's `${blink}`. The spin and the slower
+  `shell` breath are gone: they were driven by a redraw loop that a one-shot process does not
+  have, and a thing in the corner of the eye all day has to spend movement carefully - anything
+  else that moved would train the eye to ignore the one status that is asking for something.
+- **Statuses keep their colours**, as hex rather than 256-colour indexes, so a row means the
+  same thing on the panel as in the terminal. A unit test holds the two palettes together.
+- **The tally line takes the colour of the most demanding status present**, so the panel
+  answers "does anything want me?" before a row is read.
+- **The glyph and the reset arrow name their own font.** Roboto Mono for Powerline, which the
+  studio panels use, has neither the status circles nor `→` (`fc-list ":charset=25d0"` returns
+  nothing for it), and conky drives Xft directly - a comma-separated family list in the config
+  is *not* a fallback chain, it takes the first family and draws a blank. So those characters
+  are wrapped in `${font DejaVu Sans Mono:size=11}` and switched back, set by `--glyph-font`
+  because `${font}` with no size does not inherit the panel's.
+- **Columns are fixed pixel `${goto}`s, not padding**, because conky lays text out
+  proportionally once `${goto}` is in play and a padded row drifts. There is no narrowing
+  ladder: the panel has one width.
+- **`$` in a title or project name is escaped to `$$`.** It is conky's variable sigil, and an
+  unescaped one swallows the rest of the line.
+- **The transcript cache is cold on every refresh**, since each one is a new process. A full
+  collect is ~0.4s of CPU, all of it local with no API call, which a 5-second interval absorbs.
+  `own_window_argb_visual` is off: the panel type cannot take an ARGB visual (conky dies with a
+  BadMatch on `X_CreateWindow`), so it is opaque where the others sit at 96%.
 
 ## The `shell` status, and why the CLI cannot be trusted alone
 
@@ -264,6 +324,8 @@ session without that, use `tmux new-window -d -t "=studio:" -n sessions -c /home
 studio/scripts/session-status`. See [studio-tmux](studio-tmux.md).
 
 Run it directly with `studio/scripts/session-status`. Pure stdlib, no dependencies.
+
+For the pinned panel instead of a tmux window, see [the panel section](#the-pinned-panel-on-the-third-monitor): `studio-claude-dash start`.
 
 ## Limits
 

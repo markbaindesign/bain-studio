@@ -336,3 +336,83 @@ def test_a_cli_busy_session_mid_turn_is_shown_as_working(monkeypatch):
 def test_a_cli_busy_session_whose_turn_is_over_is_still_shell(monkeypatch):
     # A live background shell holding the CLI at busy is the case this exists for.
     assert _one_session(monkeypatch, finished=True) == "shell"
+
+
+# --- the conky panel mode -------------------------------------------------
+
+def _row(status="idle", **over):
+    row = {"status": status, "ctx": 118000, "ctx_pct": 12, "model": "Opus 5.5",
+           "title": "Passiko project setup", "account": "bain",
+           "where": "mwe:1.1", "project": "middlewayeducation", "for": 720}
+    row.update(over)
+    return row
+
+
+def test_only_waiting_blinks():
+    # A panel sits in the corner of the eye all day: anything else that moved
+    # would train the eye to ignore the one status that is asking for something.
+    assert "${blink" in s.conky_row(_row("waiting"), False)
+    for status in ("shell", "idle", "working"):
+        assert "${blink" not in s.conky_row(_row(status), False)
+
+
+def test_each_status_keeps_its_terminal_colour():
+    for status, colour in s.CONKY_STATUS_COLOUR.items():
+        assert colour in s.conky_row(_row(status), False)
+
+
+def test_a_dollar_in_a_title_is_escaped():
+    # conky reads $ as its variable sigil, so an unescaped title would swallow
+    # the rest of the line.
+    out = s.conky_row(_row(title="fix $HOME in deploy"), False)
+    assert "$$HOME" in out
+    assert "$HOME" not in out.replace("$$HOME", "")
+
+
+def test_the_account_column_appears_only_with_two_accounts():
+    assert "bain" in s.conky_row(_row(), True)
+    assert "bain" not in s.conky_row(_row(), False)
+
+
+def test_the_glyph_is_drawn_in_a_font_that_has_it():
+    # Roboto Mono for Powerline has no U+25D0-25D1 and conky's Xft takes no
+    # fallback list, so the glyph has to name its own family.
+    out = s.conky_row(_row("working"), False)
+    assert "${font DejaVu Sans Mono" in out
+    assert out.count("${font}") == 1
+
+
+def test_the_quota_arrow_is_drawn_in_that_font_too():
+    found = [{"account": "bain", "pct": 42, "reset_ts": NOW + 3600,
+              "weekly_pct": 64, "weekly_reset_ts": NOW + 200000}]
+    line = s.conky_quota(found)[0]
+    assert "${font DejaVu Sans Mono" in line
+
+
+def test_the_quota_line_colours_on_the_worst_window():
+    base = {"account": "bain", "pct": 10, "reset_ts": NOW + 3600,
+            "weekly_reset_ts": NOW + 200000}
+    assert s.QUOTA_RED_HEX in s.conky_quota([dict(base, weekly_pct=95)])[0]
+    assert s.QUOTA_AMBER_HEX in s.conky_quota([dict(base, weekly_pct=75)])[0]
+    assert "color3" in s.conky_quota([dict(base, weekly_pct=20)])[0]
+
+
+def test_the_tally_takes_the_colour_of_the_most_demanding_status():
+    waiting = s.conky_header([_row("waiting"), _row("idle")], False)[0]
+    assert s.CONKY_STATUS_COLOUR["waiting"] in waiting
+    shell = s.conky_header([_row("shell"), _row("idle")], False)[0]
+    assert s.CONKY_STATUS_COLOUR["shell"] in shell
+    quiet = s.conky_header([_row("idle"), _row("working")], False)[0]
+    assert s.CONKY_STATUS_COLOUR["waiting"] not in quiet
+
+
+def test_the_shell_count_is_left_out_when_it_is_zero():
+    assert "shell" not in s.conky_header([_row("idle")], False)[0]
+    assert "1 shell" in s.conky_header([_row("shell")], False)[0]
+
+
+def test_no_sessions_says_so(monkeypatch, capsys):
+    monkeypatch.setattr(s, "collect", lambda: [])
+    monkeypatch.setattr(s, "quotas", lambda: [])
+    s.emit_conky()
+    assert "no sessions" in capsys.readouterr().out
