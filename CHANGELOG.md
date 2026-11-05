@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.1] - 2026-11-05
+
+### Changed
+- **`docs/utilities/asana-comments.md` said a comment that missed the inbox "cannot be rescued" and to tell Mark another way.** That conflated reposting with editing. Only the edit path is hopeless: re-mentioning on an edited story raises nothing. A *fresh* post notifies, and `leave_progress_comment` does no text-based dedupe, so without a story GID it adds the follower and posts a new story with identical text. The page now says so, names the cost - two identical comments on the thread - and says to read the thread before reposting from a list, since a comment Mark has already replied to is worth leaving alone. Used in anger the same day to recover BD-201, BD-203 and BD-204, the three bain.design review comments that 1.26.0 arrived too late to signal; BD-202 was skipped because he had already answered it.
+
 ## [1.26.0] - 2026-11-05
 
 ### Fixed
