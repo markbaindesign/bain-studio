@@ -1126,3 +1126,112 @@ def test_assign_ids_multihomed_pair_stops_flipping(tmp_path):
             assign_ids(p, [t], {"next_seq": 500, "tasks": {}}, "f", dry_run=True,
                        prefix_owners=prefix_gids)
             assert t["_local_id"] == "TARA-134"
+
+
+# ---------------------------------------------------------------------------
+# Review comment rendering (looper review notes)
+# ---------------------------------------------------------------------------
+
+REVIEW_NOTE = (
+    "@mark Review: header & nav fix || "
+    "Where: looper/a3f2c1 · 2252ad1 || "
+    "Check: || 1. Resize 375px -> 1400px || 2. [menu] toggle at <1000px || "
+    "Gaps: 320px only — hero overflows 7px"
+)
+
+
+def test_progress_plain_expands_block_separator_and_strips_mention():
+    plain = sync._progress_plain(REVIEW_NOTE)
+    lines = plain.split("\n")
+    assert lines[0] == "Review: header & nav fix"
+    assert lines[1] == "Where: looper/a3f2c1 · 2252ad1"
+    assert lines[-1] == "Gaps: 320px only — hero overflows 7px"
+    assert "||" not in plain
+    assert "@mark" not in plain
+
+
+def test_render_progress_adds_mention_and_escapes_html():
+    with patch.object(sync, "USER_GID", "507443625075"):
+        html, wants = sync._render_progress(REVIEW_NOTE)
+    assert wants is True
+    assert html.startswith('<body><a data-asana-gid="507443625075"/> ')
+    assert html.endswith("</body>")
+    # Asana rejects bare &, < and > in html_text with a 400.
+    assert "&amp;" in html and "&lt;1000px" in html and "-&gt;" in html
+    assert "<menu>" not in html
+
+
+def test_render_progress_leaves_quotes_and_apostrophes_alone():
+    # Asana does not decode the numeric entity Python emits for an apostrophe:
+    # escaping quotes put a literal "&#x27;" in the comment (verified against
+    # SLT-001, 2026-11-05). Only & < > may be escaped.
+    html, _ = sync._render_progress("""Review: Mark's "quoted" & <tag> test""")
+    assert "&#x27;" not in html and "&quot;" not in html
+    assert "Mark's" in html and '"quoted"' in html
+    assert "&amp;" in html and "&lt;tag&gt;" in html
+
+
+def test_render_progress_without_token_posts_no_mention():
+    # Mark's Asana inbox is filtered to "Mentioned": a note without the token
+    # must still post, but it must NOT mention him.
+    html, wants = sync._render_progress("Checked 2026-11-05.")
+    assert wants is False
+    assert "data-asana-gid" not in html
+    assert html == "<body>Checked 2026-11-05.</body>"
+
+
+def test_render_progress_empty_note_renders_nothing():
+    assert sync._render_progress("") == (None, False)
+    assert sync._render_progress("   ") == (None, False)
+
+
+def test_comment_matches_ignores_asanas_rendered_mention():
+    # Asana returns the mention as a display name, so the posted comment never
+    # equals the mirror text that produced it. Matching is by suffix.
+    plain = sync._progress_plain(REVIEW_NOTE)
+    assert sync._comment_matches("@Mark Bain " + plain, plain)
+    assert sync._comment_matches(plain, plain)
+    assert not sync._comment_matches("@Mark Bain Review: something else", plain)
+    assert not sync._comment_matches(plain, "")
+
+
+def test_leave_progress_comment_edits_existing_story_in_place():
+    with patch.object(sync, "_put") as put, patch.object(sync, "_post") as post:
+        got = sync.leave_progress_comment("TASK1", REVIEW_NOTE, story_gid="STORY9")
+    assert got == "STORY9"
+    put.assert_called_once()
+    assert put.call_args[0][0] == "/stories/STORY9"
+    assert "html_text" in put.call_args[0][1]["data"]
+    post.assert_not_called()
+
+
+def test_leave_progress_comment_falls_back_to_new_post_when_edit_fails():
+    # A deleted or foreign story must not swallow the note.
+    with patch.object(sync, "_put", side_effect=RuntimeError("404")), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}) as post:
+        got = sync.leave_progress_comment("TASK1", REVIEW_NOTE, story_gid="GONE")
+    assert got == "NEW1"
+    assert post.call_args[0][0] == "/tasks/TASK1/stories"
+
+
+def test_bot_comment_stories_returns_gid_and_timestamp():
+    stories = [
+        {"resource_subtype": "comment_added", "gid": "S1", "text": " hello ",
+         "created_at": "2026-11-05T10:00:00.000Z",
+         "created_by": {"gid": sync.BAINBOT_GID}},
+        {"resource_subtype": "comment_added", "gid": "S2", "text": "from Mark",
+         "created_at": "2026-11-05T11:00:00.000Z", "created_by": {"gid": "999"}},
+        {"resource_subtype": "assigned", "gid": "S3",
+         "created_by": {"gid": sync.BAINBOT_GID}},
+    ]
+    got = sync.bot_comment_stories(stories)
+    assert got == [{"gid": "S1", "text": "hello",
+                    "created_at": "2026-11-05T10:00:00.000Z"}]
+
+
+def test_comment_matches_rejects_a_tail_of_a_longer_comment():
+    # A short note that happens to be the tail of an older, longer comment is
+    # not a duplicate of it — only a rendered mention may precede the body.
+    older = ("Review: header fix\nWhere: looper/a3f2c1\n"
+             + "x" * 200 + "\nGaps: 320px only")
+    assert not sync._comment_matches(older, "Gaps: 320px only")

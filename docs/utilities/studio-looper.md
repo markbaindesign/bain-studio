@@ -35,10 +35,14 @@ Must be invoked from `/media/data/dev/bain-studio`.
    confirmation before starting.
 3. BainBot works each task in the correct project directory (derived from the task's prefix —
    MCF-007 → MCF project path, etc.).
-4. On completion: task moves to **Review** section, reassigned to Mark. Task is NOT marked
-   done in Asana.
-5. On blocker: task moves to **Blocked** section, reassigned to Mark with a note.
+4. On completion: task moves to **Review** section, reassigned to Mark, and gets **one**
+   Asana comment — a templated review note opening `@mark`. Task is NOT marked done in Asana.
+5. On blocker: task moves to **Blocked** section, reassigned to Mark, with a `@mark Blocked:`
+   note carrying the question.
 6. Mark reviews tasks in the Review section, marks them done himself.
+
+The note's template, the `@mark` mention that reaches his filtered inbox, and the
+one-task-one-comment rule are in [looper-review-comments](looper-review-comments.md).
 
 ## Permission/access failures never halt the loop
 
@@ -73,7 +77,8 @@ Before blocking a task on a question, the looper must look for the answer in the
 comments, linked tasks), the project's CLAUDE.md and ADRs, the studio/dev-root/global CLAUDE.md
 files, and the studio ADRs. Standing answers such as "where does research output go" (Dropbox,
 never the repo) and "what format" (markdown) are spelled out in the skill. Title-only tasks with
-one clearly most likely reading get worked, with the interpretation stated for Review. A blocker
+one clearly most likely reading get worked, with what was built named plainly in the review
+note's first line so a wrong reading is obvious at a glance. A blocker
 that survives must say what was checked and ask one specific question.
 
 Added 2026-09-17 after a run blocked six tasks on questions CLAUDE.md already answered.
