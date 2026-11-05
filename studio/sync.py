@@ -1346,6 +1346,13 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
         # --- Progress comments ---
         posted_progress = state.get("posted_progress", {})
+        # Story GIDs live in their OWN map, never inside posted_progress. The
+        # hourly cron runs an older sync.py from the ops worktree (ADR 014) and
+        # shares this state file, where it reads posted_progress[gid] as a plain
+        # string. Storing a dict there made its `curr_p != posted_progress[gid]`
+        # test true on every run, so it posted the note a second time as raw
+        # text — literal "@mark" and "||" — and overwrote the GID.
+        progress_stories = state.get("progress_stories", {})
         commented = 0
 
         # Guard: if the same non-trivial progress text appears on more than 2 tasks,
@@ -1366,14 +1373,8 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
             curr_p   = (prev or {}).get("progress", "")
             local_id = t.get("_local_id", "?")
 
-            # posted_progress entries used to be a bare text string; they are now
-            # {"text", "story"} so a correction can edit the comment it replaces.
-            # Read both shapes — the state file survives the upgrade.
-            rec = posted_progress.get(gid)
-            if isinstance(rec, str):
-                rec = {"text": rec, "story": ""}
-            rec = rec or {}
-            prev_text, prev_story = rec.get("text", ""), rec.get("story", "")
+            prev_text  = posted_progress.get(gid) or ""
+            prev_story = progress_stories.get(gid) or ""
 
             if (curr_p
                     and not PLAIN_CHECK.match(curr_p)
@@ -1396,7 +1397,8 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                 if dup:
                     log.info(f"  [{proj.prefix}] Skipping comment for {local_id} — identical bainbot comment already on the task")
                     if not dry_run:
-                        posted_progress[gid] = {"text": curr_p, "story": dup["gid"]}
+                        posted_progress[gid]  = curr_p
+                        progress_stories[gid] = dup["gid"]
                     continue
 
                 # Edit in place, or post afresh? A human comment dated after our
@@ -1419,14 +1421,15 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                     log.info(f"  [{proj.prefix}] {verb} progress comment for {local_id}...")
                     new_story = leave_progress_comment(gid, curr_p, edit_story, dry_run)
                     if not dry_run:
-                        posted_progress[gid] = {"text": curr_p,
-                                                "story": new_story or edit_story}
+                        posted_progress[gid]  = curr_p
+                        progress_stories[gid] = new_story or edit_story
                     commented += 1
                     touched_gids.add(gid)
                 except Exception as e:
                     log.warning(f"  Failed to comment on {local_id}: {e}")
 
-        state["posted_progress"] = posted_progress
+        state["posted_progress"]  = posted_progress
+        state["progress_stories"] = progress_stories
 
         # Stamp Last Synced on tasks we actually wrote to this run (pushes +
         # comments), plus tasks seen for the first time so the field is never

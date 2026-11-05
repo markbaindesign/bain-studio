@@ -39,12 +39,12 @@ continuation line starting `- **X:**` is misparsed as another field. `||` separa
 and is expanded to newlines at post time by `_progress_plain`.
 
 ```
-**Progress:** @mark Review: {what changed, one line} || Where: {branch} · {commits} · {URL or path} || Check: || 1. {imperative} || 2. {imperative} || Gaps: {known, not fixed}
+**Progress:** @mark Review {YYYY-MM-DD}: {what changed, one line} || Where: {branch} · {commits} · {URL or path} || Check: || 1. {imperative} || 2. {imperative} || Gaps: {known, not fixed}
 ```
 
 | Block | Holds | Limit |
 |---|---|---|
-| `Review:` / `Blocked:` | What changed, or the question | One line. Asana truncates at "See more", so the action lives here or nowhere. |
+| `Review {date}:` / `Blocked {date}:` | What changed, or the question | One line, ISO date required — the looper's duplicate-work guard reads it to tell a completed task from a re-queued one. Asana truncates at "See more", so the action lives here or nowhere. |
 | `Where:` | Branch, commits, URL or file path | One line. For a research task, the output file path instead. |
 | `Check:` | What Mark does to verify | Max 5, one line each, imperative. More than 5 means the task should have been split. |
 | `Gaps:` | Work knowingly left undone | Omit entirely when there is none. Never a hedge. |
@@ -86,10 +86,13 @@ The decision is made in `sync_project`:
 If the edit fails (403/404 — comment deleted, or authored by someone else) it falls back to a
 fresh post rather than losing the note.
 
-`posted_progress` in the project state file stores `{"text", "story"}` per task GID. Entries
-written before this change are bare text strings and are read as `{"text": …, "story": ""}`,
-so the state file survives the upgrade — the first note after it posts fresh instead of
-editing.
+Story GIDs live in their **own** `progress_stories` map in the project's `asana-ids.json`,
+never inside `posted_progress`. The hourly cron runs an older `sync.py` from the ops worktree
+(ADR 014) against the same state file, and it reads `posted_progress[gid]` as a plain string:
+a dict there made its `curr_p != posted_progress[gid]` test true on every run, so it posted
+the note a second time as raw text — literal `@mark` and `||` — and overwrote the GID. A
+project whose state predates this change simply has no `progress_stories` entry, so its first
+note posts fresh instead of editing.
 
 ## Matching a comment to its note
 
