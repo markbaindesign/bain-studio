@@ -121,12 +121,17 @@ groups both windows under Terminator. Clicking the Terminator launcher icon had 
 problem - it raised whichever of the two it felt like. A dash is read, not typed into, so the
 fix is to stop it being a window at all.
 
-Conky's `panel` window type is `_NET_WM_WINDOW_TYPE_DOCK` with `SKIP_TASKBAR`, `SKIP_PAGER` and
-`STICKY` set (verified with `xprop` on the running panel), which keeps it out of `Super+Tab`
-and out of the launcher icon's reach - that icon now has only the working terminal to raise.
-It also defines struts, which is the other half of the bargain: the work area shrinks from
-5760 to 4796 px wide, so a maximized window on that monitor stops at the panel's edge instead
-of covering it.
+The window is `_NET_WM_WINDOW_TYPE_NORMAL` with `SKIP_TASKBAR`, `SKIP_PAGER`, `ABOVE` and
+`STICKY` set (verified with `xprop` on the running panel). `SKIP_TASKBAR` keeps it out of
+`Super+Tab` and out of the launcher icon's reach - that icon now has only the working terminal
+to raise - and `ABOVE` keeps it in front of ordinary windows.
+
+**Not the `panel` type**, which was the first attempt. That one is a dock window, and a dock
+defines struts: the work area shrank from 5760 to 4796 px wide, and **nothing on that monitor
+could go fullscreen any more**. It was briefly sold as a feature, on the grounds that a
+maximized window would stop at the panel's edge rather than cover it. It is not worth losing
+fullscreen for. With `normal` + `above` there are no struts, and a fullscreen window goes in
+front of the dash, which is what fullscreen is for.
 
 | | |
 |---|---|
@@ -201,9 +206,11 @@ Both cost an hour, and both look like "nothing is drawing":
    transparent destination it keeps the source's alpha anyway, which is all `SOURCE` was
    wanted for.
 
-   Checking either one by eye is unreliable, because the desktop wallpaper is a slideshow and
-   `#16161e` over a dark frame is indistinguishable from no background at all. Fill with
-   magenta while testing.
+   **Check the result with `gnome-screenshot`, not `import -window root`.** Under mutter's
+   compositor the root window does not reliably hold what is on screen for a translucent
+   window, and `import` returned images that disagreed with each other and with the screen -
+   which is what made the first two diagnoses of this wrong. A magenta fill helps too:
+   `#16161e` against a dark desktop is hard to tell from no background at all.
 
 ## The `shell` status, and why the CLI cannot be trusted alone
 
