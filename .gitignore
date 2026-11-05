@@ -59,3 +59,7 @@ docs/.obsidian/workspace.json
 .env
 studio/collectors/daily_brief_state.json
 studio/collectors/audio_notes_state.json
+
+# Retainer client terms and recipient addresses: real config lives in
+# ~/.config/bain-studio/retainer-clients.yaml, never in this public repo.
+studio/tools/retainer-report/clients.yaml

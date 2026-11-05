@@ -4,12 +4,13 @@
 Computes a retainer client's hour bank for a billing cycle from Harvest time
 entries and renders the client-facing report.
 
-    python3 retainer_report.py TSTY
-    python3 retainer_report.py TSTY --cycle 2026-10-03
-    python3 retainer_report.py EBIZG --json
+    python3 retainer_report.py PREFIX
+    python3 retainer_report.py PREFIX --cycle 2026-10-03
+    python3 retainer_report.py PREFIX --json
 
 A cycle runs from the client's cycle_day to the day before the next one,
-inclusive: Techstyle's October cycle is 3 Oct to 2 Nov. With no --cycle, the
+inclusive: a client topping up on the 3rd has an October cycle of 3 Oct to
+2 Nov. With no --cycle, the
 tool reports the most recent cycle that has finished, which is what the task
 on the invoice date is asking for.
 
@@ -34,10 +35,28 @@ import requests
 import yaml
 
 HERE = Path(__file__).resolve().parent
-ENV = HERE.parents[1] / "studio" / ".env"
-if not ENV.exists():
-    ENV = HERE.parents[1] / ".env"
+REPO = HERE.parents[1]                      # <repo>/studio
+ENV = REPO / ".env"
 BASE = "https://api.harvestapp.com/api/v2"
+
+# Client terms and recipient addresses are data, not code, and this repo is
+# public: the real config never lives inside the checkout.
+CONFIG_CANDIDATES = [
+    Path(os.environ["RETAINER_CLIENTS"]) if os.environ.get("RETAINER_CLIENTS") else None,
+    Path.home() / ".config" / "bain-studio" / "retainer-clients.yaml",
+]
+
+
+def config_path():
+    for p in CONFIG_CANDIDATES:
+        if p and p.exists():
+            return p
+    sys.exit(
+        "No retainer client config found. Looked at:\n  "
+        + "\n  ".join(str(p) for p in CONFIG_CANDIDATES if p)
+        + f"\n\nCopy {HERE / 'clients.example.yaml'} to the second path and fill it in.\n"
+        "Do not put it in the repo: this repo is public."
+    )
 
 
 def load_env():
@@ -169,6 +188,13 @@ def build(cfg, excluded, headers, cycle_arg, today):
     opening = round(topups * cfg["hours_month"] - used_before, 2)
     closing = round(opening - used, 2)
 
+    # Only report these in the cycle they belong to. The query window reaches
+    # back 400 days, so without this they would repeat in every later report.
+    if start != first:
+        pre_start = []
+    excluded_rows = [r for r in excluded_rows
+                     if start <= date.fromisoformat(r["date"]) <= end]
+
     in_cycle.sort(key=lambda r: r["date"])
     return {
         "prefix": cfg["_prefix"],
@@ -210,15 +236,17 @@ def fmt_hours(h):
     return f"{h:.2f} h"
 
 
-def fmt_date(iso):
+def fmt_date(iso, year=False):
     d = date.fromisoformat(iso)
-    return f"{d.day} {d.strftime('%B')}"
+    return f"{d.day} {d.strftime('%B')}" + (f" {d.year}" if year else "")
 
 
-def render(rep, cfg):
+def render(rep, cfg, today=None):
+    today = today or date.today()
     start, end = fmt_date(rep["cycle_start"]), fmt_date(rep["cycle_end"])
     L = []
-    L.append(f"Subject: {rep['client']} retainer report: {start} to {end}")
+    L.append(f"Subject: {rep['client']} retainer report: {start} to "
+             f"{fmt_date(rep['cycle_end'], year=True)}")
     L.append("")
     L.append(f"Hi {cfg['greeting']}")
     L.append("")
@@ -231,15 +259,17 @@ def render(rep, cfg):
             L.append(f"- {note}: {fmt_hours(r['hours'])}")
     else:
         L.append("Work completed")
-        L.append("- No work was logged this cycle.")
+        L.append("- Nothing this cycle.")
     L.append("")
     L.append("Hours")
     L.append(f"- Opening balance: {fmt_hours(rep['opening'])}")
     L.append(f"- Used this cycle: {fmt_hours(rep['used'])}")
     L.append(f"- Closing balance: {fmt_hours(rep['closing'])}")
     L.append("")
+    topup_day = date.fromisoformat(rep["next_cycle_start"])
+    verb = "was added" if topup_day <= today else "is added"
     L.append(
-        f"{fmt_hours(rep['next_topup'])} is added on {fmt_date(rep['next_cycle_start'])}, "
+        f"{fmt_hours(rep['next_topup'])} {verb} on {fmt_date(rep['next_cycle_start'])}, "
         f"taking you to {fmt_hours(rep['next_opening'])}. "
         "Banked hours roll over with no cap and no expiry."
     )
@@ -278,13 +308,13 @@ def render_flags(rep):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("prefix", help="client prefix from clients.yaml, e.g. TSTY")
+    ap.add_argument("prefix", help="client key from the retainer client config")
     ap.add_argument("--cycle", help="cycle start date YYYY-MM-DD (default: last finished cycle)")
     ap.add_argument("--json", action="store_true", help="emit the computed figures as JSON")
     ap.add_argument("--today", help="override today's date, for testing")
     args = ap.parse_args()
 
-    conf = yaml.safe_load((HERE / "clients.yaml").read_text())
+    conf = yaml.safe_load(config_path().read_text())
     excluded = set(conf.pop("excluded_tasks", []) or [])
     key = args.prefix.upper()
     if key not in conf:
@@ -299,7 +329,7 @@ def main():
         print(json.dumps(rep, indent=2))
         return
 
-    print(render(rep, cfg))
+    print(render(rep, cfg, today))
     flags = render_flags(rep)
     if flags:
         print("\n" + "=" * 62)

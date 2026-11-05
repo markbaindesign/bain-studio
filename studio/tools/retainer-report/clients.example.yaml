@@ -1,0 +1,37 @@
+# Example retainer client config.
+#
+# The real file is NOT in this repo: it carries client email addresses and
+# signed contract terms, and this repo is public. It lives at
+#   ~/.config/bain-studio/retainer-clients.yaml
+# or wherever RETAINER_CLIENTS points. Copy this file there and fill it in.
+#
+# cycle_day      Day of month the retainer tops up and the invoice is raised.
+#                A cycle runs from cycle_day of one month to the day before
+#                the next, inclusive: the 3rd to the 2nd.
+# first_cycle    First cycle start date. Hours logged before it are not drawn
+#                from the bank; the report flags them instead of swallowing them.
+# hours_month    Monthly top-up, taken from the signed agreement, not the
+#                price list.
+#
+# Terms source: the signed agreement in
+#   Dropbox/Work/Projects/Client/<Client>/Admin/Contracts/
+
+EXAMPLE:
+  client_name:   Example Client
+  legal_name:    Example Client Ltd
+  harvest_project: 00000000          # Harvest project id
+  asana_project:   0000000000000000  # Asana project gid
+  hours_month:   3.0
+  rate_eur:      00.0
+  cycle_day:     3
+  first_cycle:   2026-01-03
+  rollover:      uncapped            # uncapped = no cap, no expiry
+  to:            [someone@example.com]
+  cc:            []
+  greeting:      Firstname
+
+# Harvest task types that do NOT draw down the bank. Everything else does,
+# calls, email and meetings included: they are maintenance work and are
+# charged. See maintenance-plans.md 1.2 and 1.6.
+excluded_tasks:
+  - Free Gratis Work
