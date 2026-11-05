@@ -60,8 +60,19 @@ Mark wants it and invisible when he does not. Usage is already in
 Mark's Asana inbox is filtered to **Mentioned**. A plain-text comment cannot mention anyone —
 Asana needs rich text (`html_text`) carrying `<a data-asana-gid="…"/>`. So:
 
-- A note opening `@mark` is posted with a real mention and reaches his inbox.
+- A note opening `@mark` is posted with a real mention.
 - A note without the token is posted and recorded, but he never sees it.
+
+**A mention alone does not notify.** Asana raises no notification for an `html_text` mention
+unless the person already **follows** the task — being the assignee is not enough. The mention
+lands in the thread and nowhere else, which is silent: nothing fails, nothing logs. Every
+`@mark` note posted before 2026-11-05 was invisible in a filtered inbox for this reason
+(found on BD-204). `leave_progress_comment` now calls `POST /tasks/{gid}/addFollowers` for
+`ASANA_USER_GID` before a mentioned note, waits `MENTION_FOLLOW_WAIT` seconds, then posts. If
+adding the follower fails it warns and posts anyway: an unsignalled note still beats no note.
+
+Only a **fresh post** can notify. Re-mentioning someone on an edited story raises nothing, so
+a note that already missed the inbox cannot be rescued by editing it — tell Mark another way.
 
 This is the whole signalling mechanism, and it is why `sync.py` must never add the mention
 unconditionally. Use the token for **review** and **blocked** notes — the two cases where
@@ -123,6 +134,25 @@ bainbot PAT).
 
 `--comment` used to post raw text, so a `@mark` token in it was literal and never reached a
 filtered inbox. It now runs through `leave_progress_comment` like any Progress note.
+
+**`--comment` cannot correct a note by itself.** A bare task GID carries no project state, so
+it cannot find the story it posted last time and posts afresh — leaving the old note above the
+new one, the note-plus-contradiction this page forbids. A correction needs the story GID,
+which the posting run prints:
+
+```bash
+python3 studio/sync.py --comment --task-gid {GID} --story-gid {STORY_GID} \
+  --comment-text "{the corrected note}"
+```
+
+From a project mirror there is nothing to pass: the scheduled sync tracks the story GID in
+`asana-ids.json` and edits in place on its own.
+
+One edge: `--comment` writes no mirror and no state, so the follower it adds normally survives
+(the story bumps `modified_at`, so the next run pulls). If a scheduled sync stamped that same
+task in the same window, the next run reads the mirror as newer and removes the follower once.
+The note still arrived; only a later mention on that task would be silent. Posting the next
+note re-adds the follower, so nothing needs doing.
 
 ## Enforcement
 
