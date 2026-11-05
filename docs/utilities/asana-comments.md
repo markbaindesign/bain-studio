@@ -124,6 +124,26 @@ bainbot PAT).
 `--comment` used to post raw text, so a `@mark` token in it was literal and never reached a
 filtered inbox. It now runs through `leave_progress_comment` like any Progress note.
 
+## Enforcement
+
+`validate_progress_note` runs before anything is posted, on **both** write paths. A note over
+a limit is **not posted at all** — an error naming the task goes to `studio/sync.log`, the
+note stays in the mirror to be rewritten, and the task's own state (section, assignee, fields)
+still syncs, so the work still appears in Mark's task list. `--comment` exits 1.
+
+| Limit | Value | Catches |
+|---|---|---|
+| Whole note | 900 chars | The narrative dump |
+| Any one block | 200 chars | A paragraph where a line belongs |
+| Block count | 8 | More than 5 `Check:` items |
+
+Set loose on purpose: these catch a wall of text, not a slightly long note. A note under every
+limit passes whatever its shape, so skills with their own short formats keep working. A
+`Checked {date}.` heartbeat is exempt.
+
+Posting a wall of text with a warning was considered and rejected: it puts Mark back where he
+started, which is the whole problem.
+
 ## Not built
 
 - **Screenshot attachments.** `sync.py` downloads attachments (`fetch_task_attachments`) but
@@ -134,8 +154,6 @@ filtered inbox. It now runs through `leave_progress_comment` like any Progress n
 - **Silent auto-close for low-risk fixes.** Considered and dropped: everything goes to review
   for now. The mention filter already keeps routine notes off Mark's radar without Claude
   having to judge its own risk.
-- **Enforcement.** `sync.py` renders whatever note it is given; nothing rejects a wall of
-  text. The template is carried by the global rule and this doc, not by a validator.
 - **The other three skills with their own note formats** — `studio-delivery-gate`, `feature`,
   `end-session` — inherit the plumbing (mention support, edit-in-place) but still write
   free-form notes, because "finished a build, needs review" is not their shape. They post
