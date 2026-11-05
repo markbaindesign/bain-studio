@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.23.0] - 2026-11-05
+
+### Changed
+- **Skill and agent descriptions carry triggers, not tutorials.** 75 skill descriptions and all four agent descriptions lost their worked `<example>` blocks, restated trigger-phrase lists and `Args:`/`Usage:` strings: 25,059 to 12,080 characters across this repo and `bain-skills`, and 5,263 to 1,588 for the agents. The argument strings moved to `argument-hint`, a field eight skills already used, so `/scaffold-dir`'s flag list survives where a description would have swallowed it. Firing guards were kept deliberately, because they decide whether a skill fires rather than describing it: `wp-plugin-expert`'s "only when called by name", the `task-looper` and `bb-repo-create` deprecation redirects, `studio-pm`'s "never touches Asana directly", `copywriter`'s "do not re-review or soften her edits", and the clause separating `prod-reconcile` from `fse-sync`.
+- **`CLAUDE.md` stopped restating itself.** The Active projects table printed twenty prefix/path rows immediately beneath the line "Single source of truth: `docs/projects/` - do not duplicate project state here", and the Skills section listed nine skills with reasons plus a "global-only" list that had drifted wrong - `web-researcher` and `copywriter` are in this repo, and `grill-me`, `wp-css-override`, `wp-plugin-expert` and `notify` are in `bain-skills`. Both are now pointers. All twenty paths were verified present in `docs/projects/*.md` frontmatter first; `KF-WEB` lives in `kf.md` and `SLT`'s path in `sl.md`, which is why neither has a file of its own. This answers open question 2 of ADR 021, recorded in its addendum.
+- **`register-project` no longer appends a `CLAUDE.md` row.** Its Step 3 is gone and the skill renumbered; `abderus` and `harvest` read project paths from `docs/projects/*.md` frontmatter instead of the deleted table, and the hermes docs for `register-project` and `commission` were corrected to match.
+
+### Added
+- **`hermes`, `mnemosyne` and `studio-pm` are versioned.** They were plain files in `~/.claude/agents/`, recoverable from nothing if the machine went; they now live in `.claude/agents/` and are symlinked out, the way `copywriter` already worked. The `qa` and `portfolio` skills were adopted from `~/.claude/skills/` for the same reason, along with `notify`, `prod-reconcile`, `skills` and `process-scan-folder` into `bain-skills`.
+
+### Fixed
+- **Frontmatter that only Claude Code's own parser would accept.** Eleven files carried an unquoted plain YAML scalar containing `": "`, which is a `mapping values are not allowed here` error to anything stricter: `bb-pr`, `blooper-check`, `commission`, `looper-onboard`, `register-project`, `repo-create`, `scaffold-dir`, `seed-tasks`, `voice-agent`, `project-status`, and the `copywriter` agent, whose description ran unquoted across 28 lines with `user:` and `assistant:` keys inside it. Every description is now a quoted single-line scalar and every file passes `yaml.safe_load`.
+- **`process-scan-folder` can advertise itself.** It had no frontmatter at all, so it was invocable only by typing its exact name despite having a working `process_scan.py`.
+
+### Notes for the next person
+- **37 skills were rendering as bare names in the model's skill listing**, descriptions dropped against a budget the long ones exceeded - `themis`, `aphrodite`, `whiteroom-web-design`, `wp-block-theme`, `triage` and 32 others. They were effectively undiscoverable: invocable by exact slash command, but never chosen by inference. Trimming brought the whole set back under the budget. Measure this against the rendered listing in a fresh session, not against the frontmatter character count, because the listing is fixed at session start.
+- **Strict-YAML validity is not what decides whether a description renders.** Thirty-four of the bare skills parsed fine and seven of the parse failures rendered in full, so the two problems are unrelated. Fix both; do not use one as a proxy for the other.
+- **A release was cut from another session in this checkout mid-work.** 1.22.0 appeared while these changes sat uncommitted, moving HEAD through four branch switches and leaving `feature/skill-description-trim` pointing at the old develop. The uncommitted work rode along intact and 1.22.0 was not contaminated, but `git worktree list` showed six checkouts and twelve Claude processes were running. Check before assuming you are alone in the repo.
+
 ## [1.22.0] - 2026-11-05
 
 ### Added
