@@ -1326,12 +1326,25 @@ def test_create_task_refuses_an_overlong_description(proj, fake_asana):
     assert fake_asana == []
 
 
-def test_update_task_refuses_an_overlong_description(monkeypatch):
+def test_update_task_refuses_a_description_no_shorter_than_the_one_it_replaces(monkeypatch):
     puts = []
     monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    monkeypatch.setattr(sync, "_get", lambda path, params=None: {"data": {"notes": "Short."}})
     with pytest.raises(ValueError, match="over the 1200-char limit"):
         sync.update_task("111222333", notes=REAL_DESCRIPTION_WALL)
     assert puts == []
+
+
+def test_update_task_allows_an_overlong_but_shorter_correction(monkeypatch):
+    # The escape hatch: a wrong 3,500-char description must be correctable to
+    # 1,400 chars, even though 1,400 is over the limit. Refusing that would
+    # leave the misleading text in place, which is the opposite of the point.
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    monkeypatch.setattr(sync, "_get",
+                        lambda path, params=None: {"data": {"notes": "x" * 3500}})
+    sync.update_task("111222333", notes="y" * 1400)
+    assert puts[0][1]["data"]["notes"] == "y" * 1400
 
 
 def test_dry_run_still_refuses_an_overlong_description(proj, fake_asana):
@@ -1598,3 +1611,67 @@ def test_custom_field_colliding_with_a_built_in_line_is_warned_once(cf_env, capl
         assert sync._custom_field_lines(t) == []
         sync._custom_field_lines(t)
     assert caplog.text.count("collides with the built-in mirror field") == 1
+
+
+def test_a_description_cannot_overwrite_a_real_field(proj, mirror_text):
+    # A description is free text and routinely contains its own bold bullets —
+    # the walls of text that prompted the limit were written in this style, and
+    # an emailed one is untrusted input. Collected into the same field map, the
+    # last match for a key won, so these lines replaced the real values and were
+    # then pushed to Asana on the next mirror-newer run.
+    poisoned = mirror_text.replace(
+        "- **Notes:** Some notes here.",
+        "- **Notes:** Pasted from the vendor email:\n"
+        "- **Priority:** none\n"
+        "- **Section:** DONE\n"
+        "- **Due:** none\n"
+        "- **Features:** none\n"
+        "- **Blockers:** quoted, not the real line\n")
+    proj.mirror_file.write_text(
+        poisoned.replace("- **Section:** DOING",
+                         "- **Section:** DOING\n- **Priority:** High\n- **Features:** Security"))
+    prev = parse_existing_mirror(proj)["111222333"]
+    assert prev["section"] == "DOING"
+    assert prev["due"] == "2026-05-25"
+    assert prev["_raw"]["priority"] == "High"
+    assert prev["_raw"]["features"] == "Security"
+    assert prev["blockers"] == "None identified."
+    # Only the description's first line is kept — enough to notice an edit.
+    assert prev["notes"] == "Pasted from the vendor email:"
+
+
+def test_a_foreign_priority_field_is_never_pushed_by_name(cf_env, monkeypatch, sample_task, caplog):
+    # The built-in Priority line renders from PRIORITY_FIELD_GID only. A project
+    # whose own "Priority" field has a different GID therefore shows `none` in
+    # the mirror while Asana holds a value: pushing by name would clear it on
+    # every task, every run.
+    other = _cf_priority("High")
+    other["gid"] = "9999999999"
+    sample_task["custom_fields"] = [other]
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    with caplog.at_level("WARNING"):
+        assert sync._push_custom_fields(sample_task, {"_raw": {"priority": "none"}},
+                                        dry_run=False, prefix="TEST") is False
+        assert sync._custom_field_lines(sample_task) == []
+    assert puts == []
+    assert "collides with the built-in mirror field" in caplog.text
+
+
+def test_push_custom_fields_sends_a_date_as_an_object(cf_env, monkeypatch, sample_task):
+    # A date custom field takes {"date": "YYYY-MM-DD"}, not the bare string a
+    # text field takes. Every field goes in one PUT, so the wrong shape would
+    # 400 the whole write and lose the other fields with it.
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [
+        {"gid": "d", "name": "Shipped", "resource_subtype": "date", "date_value": None}]
+    sync._push_custom_fields(sample_task, {"_raw": {"shipped": "2026-11-05"}},
+                             dry_run=False, prefix="TEST")
+    assert puts[0][1]["data"]["custom_fields"]["d"] == {"date": "2026-11-05"}
+
+
+def test_field_regex_only_matches_a_top_level_bullet():
+    assert sync.FIELD_RE.findall("- **Priority:** High") == [("Priority", "High")]
+    assert sync.FIELD_RE.findall("  - **Priority:** High") == []
+    assert sync.FIELD_RE.findall("see - **Priority:** High inline") == []

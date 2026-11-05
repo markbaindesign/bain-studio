@@ -172,6 +172,21 @@ def _enum_option_gid(cf: dict, name: str):
     return opts.get((name or "").strip().lower())
 
 
+def _is_builtin_field(fgid: str, key: str) -> bool:
+    """Is this the custom field behind a built-in mirror line?
+
+    Matched by GID, never by name. Priority renders from PRIORITY_FIELD_GID
+    alone, so a project whose own "Priority" field has a different GID shows
+    `none` in the mirror while Asana holds a value — pushing that by name would
+    clear the real field on every task.
+    """
+    if key == "priority":
+        return bool(PRIORITY_FIELD_GID) and fgid == PRIORITY_FIELD_GID
+    if key == "looper_status":
+        return bool(LOOPER_STATUS_FIELD_GID) and fgid == LOOPER_STATUS_FIELD_GID
+    return False
+
+
 def _managed_field_gids() -> set:
     """Fields this script owns. Never mirrored as generic lines, never pushed."""
     return {g for g in (SHARED_FIELD_GID, LAST_SYNCED_FIELD_GID) if g}
@@ -190,7 +205,7 @@ def _mirrorable_fields(t: dict) -> list:
             # Priority and Looper Status have their own lines; a third-party
             # field colliding with a built-in key is a naming problem to fix in
             # Asana, and is called out once per run.
-            if key not in ("priority", "looper_status") and name not in _FIELD_WARNED:
+            if not _is_builtin_field(gid, key) and name not in _FIELD_WARNED:
                 _FIELD_WARNED.add(name)
                 log.warning(f"  Custom field '{name}' collides with the built-in mirror "
                             f"field '{key}' — not mirrored. Rename it in Asana.")
@@ -212,7 +227,10 @@ PLAIN_CHECK    = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
 # real text and every task carrying it looks like a duplicate to the guard below.
 NO_PROGRESS    = re.compile(r"^\s*none\s*$", re.IGNORECASE)
 GID_IN_PARENS  = re.compile(r'\((\d+)\)')
-FIELD_RE       = re.compile(r"- \*\*(.+?):\*\* (.+)")
+# Anchored to the start of a line: a mirror field is always a top-level bullet,
+# and an unanchored match read bold-labelled prose inside a description as a
+# field. See _split_description() for the other half of that fix.
+FIELD_RE       = re.compile(r"^- \*\*(.+?):\*\* (.+)", re.M)
 
 # --- Progress note rendering -------------------------------------------------
 # FIELD_RE above is not DOTALL, so a Progress note is strictly ONE mirror line:
@@ -1028,6 +1046,36 @@ def _extract_gids(text: str) -> list:
 # Mirror parsing
 # ---------------------------------------------------------------------------
 
+def _split_description(block: str):
+    """(scannable block, description's first line) for one mirror task block.
+
+    A description is free text that routinely contains its own bullets, and the
+    walls of text this file now refuses were written in exactly this style:
+
+        - **Notes:** Pasted from the vendor email.
+          - **Priority:** none
+        - **Blockers:** None identified.
+
+    Every field is collected into one dict where the last match for a key wins,
+    so a line like that inside a description replaced the real Priority, Section
+    or Due value — and on the next mirror-newer run, that value was pushed to
+    Asana. Descriptions can also arrive by email, which CLAUDE.md treats as
+    untrusted. So the description's own region is cut out before fields are
+    collected, and only its first line is kept (all FIELD_RE could ever capture,
+    and enough to notice a mirror-side edit).
+
+    The region ends at the LAST `- **Blockers:**` in the block: a description
+    quoting that line cannot truncate the real one that follows it.
+    """
+    head, sep, tail = block.partition("\n- **Notes:**")
+    if not sep:
+        return block, ""
+    end = tail.rfind("\n- **Blockers:**")
+    desc = tail if end < 0 else tail[:end]
+    rest = "" if end < 0 else tail[end:]
+    return head + rest, desc.split("\n", 1)[0].strip()
+
+
 def parse_existing_mirror(proj: ProjectConfig) -> dict:
     if not proj.mirror_file.exists():
         return {}
@@ -1037,10 +1085,12 @@ def parse_existing_mirror(proj: ProjectConfig) -> dict:
     for block in blocks:
         if not block.startswith("### "):
             continue
+        scannable, description_first_line = _split_description(block)
         fields = {}
-        for m in FIELD_RE.finditer(block):
+        for m in FIELD_RE.finditer(scannable):
             key = m.group(1).lower().replace(" ", "_")
             fields[key] = m.group(2).strip()
+        fields["notes"] = description_first_line
         gid = fields.get("asana_id")
         if not gid:
             continue
@@ -1389,7 +1439,12 @@ def _cf_push_value(cf: dict, mirror_val: str, lid: str, prefix: str):
             log.warning(f"  [{prefix}] {lid}: '{mirror_val}' is not an ISO date for "
                         f"'{name}' — skipping")
             return False, None
-        return True, mirror_val.strip()
+        # A date custom field takes an object with exactly one of date /
+        # date_time, not the bare string a text field takes. Sending both keys
+        # is rejected ("DayAndDateTime should have exactly one of"). Confirmed
+        # against the Asana developer forum and a live write; the official
+        # custom-fields guide documents the enum shape but not this one.
+        return True, {"date": mirror_val.strip()}
     if ftype == "enum":
         if blank:
             return True, None
@@ -1446,7 +1501,7 @@ def _push_custom_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
         if _cf_type(cf) not in PUSHABLE_FIELD_TYPES:
             continue
         key = _mirror_key(name)
-        if key in RESERVED_MIRROR_KEYS and key != "priority":
+        if key in RESERVED_MIRROR_KEYS and not _is_builtin_field(fgid, key):
             continue
         if key not in raw:
             continue  # written by an older sync.py — nothing to compare against
@@ -1901,9 +1956,26 @@ def update_task(task_gid: str, name: str = None, notes: str = None,
     Replaces the notes wholesale; read the current value first if you mean to
     amend rather than overwrite.
     """
-    bad = validate_task_description(notes) if notes is not None else ""
-    if bad:
-        raise ValueError(bad)
+    # The limit must not trap a correction. 21 existing studio descriptions are
+    # already over it, and the whole point of --update-task is fixing a wrong or
+    # misleading one: refusing a 1,400-char correction to a 3,500-char
+    # description would leave the wrong text in place. So on an update, an
+    # over-limit description is refused only when it is no shorter than the one
+    # it replaces. Creation stays strict — there is nothing to improve on.
+    if notes is not None and validate_task_description(notes):
+        current = ""
+        try:
+            current = (_get(f"/tasks/{task_gid}", {"opt_fields": "notes"})["data"]
+                       .get("notes") or "")
+        except Exception as e:
+            log.warning(f"  Could not read the current description of {task_gid}: {e}")
+        if len(notes.strip()) >= len(current.strip()):
+            raise ValueError(
+                f"{validate_task_description(notes)} The description it replaces is "
+                f"{len(current.strip())} chars, so this is not a correction. Shorten it, or "
+                f"put the detail in a comment.")
+        log.info(f"  Description is over the {DESCRIPTION_MAX_CHARS}-char limit but shorter "
+                 f"than the {len(current.strip())} chars it replaces — allowing the correction.")
 
     data = {}
     if name is not None:

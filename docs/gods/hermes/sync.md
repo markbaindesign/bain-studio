@@ -54,6 +54,8 @@ on the next run.
 | `Priority`, and **every other custom field on the task** (`Features`, `Review Status`, `Env`, …) | Yes |
 | `Looper Status` | Yes, with the queue's own defaulting rules |
 | `Notes` (the task description) | **No** — read-only, see below |
+| The task title (the `###` heading) | **No** — `--update-task --task-gid {GID} --task-name "..."` |
+| Completion (a task moving to `## DONE`) | **No** — complete it in Asana |
 | `Blockers`, `Progress` | Mirror-only; `Progress` is posted as a comment |
 | `Comments`, `Attachments`, `Modified`, `URL`, `Local ID`, `Asana ID` | No, pulled from Asana |
 

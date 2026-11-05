@@ -1,4 +1,4 @@
-# ADR 025 — Task descriptions are read-only and short; every other field pushes back
+# ADR 025 — Task descriptions are read-only and short; custom fields push back
 
 Date: 2026-11-05
 Status: Accepted (2026-11-05)
@@ -43,8 +43,11 @@ place.
    created with. Amendments go in a comment; a genuinely wrong description is rewritten with
    `--update-task`, which logs the change. A mirror-side edit is reported in the log, naming
    the command, rather than silently dropped.
-6. **A description written through `sync.py` is refused over 1,200 characters**, on creation
-   and on update, with nothing sent to Asana. The limit is on length only — no block format
+6. **A description written through `sync.py` is refused over 1,200 characters** on creation,
+   with nothing sent to Asana. On `--update-task` an over-limit description is refused only
+   when it is no shorter than the one it replaces: 21 existing studio descriptions are already
+   over the limit, and refusing a shorter correction to one of them would leave the misleading
+   text in place. The limit is on length only — no block format
    is required, so tools with their own templates (`qa-capture`) keep working. What belongs in
    a description, and what does not, is a rule rather than a parser:
    `~/.claude/rules/asana-tasks.md`.
@@ -58,6 +61,15 @@ place.
 - The description is deliberately the one field with an asymmetry: mirrored in full, pushed
   never. Anyone looking for consistency will find this inconsistent; the reason is that a
   description is a record of what was asked for, and Asana keeps no history of its own.
+- The task title and completion still do not push from the mirror. A title is changed with
+  `--update-task --task-name`; a task is completed in Asana. Only the description, the title
+  and completion are outside the mirror's push, and the docs name all three rather than
+  claiming "everything else pushes".
+- A description's own text is no longer collected as fields. It routinely contains bold
+  bullets of its own, and because every field landed in one map where the last match won, a
+  `- **Priority:** none` line inside a description replaced the real value and was then pushed
+  to Asana. Descriptions can arrive by email, which CLAUDE.md treats as untrusted, so this was
+  a write path from untrusted text into task state.
 - Long inbound material is unaffected. Tasks created by Asana's email intake never pass
   through `sync.py`, so a forwarded alert keeps its full text (BSTD-038, -821, -834).
 - `paste_job.py` has its own Asana pipeline and is not covered by the limit. If it is ever

@@ -68,8 +68,8 @@ To see sections for a project, check its mirror or Asana board. The `--task-sect
 
 ## Description length is enforced
 
-`--task-notes` is the task's **description**. It is refused over **1,200 characters**, on
-`--create-task` and on `--update-task`, and nothing is sent to Asana:
+`--task-notes` is the task's **description**. On `--create-task` it is refused over **1,200
+characters** and nothing is sent to Asana:
 
 ```
 ERROR Not creating task: description is 3510 chars, over the 1200-char limit. State what the
@@ -90,6 +90,10 @@ about 500 characters, and the walls of text that prompted it ran 2,000–3,500.
 Only descriptions written through `sync.py` are checked. A task that arrives by Asana's own
 email intake (a forwarded alert, a vendor email) never passes through here and is unaffected
 however long it is.
+
+On `--update-task` the limit is softer, so that it cannot trap a correction: an over-limit
+description is refused only when it is **no shorter** than the one it replaces. A 1,400-char
+rewrite of a 3,500-char description goes through, and is logged as a correction.
 
 The description is read-only in the mirror. To correct one, use `--update-task`, which
 replaces it wholesale — read the current text first:
