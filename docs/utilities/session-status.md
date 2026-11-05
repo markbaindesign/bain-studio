@@ -122,10 +122,11 @@ problem - it raised whichever of the two it felt like. A dash is read, not typed
 fix is to stop it being a window at all.
 
 Conky's `panel` window type is `_NET_WM_WINDOW_TYPE_DOCK` with `SKIP_TASKBAR`, `SKIP_PAGER` and
-`STICKY` set, so **nothing can hand it focus**: not a click, not `Super+Tab`, not the launcher
-icon, which now only has the working terminal to raise. It also defines struts, which is the
-other half of the bargain: the work area shrinks from 5760 to 4796 px wide, so a maximized
-window on that monitor stops at the panel's edge instead of covering it.
+`STICKY` set (verified with `xprop` on the running panel), which keeps it out of `Super+Tab`
+and out of the launcher icon's reach - that icon now has only the working terminal to raise.
+It also defines struts, which is the other half of the bargain: the work area shrinks from
+5760 to 4796 px wide, so a maximized window on that monitor stops at the panel's edge instead
+of covering it.
 
 | | |
 |---|---|
@@ -148,6 +149,10 @@ toggled with `Super+c`, and hiding them should not take the dash down.
   `shell` breath are gone: they were driven by a redraw loop that a one-shot process does not
   have, and a thing in the corner of the eye all day has to spend movement carefully - anything
   else that moved would train the eye to ignore the one status that is asking for something.
+  `${blink}` toggles **once per `update_interval`**, not per refresh, which is why the panel
+  draws at 1s while its `execpi` still only runs the script every 5s: at `update_interval = 5`
+  the pulse was a five-second stare. Confirmed by sampling the glyph's mean brightness over
+  four one-second crops - it alternates.
 - **Statuses keep their colours**, as hex rather than 256-colour indexes, so a row means the
   same thing on the panel as in the terminal. A unit test holds the two palettes together.
 - **The tally line takes the colour of the most demanding status present**, so the panel
@@ -164,7 +169,10 @@ toggled with `Super+c`, and hiding them should not take the dash down.
 - **`$` in a title or project name is escaped to `$$`.** It is conky's variable sigil, and an
   unescaped one swallows the rest of the line.
 - **The transcript cache is cold on every refresh**, since each one is a new process. A full
-  collect is ~0.4s of CPU, all of it local with no API call, which a 5-second interval absorbs.
+  collect is ~0.4s of CPU, all of it local with no API call, which the 5-second `execpi`
+  interval absorbs. `claude` is found on the session PATH at login (`~/.local/bin` is on it),
+  which matters because `run()` swallows a failed call and the panel would read "no sessions"
+  rather than saying anything was wrong.
   `own_window_argb_visual` is off: the panel type cannot take an ARGB visual (conky dies with a
   BadMatch on `X_CreateWindow`), so it is opaque where the others sit at 96%.
 
