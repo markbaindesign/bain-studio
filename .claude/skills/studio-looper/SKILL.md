@@ -140,7 +140,28 @@ For each line printed:
     ```
   Then continue straight to Step 1b — do not stop the run over a stale file, and do not wait for
   further input.
-- **No output at all** — no conflict, proceed normally.
+- **`CLEAR:...`** — no other session targets this queue. Proceed to Step 1b. If the line ends
+  `launched by runner {id}`, you were started by `looper_runner.py`: the runner holds
+  `/tmp/studio-looper/runner.lock` for the whole window and launched you, so **that lock, the
+  `looper_runner.py` process and the `claude -p /studio-looper` process you can see are all your
+  own**. They are never evidence of a competing run.
+- **No output at all** — an older build of `looper_logic.py` with no `CLEAR` line. Same meaning:
+  no conflict, proceed normally.
+
+**This script's output is the only concurrency signal.** Never refuse to start on any other
+basis. In particular, if the `CLEAR` line names a runner, do not consult `ps`, `pgrep`,
+`/tmp/studio-looper/runner.lock` or `Session started` lines in `~/logs/task-looper.log` — under the
+runner every one of those shows you your own run. On 2026-11-05 a headless iteration did exactly
+that: it read an empty result as "the guard is broken", found the runner's lock and its own
+`claude -p` child, and refused. The nightly window ended after 1 of 6 tasks. If the script says
+`CLEAR`, the queue is yours — start it.
+
+(One exception, and only for an **interactive** run with no `LOOPER_RUN_ID` in the environment: a
+live `/tmp/studio-looper/runner.lock` whose pid is alive does mean a nightly window is in progress.
+The runner clears state files between iterations, so this guard can legitimately read `CLEAR`
+mid-window. Don't start — tell Mark "a nightly looper window looks active (runner pid {pid}); run
+anyway, or use `--test`?" and let him choose. That is Step 1a's original purpose: stopping an
+interactive run from racing the nightly one.)
 
 ---
 
@@ -203,7 +224,7 @@ died mid-task (session limit, crash, one-shot `-p` exit) — stranded tasks are 
 queue and sit there forever. Before building the queue, find orphans (an `In progress` task in
 the target mirror not claimed as `current_task` by any live state file):
 ```bash
-LIVE_TASKS=$(python3 studio/scripts/looper_logic.py concurrency {TARGET_PREFIX} | grep '^LIVE:' | cut -d: -f5 | paste -sd, -)
+LIVE_TASKS=$(python3 studio/scripts/looper_logic.py live-tasks {TARGET_PREFIX} | paste -sd, -)
 python3 studio/scripts/looper_logic.py orphans {TARGET_DIR}/asana-mirror.md "$LIVE_TASKS"
 ```
 For each printed task ID, reset it to `Queue` in the mirror and log it:
@@ -212,6 +233,11 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{TARGET_PREFIX}] Orphan recovery: {T
 ```
 (The reset is pushed to Asana by this session's own sync flow; recovered tasks join the queue
 below.)
+
+Use `live-tasks` — never field-split the `concurrency` lines. That step previously read
+`concurrency | grep '^LIVE:' | cut -d: -f5`, but the deadline is an ISO timestamp whose own colons
+shift every later field, so `-f5` returned `00` rather than the task ID. The live set was therefore
+always empty or wrong, which could reset a genuinely in-flight task back to `Queue`.
 
 Build the queue — tasks with `**Looper Status:** Queue` that sit above the mirror's `## DONE`
 section, sorted by Priority (High > Medium > Low > none) then mirror order as tiebreak:
