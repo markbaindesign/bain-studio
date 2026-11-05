@@ -122,6 +122,43 @@ activity (touched within 15 minutes), it stops and reports rather than proceedin
 (deadline passed, or 15+ minutes inactive, task never advanced past Queue) are auto-cleaned
 without confirmation.
 
+When nothing competes, the guard prints a positive `CLEAR:no other session targets {PREFIX}` line
+rather than staying silent, and names the runner (`— launched by runner {id}`) when
+`LOOPER_RUN_ID` is set in the environment. Silence turned out to be too weak a signal: on
+2026-11-05 a headless iteration read empty output as "the guard is broken", went looking at
+processes, found `looper_runner.py` holding `/tmp/studio-looper/runner.lock` along with its own
+`claude -p /studio-looper` child, concluded a rival run was already working the queue, and refused
+to start. The nightly window ended after 1 of 6 tasks. Nothing was actually wrong — the runner
+holds that lock for the whole window by design and had launched the very session that then read it
+as a competitor.
+
+Step 1a is therefore explicit that `looper_logic.py concurrency` is the **only** concurrency
+signal. A session must not weigh `ps`, `pgrep`, `runner.lock`, or `Session started` lines in
+`~/logs/task-looper.log`, because under the runner every one of those shows the session its own
+run. The model was left on `haiku` — chosen deliberately on cost in commit `7aef8e1` ("looper runs on
+cheapest model with advisor escalation ladder"), and recorded in ADR-009's invocation. Note that
+haiku had in fact been told the right thing: Step 1a already said "no output — no conflict, proceed
+normally", and it did the opposite. This is being treated as a signal problem first because a
+positive `CLEAR` line is cheaper than a nightly model upgrade and the same iteration completed its
+code task correctly. If it misjudges again after this change, move the runner to sonnet.
+
+Note where each piece runs from. Cron invokes `looper_runner.py` out of the ops worktree
+(`/home/bain/ops/bain-studio`), but `_resolve_studio()` resolves `STUDIO` to the **dev** checkout,
+and the runner launches claude with `cwd=STUDIO`. So a nightly session loads dev's `SKILL.md`,
+hooks and `settings.local.json`, and Step 1a's absolute path calls dev's `looper_logic.py`. Skill
+and guard changes are therefore live on the next nightly run as soon as they're committed to
+whatever branch dev has checked out; only `looper_runner.py` itself needs `ops-deploy.sh`. For the
+same reason the runner imports `looper_logic` relative to `__file__`, not to `STUDIO` — a
+`STUDIO`-relative import would pull the module from whichever branch dev sits on, and on one
+without `window_summary` that is an ImportError at module scope, before `notify()` exists, which
+would lose the window in silence.
+
+The runner also now distinguishes an early stop from a drained queue. It decides an iteration made
+progress by watching `~/logs/task-looper.log` grow, so a session that declines to start looks
+exactly like an empty queue. At window end it counts tasks still at Looper Status `Queue` in the SL
+mirror; if any remain it logs `ENDED EARLY` and sends a high-priority notification naming them,
+instead of reporting a finished window.
+
 The old "one unavoidable prompt per session" limitation is gone: it was caused by the state file
 living under `.claude/`, which Claude Code treats as sensitive and always prompts on. With state
 in `/tmp` and correctly-written allow rules (`Edit(**)` globs, `//`-prefixed absolute paths),

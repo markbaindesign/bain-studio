@@ -18,6 +18,7 @@ See studio/tests/test_looper_logic.py for unit tests.
 from __future__ import annotations
 
 import datetime
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -107,6 +108,64 @@ def classify_single_file(path: str, text: str, mtime: datetime.datetime, now: da
     target_prefix = fm.get("target_prefix") or "SL"
     results = classify_concurrency([(path, text, mtime)], target_prefix, now, inactivity_minutes)
     return results[0]
+
+
+# ---------------------------------------------------------------------------
+# Window summary (looper_runner.py)
+# ---------------------------------------------------------------------------
+
+WINDOW_EXIT_NO_PROGRESS = "no-progress"
+WINDOW_EXIT_DEADLINE = "deadline"
+WINDOW_EXIT_MAX_ITERATIONS = "max-iterations"
+
+
+def window_summary(label: str, tasks_done: int, remaining: list[str],
+                   exit_reason: str) -> tuple[str, str, str]:
+    """Describe how a runner window ended. Returns (log_line, notify_msg, priority).
+
+    The runner infers progress from task-looper.log growing, so a session that
+    declines to start is indistinguishable from a drained queue at that level —
+    which is how the 2026-11-05 window came to end after 1 of 6 tasks with no
+    signal. Only `no-progress` with work still queued is anomalous; hitting the
+    window deadline or the iteration cap with work left is ordinary, and must not
+    be reported as a refusal.
+    """
+    left = ", ".join(remaining[:6]) + (" …" if len(remaining) > 6 else "")
+    n = len(remaining)
+    base = f"looper window '{label}'"
+
+    if not remaining:
+        return (
+            f"window {label}: done — {tasks_done} productive iteration(s), queue drained",
+            f"{base} finished: {tasks_done} productive iteration(s), queue drained. "
+            f"Details in ~/logs/studio-looper.log",
+            "normal" if tasks_done else "high",
+        )
+
+    if exit_reason == WINDOW_EXIT_NO_PROGRESS:
+        return (
+            f"window {label}: ENDED EARLY — {n} task(s) still queued: {left}",
+            f"{base} ended early: {tasks_done} productive iteration(s), {n} task(s) still "
+            f"queued ({left}). The last iteration made no progress while work remained — "
+            f"check the final studio-looper-run-*.log for whether the session refused to "
+            f"start.",
+            "high",
+        )
+
+    if exit_reason == WINDOW_EXIT_DEADLINE:
+        return (
+            f"window {label}: deadline reached — {n} task(s) still queued: {left}",
+            f"{base} hit its quota deadline after {tasks_done} productive iteration(s); "
+            f"{n} task(s) still queued ({left}). They carry over to the next window.",
+            "normal",
+        )
+
+    return (
+        f"window {label}: iteration cap reached — {n} task(s) still queued: {left}",
+        f"{base} hit the {tasks_done}-iteration cap; {n} task(s) still queued ({left}). "
+        f"They carry over to the next window.",
+        "normal",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -210,11 +269,22 @@ def _cli_concurrency(target_prefix: str, state_dir: str = "/tmp/studio-looper") 
         except OSError:
             continue
 
-    for r in classify_concurrency(state_files, target_prefix, now):
+    results = classify_concurrency(state_files, target_prefix, now)
+    for r in results:
         if r.status == "STALE":
             print(f"STALE:{r.path}:{r.deadline}:{r.session}:{r.current_task}:{r.reason}")
         else:
             print(f"LIVE:{r.path}:{r.deadline}:{r.session}:{r.current_task}")
+
+    # A positive all-clear, not silence. Silence is a weak signal: a session that
+    # sees no output has three louder cues pointing the other way (the runner's
+    # own lock file, its own `claude -p` process, and its own unterminated
+    # "Session started" line in task-looper.log) and has in practice gone process
+    # -hunting and refused to start against an empty queue. Say it outright.
+    if not results:
+        run_id = os.getenv("LOOPER_RUN_ID")
+        suffix = f" — launched by runner {run_id}" if run_id else ""
+        print(f"CLEAR:no other session targets {target_prefix}{suffix}")
 
 
 def _cli_check_path(path: str) -> None:

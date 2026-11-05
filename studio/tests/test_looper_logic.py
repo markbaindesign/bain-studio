@@ -5,6 +5,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 from looper_logic import (
+    WINDOW_EXIT_DEADLINE,
+    WINDOW_EXIT_MAX_ITERATIONS,
+    WINDOW_EXIT_NO_PROGRESS,
+    _cli_concurrency,
     classify_concurrency,
     classify_single_file,
     build_queue,
@@ -12,6 +16,7 @@ from looper_logic import (
     find_orphans,
     parse_mirror_tasks,
     parse_state_frontmatter,
+    window_summary,
 )
 
 
@@ -330,3 +335,111 @@ def test_classify_single_file_stale_by_inactivity():
     result = classify_single_file("/tmp/f.md", text, mtime, now)
     assert result.status == "STALE"
     assert "inactive-20m" in result.reason
+
+
+# ---------------------------------------------------------------------------
+# _cli_concurrency output contract
+#
+# The CLEAR line exists because silence is a weak signal. On 2026-11-05 a
+# headless run read empty output as "the guard is broken", went looking at
+# processes, found the runner's own lock and its own `claude -p` child, and
+# refused to start — ending the nightly window after 1 of 6 tasks.
+# ---------------------------------------------------------------------------
+
+def test_cli_concurrency_prints_clear_when_no_state_files(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("LOOPER_RUN_ID", raising=False)
+    _cli_concurrency("SL", str(tmp_path))
+    assert capsys.readouterr().out.strip() == "CLEAR:no other session targets SL"
+
+
+def test_cli_concurrency_clear_names_runner_when_launched_by_it(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("LOOPER_RUN_ID", "20261105-0200")
+    _cli_concurrency("SL", str(tmp_path))
+    out = capsys.readouterr().out.strip()
+    assert out.startswith("CLEAR:no other session targets SL")
+    assert "launched by runner 20261105-0200" in out
+
+
+def test_cli_concurrency_no_clear_line_when_a_run_is_live(tmp_path, capsys, monkeypatch):
+    """CLEAR must never co-exist with LIVE — that would be contradictory output."""
+    monkeypatch.delenv("LOOPER_RUN_ID", raising=False)
+    state = tmp_path / "studio-looper.sess-live.local.md"
+    state.write_text(_state_text("sess-live", "SL-001", "2099-01-01T00:00:00"))
+    _cli_concurrency("SL", str(tmp_path))
+    out = capsys.readouterr().out
+    assert "LIVE:" in out
+    assert "CLEAR:" not in out
+
+
+def test_cli_concurrency_ignores_other_queues_and_still_reports_clear(tmp_path, capsys, monkeypatch):
+    """A live SLT sandbox run is not a conflict for SL — SL must still read CLEAR."""
+    monkeypatch.delenv("LOOPER_RUN_ID", raising=False)
+    state = tmp_path / "studio-looper.sess-slt.local.md"
+    state.write_text(_state_text("sess-slt", "SLT-001", "2099-01-01T00:00:00", target_prefix="SLT"))
+    _cli_concurrency("SL", str(tmp_path))
+    assert capsys.readouterr().out.strip() == "CLEAR:no other session targets SL"
+
+
+# ---------------------------------------------------------------------------
+# window_summary
+#
+# The runner infers progress from task-looper.log growing, so a session that
+# declines to start looks exactly like a drained queue. Only no-progress with
+# work still queued is anomalous; the deadline and iteration-cap exits are
+# ordinary and must not be reported as a refusal.
+# ---------------------------------------------------------------------------
+
+def test_window_summary_drained_queue_is_normal():
+    log_line, msg, priority = window_summary("immediate", 6, [], WINDOW_EXIT_NO_PROGRESS)
+    assert priority == "normal"
+    assert "queue drained" in log_line
+    assert "queue drained" in msg
+    assert "ended early" not in msg
+
+
+def test_window_summary_drained_but_nothing_done_is_high():
+    """Zero productive iterations and an empty queue still warrants a look."""
+    _, _, priority = window_summary("immediate", 0, [], WINDOW_EXIT_NO_PROGRESS)
+    assert priority == "high"
+
+
+def test_window_summary_no_progress_with_work_left_flags_early_stop():
+    """The 2026-11-05 case: 1 of 6 done, iteration 2 refused, window closed."""
+    log_line, msg, priority = window_summary(
+        "immediate", 1, ["BD-190", "BD-192", "BD-183", "BD-185", "BD-172"],
+        WINDOW_EXIT_NO_PROGRESS,
+    )
+    assert priority == "high"
+    assert "ENDED EARLY" in log_line
+    assert "5 task(s) still queued" in msg
+    assert "BD-190" in msg and "BD-172" in msg
+    assert "refused to start" in msg
+
+
+def test_window_summary_deadline_with_work_left_is_not_an_early_stop():
+    """Hitting the quota deadline with work queued is ordinary — don't cry refusal."""
+    log_line, msg, priority = window_summary(
+        "immediate", 12, ["BD-190", "BD-192"], WINDOW_EXIT_DEADLINE
+    )
+    assert priority == "normal"
+    assert "ENDED EARLY" not in log_line
+    assert "deadline" in log_line
+    assert "carry over" in msg
+    assert "refused to start" not in msg
+
+
+def test_window_summary_iteration_cap_with_work_left_is_not_an_early_stop():
+    log_line, msg, priority = window_summary(
+        "immediate", 30, ["BD-190"], WINDOW_EXIT_MAX_ITERATIONS
+    )
+    assert priority == "normal"
+    assert "cap" in log_line
+    assert "refused to start" not in msg
+
+
+def test_window_summary_truncates_a_long_remaining_list():
+    remaining = [f"BD-{n}" for n in range(100, 110)]
+    log_line, msg, _ = window_summary("immediate", 1, remaining, WINDOW_EXIT_NO_PROGRESS)
+    assert "10 task(s) still queued" in msg
+    assert "…" in log_line
+    assert "BD-109" not in msg
