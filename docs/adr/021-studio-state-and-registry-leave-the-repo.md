@@ -141,8 +141,32 @@ Cron must never be left without its state; ADR 014 records what that costs.
 1. **What do `docs/projects/*.md` become?** Prose notes with `status` and `path` removed, generated
    wholesale from the registry, or moved out of the public repo? This overrides the "Single source
    of truth: `docs/projects/`" line in `CLAUDE.md`.
-2. **Does the Active projects table in `CLAUDE.md` stay?** It is already the most drifted of the
-   four. Generate it, or delete it and point at the registry.
+2. ~~**Does the Active projects table in `CLAUDE.md` stay?**~~ **Resolved 2026-11-05: deleted.**
+   See the addendum below.
 3. **Does `studio/inbox/` move** to `~/.local/state/bain-studio/inbox/`, which means changing
    `postman.py`, or stay put as a deliberate exception?
 4. **Does `~/.algolia/pulse-config.json` fold in** to the new layout, or stay where the tool expects it?
+
+### Addendum (2026-11-05): question 2 resolved, the table is deleted
+
+The Active projects table is gone from `CLAUDE.md`, which now points at `docs/projects/`
+instead. Commit `f66d85e`.
+
+Taken while cutting always-on context cost, not as part of this ADR's migration. The table
+cost ~1,900 characters in every session and sat directly beneath the line "Single source of
+truth: `docs/projects/` — do not duplicate project state here", so it was the clearest
+instance of the fourth source this ADR complains about. All twenty paths were verified
+present in `docs/projects/*.md` frontmatter first; `KF-WEB` lives in `kf.md` and `SLT`'s
+path in `sl.md`, which is why neither has a file of its own.
+
+Removing it broke four consumers, all fixed in the same commit: `register-project` lost its
+Step 3 (it appended a row), `abderus` and `harvest` now read paths from `docs/projects/`
+frontmatter, and the hermes docs for `register-project` and `commission` were corrected.
+
+**This picks "delete it" but not yet "point at the registry".** The XDG registry this ADR
+proposes does not exist, so the pointer goes to `docs/projects/` — the very thing open
+question 1 may change. When question 1 is settled and the registry moves, the pointer moves
+with it, and `/focus` (currently `projects.json`) and `/open` (currently `docs/projects/`)
+should be brought onto whatever wins at the same time.
+
+The ADR as a whole stays **Proposed**; only this question is settled.
