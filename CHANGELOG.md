@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-11-05
+
+### Added
+- **The Claude sessions dash is a pinned panel, not a terminal window.** `session-status --conky` prints the sessions once as conky markup and exits, feeding `~/.config/conky/studio-claude.conf` on the third monitor. The app used to run in a second Terminator window there, and getting back to the one holding the tmux sessions meant cycling *within* the app - `switch-windows` is disabled and `switch-applications` is `<Super>Tab`, which groups both windows under Terminator, and the launcher icon raised whichever it felt like. A dash is read, not typed into, so it stopped being a window: a dock with `SKIP_TASKBAR` and `SKIP_PAGER` that nothing can hand focus to.
+- **The panel reserves the right quarter of that monitor.** A dock publishes `_NET_WM_STRUT_PARTIAL`, so a window maximized there fills the left 1440px and the panel is never covered. Measured with a probe window on each monitor: fullscreen is unaffected - struts constrain maximize, not fullscreen - and the other two monitors are untouched.
+- **One card a session**, three lines each, on a rounded Tokyo Night surface with the status colour as a bar down the left edge. 480px is about 51 characters, which a table does not fit. Three lines rather than four because the card's height decides how many sessions the column holds - 13 against 10, where 12 sessions have been seen running at once. Anything past the thirteenth is counted on a `+N more` line, never dropped.
+- **Account usage as bars.** Under each account's quota line, one bar for the five-hour window and one for the week, each filled to its percentage with a marker where the budget says it should be by now. Ported from the studio dashboard's usage card, which is where the pace idea comes from. A window whose reset has already passed gets no bar, for the same reason the text says `reset` rather than quoting a figure from a window that is gone.
+- **`studio/claude_pace.py`**, holding the quota budget rules in one place: 20% a work day for the week with weekends budgeting nothing, 20% an hour for the five-hour window, amber 5 points over the budgeted figure and red 15. They were JavaScript in `dashboard.html`; `server.py` now serves `five_pace` and `weekly_pace` from the module, the page renders what it is sent, and its two functions are gone. The port was differential-tested against the JavaScript on 40 randomised cases before that code was deleted - no disagreement in `expected` or `state`.
+- **A level floor the dashboard did not have.** `colour_state` reports red at 90% of a window however well paced it is. Pace alone shows green at 95% on a Friday afternoon, because spending the last of the week on the last day is exactly on budget - which is the moment the warning is most wanted.
+
+### Changed
+- **The dashboard's Claude usage card reads its pace from the server** rather than computing it in the page, so the dashboard and the session dash cannot drift apart on what counts as burning too fast.
+
+### Fixed
+- **The dash no longer blocks maximizing the whole third monitor by accident.** It briefly ran as a `normal` window after "it prevents apps going fullscreen" was taken at face value, which turned out to be the wrong diagnosis: struts constrain maximize, and the reservation is wanted. The numbers are in `docs/utilities/session-status.md` rather than anyone's memory.
+
+### Notes for the next person
+Four dead ends are recorded in `docs/utilities/session-status.md`, all of which present as "nothing is drawing":
+- conky draws Imlib2 `${image}` **after** the text, so a background PNG covers every row. `lua_draw_hook_pre` is the only layer behind it, and it needs `conky-all`, not `conky-std` - both have Lua, only `conky-all` ships the cairo binding.
+- `CAIRO_OPERATOR_SOURCE` is **unbounded**: it paints the whole clip region rather than the path, so rounded corners come out square. The default `OVER` is bounded and keeps the source alpha anyway.
+- `${goto}` measures from the **window** edge, not the text area, so a card's body lines slide under its status bar unless they repeat the inner margin.
+- Check any of it with `gnome-screenshot`, never `import -window root`: under mutter the root window does not reliably hold what is on screen for a translucent window, and it produced two wrong diagnoses.
+
 ## [1.21.0] - 2026-11-05
 
 ### Added
