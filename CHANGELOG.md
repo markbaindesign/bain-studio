@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.0] - 2026-11-05
+
+### Fixed
+- **An `@mark` comment never reached Mark's inbox, and nothing said so.** Asana raises no notification for an `html_text` @-mention unless the person already **follows** the task - being the assignee is not enough, and the "creating an @-mention link will not automatically generate a notification" note in Asana's rich-text guide is the only place it is written down. Every review and blocked comment `sync.py` has posted with a mention since mention support shipped landed in the task thread and nowhere else, which, with an inbox filtered to Mentioned, means Mark never saw one. `leave_progress_comment` now adds `ASANA_USER_GID` as a follower before a mentioned comment, skipping the call when they already follow, waits `MENTION_FOLLOW_WAIT` (3s), then posts; a failure warns and posts anyway, because an unsignalled comment still beats a lost one. Only the fresh-post path does this - editing a story notifies nobody, so comments already posted cannot be rescued by rewriting them. Found by the bain.design session on BD-204 and verified live on SLT-005, a task Mark did not follow: the comment appeared under Mentioned.
+- **The follower that mention adds is recorded on the task being synced**, so the mirror written later in the same run holds it. A commented task is re-stamped at `now+60s` so its own writes do not trip the "Asana is newer" gate, which puts the *next* run on the push branch - where a mirror still showing the pre-mention follower set would have called `removeFollowers` on the very follower the mention depends on, an add/remove story per reviewed task per hour.
+- **`sync.py --comment` can now correct a comment instead of contradicting one.** From a bare task GID it has no project state to look the previous story up in, so it always posted afresh, leaving the old comment above the new one - the comment-plus-contradiction `docs/utilities/asana-comments.md` forbids. It now takes `--story-gid` to edit in place, and prints the story GID to pass next time. From a project mirror nothing changes: the scheduled sync tracks the story GID in `asana-ids.json` and already edits in place.
+
+### Changed
+- `docs/utilities/asana-comments.md` said a comment opening `@mark` "reaches his inbox" and that `--comment` behaves "like any Progress note". Both were wrong - the first about notification, the second true of rendering but not of editing. The follower precondition, the one case where a `--comment` follower is later removed, and the `--story-gid` form are now documented.
+
 ## [1.25.0] - 2026-11-05
 
 ### Added
