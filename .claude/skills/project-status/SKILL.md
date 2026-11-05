@@ -1,6 +1,7 @@
 ---
 name: project-status
-description: Set or view project status in projects.json. Statuses: featured (terminal launch + top of standup), active (normal sync), paused (skip cron sync, manual only), archived (hidden, done). Args: [PREFIX] [featured|active|paused|archived]
+description: "Set or view a project's status in projects.json: featured, active, paused or archived. Controls cron sync and standup placement."
+argument-hint: "[PREFIX] [featured|active|paused|archived]"
 allowed-tools: [Read, Edit, Bash]
 ---
 

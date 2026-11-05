@@ -26,7 +26,7 @@ Check current harvest status:
 ### 3. Gather context
 
 Read the following if they exist:
-- The project directory's `CLAUDE.md` — check CLAUDE.md's active projects table for the path
+- The project directory's `CLAUDE.md` — read the `path:` frontmatter in `docs/projects/{prefix}.md`
 - The project directory's `TODO.md`
 
 Do not invent details not present in the data or these files.

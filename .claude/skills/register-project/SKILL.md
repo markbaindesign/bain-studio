@@ -1,6 +1,6 @@
 ---
 name: register-project
-description: "Register a project in the studio: projects.json, docs/projects/, the CLAUDE.md table, and the project's own Asana block."
+description: "Register a project in the studio: projects.json, docs/projects/, and the project's own Asana block."
 argument-hint: "<path> <PREFIX> <name>"
 allowed-tools: [Read, Edit, Write, Bash, AskUserQuestion]
 ---
@@ -25,25 +25,9 @@ Write the updated JSON back.
 
 ## Step 2 — Create docs/projects/{prefix}.md
 
-This file (lowercase prefix, e.g. `docs/projects/tara.md`) is the single source of truth for project state per `bain-studio/CLAUDE.md` — the active-projects table there is just a path index. Look at an existing file in `docs/projects/` (e.g. `kf.md`) for the frontmatter shape and section layout, and write a new one following that pattern: prefix, name, status, client, type, repo, sector, stack, path, asana (yes/no), qa, inbox, open_tasks, current_focus, next_action, plus a short body (key contacts, notes).
+This file (lowercase prefix, e.g. `docs/projects/tara.md`) is the single source of truth for project state per `bain-studio/CLAUDE.md`, and the only index of prefix-to-path: `/focus` and `/open` resolve a prefix by reading these files, so the `prefix:` and `path:` frontmatter must be correct. Look at an existing file in `docs/projects/` (e.g. `kf.md`) for the frontmatter shape and section layout, and write a new one following that pattern: prefix, name, status, client, type, repo, sector, stack, path, asana (yes/no), qa, inbox, open_tasks, current_focus, next_action, plus a short body (key contacts, notes).
 
-## Step 3 — Add to CLAUDE.md active projects table
-
-Read `/media/data/dev/bain-studio/CLAUDE.md`.
-
-Find the `## Active projects` quick-reference table. Current format is path-only (name/status detail lives in the docs/projects file from Step 2):
-
-```
-| Prefix | Path |
-|--------|------|
-| MCF | `/home/...` |
-```
-
-Append a new row in that same format: `| {PREFIX} | \`{path}\` |`.
-
-Write the updated CLAUDE.md back.
-
-## Step 4 — Asana wiring
+## Step 3 — Asana wiring
 
 Ask the user (do not assume): does this project already have an Asana project, or does it need one created, or neither yet?
 
@@ -63,12 +47,11 @@ Ask the user (do not assume): does this project already have an Asana project, o
 
 - **No Asana yet**: leave `asana: "no"` in the docs/projects file and skip this step. Nothing to do in the target CLAUDE.md.
 
-## Step 5 — Report
+## Step 4 — Report
 
 ```
 register-project: {name}
   ✓ added to projects.json
   ✓ created docs/projects/{prefix}.md
-  ✓ added to CLAUDE.md active projects table ({PREFIX})
   ✓/… Asana: {what happened — wired existing GID / pointed to sync.py --create / none yet}
 ```

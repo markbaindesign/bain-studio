@@ -40,7 +40,7 @@ Pass a fragment of the spec filename or a direct path. The skill searches `specs
 
 5. **Inits CLAUDE.md** — runs `/init` to generate project documentation
 
-6. **Registers in studio** — runs `/register-project` to add to `projects.json` and the CLAUDE.md active projects table
+6. **Registers in studio** — runs `/register-project` to add to `projects.json` and `docs/projects/{prefix}.md`
 
 7. **Seeds tasks** — runs `/seed-tasks` to create Phase tasks in Asana from the spec
 

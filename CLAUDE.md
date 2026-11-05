@@ -87,66 +87,28 @@ per-project case study folders above.
 
 ## Active projects
 
-Single source of truth: `docs/projects/` — one file per project with path, status, stack, and system enrollment. Do not duplicate project state here.
-
-Quick reference (paths only — see project file for full details):
-
-| Prefix | Path |
-|--------|------|
-| BSTD | `/media/data/dev/bain-studio` |
-| KF-WEB | `/media/data/dev/vvv/clients/www/kf-21` |
-| MCF | `/home/bain/code/misc/js/astrojs/client/mhairi_mcf` |
-| UAP | `/media/data/dev/misc/upwork-proposals` |
-| DOM | `/media/data/dev/misc/premium_domains` |
-| NORE | `/home/bain/code/vvv/clients/www/nore` |
-| BD | `/media/data/dev/bain/www/bain.design` |
-| FOOB | `/media/data/dev/ddev/wp-foobot-api-plugin` |
-| TARA | `/media/data/dev/misc/kf-tara-web` |
-| TSTY | `/media/data/dev/ddev/techstyle` |
-| EBIZG | `/media/data/dev/ddev/ebiz-global` |
-| SL | `/media/data/dev/bain-studio/studio/looper` |
-| SLT | `/media/data/dev/bain-studio/studio/looper-test` |
-| BTF | `/media/data/dev/bain-theme-factory` |
-| MWE | `/media/data/dev/vvv/clients/www/middlewayeducation` |
-| AW | `/media/data/dev/vvv/clients/www/alex-wright` |
-| ASP | `/media/data/dev/ddev/algolia-search` |
-| LRET | `/media/data/dev/other-wp/lead-retriever` |
-| TIS | `/media/data/dev/ddev/tis` |
-| JBP | `/media/data/dev/vvv/clients/www/beato-properties` |
+Single source of truth: `docs/projects/` — one file per project, carrying `prefix` and
+`path` in its frontmatter alongside status, stack and system enrollment. Do not duplicate
+project state here; `/focus` and `/open` resolve a prefix to a path from those files.
 
 SL (Studio Looper) is not a codebase — it is the cross-project queue. Tasks are multi-homed into
 it from their home projects and keep their home prefix, so a task listed there is mirrored twice
-and must be worked in the project its prefix resolves to. See `docs/projects/sl.md`.
+and must be worked in the project its prefix resolves to. See `docs/projects/sl.md`, which also
+covers SLT (`studio/looper-test`).
 
 ## Skills
 
 Skills created while working in this project live in `.claude/skills/` at the project root, not in `~/.claude/skills/` (global). This keeps studio tooling versioned and committed with the repo.
 
-**Studio skills available globally** — symlinked from this repo into `~/.claude/skills/` so they work in any project context:
+A studio skill is made available globally by symlinking it into `~/.claude/skills/`, so it works in any project context:
 
 ```bash
 ln -s /media/data/dev/bain-studio/.claude/skills/{name} ~/.claude/skills/{name}
 ```
 
-| Skill | Reason |
-|-------|--------|
-| `brand-doc` | brands any .md file as a Bain Design PDF |
-| `recap` | per-project re-entry brief: git, Asana, inbox, next action |
-| `focus` | mid-day context switch — `/focus MCF` from studio dir |
-| `end-session` | project-level wrap-up: commit, sync mirror, write handoff note |
-| `ga-report` | pull GA4 data and generate a branded benchmark report for client handoff |
-| `interview-me` | real-time voice interview via OpenAI Realtime API, takes a topic arg |
-| `proposal-intake` | turns raw client input (RFP, emails, notes) into a proposal skeleton, flagging gaps |
-| `proposal-writer` | turns a completed proposal skeleton into a client-ready proposal + branded PDF |
-| `bookkeeper` | catches the GnuCash books up from bank feeds (Wise API + CSV imports) |
-
-**Global-only skills** (not in this repo — live directly in `~/.claude/skills/`):
-- `grill-me` — general planning, useful everywhere
-- `web-researcher` — general research
-- `wp-css-override` — used in client WordPress projects
-- `wp-plugin-expert` — used in client WordPress projects
-- `copywriter` — used for client copy
-- `notify` — Slack ping on task/script completion, works from any project
+Generic, project-agnostic skills live in `/media/data/dev/bain-skills` instead and are
+symlinked the same way. No inventory is kept here: every skill's own description is already
+loaded into context, so list `~/.claude/skills/` or the two source repos for the current set.
 
 ## Claude settings
 
