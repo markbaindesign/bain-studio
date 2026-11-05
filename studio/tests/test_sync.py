@@ -1690,16 +1690,23 @@ def test_mention_adds_follower_before_posting():
     calls = []
 
     def fake_post(path, payload):
-        calls.append(path)
+        calls.append(path.split("?")[0])
+        if "addFollowers" in path:
+            return {"data": {"followers": [{"gid": "507443625075", "name": "Mark Bain"}]}}
         return {"data": {"gid": "NEW1"}}
 
+    task = {"gid": "TASK1", "followers": [{"gid": "bot", "name": "DevBot"}]}
     with patch.object(sync, "USER_GID", "507443625075"), \
          patch.object(sync, "MENTION_FOLLOW_WAIT", 0), \
          patch.object(sync, "_get", return_value={"data": {"followers": []}}), \
          patch.object(sync, "_post", side_effect=fake_post):
-        got = sync.leave_progress_comment("TASK1", REVIEW_NOTE)
+        got = sync.leave_progress_comment("TASK1", REVIEW_NOTE, task=task)
     assert got == "NEW1"
     assert calls == ["/tasks/TASK1/addFollowers", "/tasks/TASK1/stories"]
+    # The mirror is rebuilt from this task later in the run: without the new
+    # follower on it, the next sync would remove him again.
+    assert {f["gid"] for f in task["followers"]} == {"bot", "507443625075"}
+    assert [f["name"] for f in task["followers"] if f["gid"] == "507443625075"] == ["Mark Bain"]
 
 
 def test_mention_skips_add_when_already_following():

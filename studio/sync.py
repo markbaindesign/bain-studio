@@ -1276,28 +1276,32 @@ def leave_comment(task_gid: str, text: str, dry_run=False):
 MENTION_FOLLOW_WAIT = 3.0   # seconds, between addFollowers and the story
 
 
-def _ensure_follower(task_gid: str, user_gid: str) -> bool:
+def _ensure_follower(task_gid: str, user_gid: str):
     """Make `user_gid` follow `task_gid` so an @-mention actually notifies.
 
-    Returns True when a follower was just added, meaning the caller should
-    pause before posting. Never raises: a note that cannot be signalled is
-    still worth posting, so a failure warns and carries on.
+    Returns (added, name): `added` True when a follower was just added, meaning
+    the caller should pause before posting and record the new follower. Never
+    raises — a note that cannot be signalled is still worth posting, so a
+    failure warns and carries on.
     """
     try:
         data = (_get(f"/tasks/{task_gid}", {"opt_fields": "followers.gid"}) or {}).get("data") or {}
         if any((f or {}).get("gid") == user_gid for f in (data.get("followers") or [])):
-            return False
-        _post(f"/tasks/{task_gid}/addFollowers", {"data": {"followers": [user_gid]}})
-        log.info(f"    Added {user_gid} as a follower of {task_gid} so the @-mention notifies")
-        return True
+            return False, ""
+        resp = _post(f"/tasks/{task_gid}/addFollowers?opt_fields=followers.gid,followers.name",
+                     {"data": {"followers": [user_gid]}})
+        fols = ((resp or {}).get("data") or {}).get("followers") or []
+        name = next((f.get("name", "") for f in fols if (f or {}).get("gid") == user_gid), "")
+        log.info(f"    Added {name or user_gid} as a follower of {task_gid} so the @-mention notifies")
+        return True, name
     except Exception as e:
         log.warning(f"    Could not add {user_gid} as a follower of {task_gid} ({e}) — "
                     f"posting the note anyway, but the mention may not reach the inbox")
-        return False
+        return False, ""
 
 
 def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
-                           dry_run=False) -> str:
+                           dry_run=False, task: dict = None) -> str:
     """Post (or edit in place) the review comment built from a Progress note.
 
     `mirror_text` is the single mirror line, BLOCK_SEP-encoded. When `story_gid`
@@ -1331,8 +1335,20 @@ def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
     # Only a fresh post can notify: re-mentioning someone already mentioned on
     # an edited story raises nothing, which is why an already-posted note that
     # missed the inbox cannot be rescued by editing it.
-    if wants_mention and USER_GID and _ensure_follower(task_gid, USER_GID):
-        time.sleep(MENTION_FOLLOW_WAIT)
+    if wants_mention and USER_GID:
+        added, uname = _ensure_follower(task_gid, USER_GID)
+        if added:
+            time.sleep(MENTION_FOLLOW_WAIT)
+            # Record the new follower on the in-memory task, which the mirror is
+            # rebuilt from later this run. Without this the mirror still shows
+            # the pre-mention set, and _push_set_field — which diffs the mirror
+            # against LIVE Asana, with no last-synced guard — would call
+            # removeFollowers on the next run: an add/remove story per task per
+            # hour, the PIPE-028 flood that buries human comments.
+            if task is not None:
+                fols = task.setdefault("followers", [])
+                if not any((f or {}).get("gid") == USER_GID for f in fols):
+                    fols.append({"gid": USER_GID, "name": uname})
     resp = _post(f"/tasks/{task_gid}/stories", {"data": {"html_text": html}})
     return (resp.get("data") or {}).get("gid")
 
@@ -1843,7 +1859,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                 try:
                     verb = "Editing" if edit_story else "Posting"
                     log.info(f"  [{proj.prefix}] {verb} progress comment for {local_id}...")
-                    new_story = leave_progress_comment(gid, curr_p, edit_story, dry_run)
+                    new_story = leave_progress_comment(gid, curr_p, edit_story, dry_run, task=t)
                     if not dry_run:
                         posted_progress[gid]  = curr_p
                         progress_stories[gid] = new_story or edit_story
