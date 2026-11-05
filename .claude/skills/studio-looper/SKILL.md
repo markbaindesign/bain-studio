@@ -224,7 +224,7 @@ died mid-task (session limit, crash, one-shot `-p` exit) — stranded tasks are 
 queue and sit there forever. Before building the queue, find orphans (an `In progress` task in
 the target mirror not claimed as `current_task` by any live state file):
 ```bash
-LIVE_TASKS=$(python3 studio/scripts/looper_logic.py concurrency {TARGET_PREFIX} | grep '^LIVE:' | cut -d: -f5 | paste -sd, -)
+LIVE_TASKS=$(python3 studio/scripts/looper_logic.py live-tasks {TARGET_PREFIX} | paste -sd, -)
 python3 studio/scripts/looper_logic.py orphans {TARGET_DIR}/asana-mirror.md "$LIVE_TASKS"
 ```
 For each printed task ID, reset it to `Queue` in the mirror and log it:
@@ -233,6 +233,11 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{TARGET_PREFIX}] Orphan recovery: {T
 ```
 (The reset is pushed to Asana by this session's own sync flow; recovered tasks join the queue
 below.)
+
+Use `live-tasks` — never field-split the `concurrency` lines. That step previously read
+`concurrency | grep '^LIVE:' | cut -d: -f5`, but the deadline is an ISO timestamp whose own colons
+shift every later field, so `-f5` returned `00` rather than the task ID. The live set was therefore
+always empty or wrong, which could reset a genuinely in-flight task back to `Queue`.
 
 Build the queue — tasks with `**Looper Status:** Queue` that sit above the mirror's `## DONE`
 section, sorted by Priority (High > Medium > Low > none) then mirror order as tiebreak:

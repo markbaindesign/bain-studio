@@ -9,6 +9,7 @@ from looper_logic import (
     WINDOW_EXIT_MAX_ITERATIONS,
     WINDOW_EXIT_NO_PROGRESS,
     _cli_concurrency,
+    _cli_live_tasks,
     classify_concurrency,
     classify_single_file,
     build_queue,
@@ -443,3 +444,43 @@ def test_window_summary_truncates_a_long_remaining_list():
     assert "10 task(s) still queued" in msg
     assert "…" in log_line
     assert "BD-109" not in msg
+
+
+# ---------------------------------------------------------------------------
+# _cli_live_tasks
+#
+# Replaces SKILL.md Step 2's `concurrency | grep '^LIVE:' | cut -d: -f5`. The
+# deadline is an ISO timestamp, so its colons shifted every later field and -f5
+# returned "00" instead of the task ID — orphan recovery's live set was always
+# wrong, and could reset an in-flight task back to Queue.
+# ---------------------------------------------------------------------------
+
+def test_cli_live_tasks_prints_current_task_not_a_timestamp_fragment(tmp_path, capsys):
+    state = tmp_path / "studio-looper.sess-x.local.md"
+    state.write_text(_state_text("sess-x", "SL-042", "2099-01-01T20:00:00"))
+    _cli_live_tasks("SL", str(tmp_path))
+    assert capsys.readouterr().out.split() == ["SL-042"]
+
+
+def test_cli_live_tasks_excludes_stale_sessions(tmp_path, capsys):
+    """A stale file's task is an orphan candidate, so it must not count as live."""
+    stale = tmp_path / "studio-looper.sess-old.local.md"
+    stale.write_text(_state_text("sess-old", "SL-099", "2000-01-01T00:00:00"))
+    _cli_live_tasks("SL", str(tmp_path))
+    assert capsys.readouterr().out.strip() == ""
+
+
+def test_cli_live_tasks_excludes_other_queues(tmp_path, capsys):
+    state = tmp_path / "studio-looper.sess-slt.local.md"
+    state.write_text(_state_text("sess-slt", "SLT-001", "2099-01-01T20:00:00", target_prefix="SLT"))
+    _cli_live_tasks("SL", str(tmp_path))
+    assert capsys.readouterr().out.strip() == ""
+
+
+def test_cli_live_tasks_lists_every_live_session_one_per_line(tmp_path, capsys):
+    for sess, task in (("a", "SL-001"), ("b", "SL-002")):
+        (tmp_path / f"studio-looper.sess-{sess}.local.md").write_text(
+            _state_text(f"sess-{sess}", task, "2099-01-01T20:00:00")
+        )
+    _cli_live_tasks("SL", str(tmp_path))
+    assert sorted(capsys.readouterr().out.split()) == ["SL-001", "SL-002"]

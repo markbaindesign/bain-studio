@@ -258,8 +258,7 @@ def compute_deadline(
 # CLI
 # ---------------------------------------------------------------------------
 
-def _cli_concurrency(target_prefix: str, state_dir: str = "/tmp/studio-looper") -> None:
-    now = datetime.datetime.now()
+def _read_state_files(state_dir: str) -> list:
     state_files = []
     for p in sorted(Path(state_dir).glob("studio-looper.*.local.md")):
         try:
@@ -268,7 +267,12 @@ def _cli_concurrency(target_prefix: str, state_dir: str = "/tmp/studio-looper") 
             state_files.append((str(p), text, mtime))
         except OSError:
             continue
+    return state_files
 
+
+def _cli_concurrency(target_prefix: str, state_dir: str = "/tmp/studio-looper") -> None:
+    now = datetime.datetime.now()
+    state_files = _read_state_files(state_dir)
     results = classify_concurrency(state_files, target_prefix, now)
     for r in results:
         if r.status == "STALE":
@@ -308,6 +312,21 @@ def _cli_queue(mirror_path: str) -> None:
         print(f"{t.local_id}\t{t.priority}\t{t.title}")
 
 
+def _cli_live_tasks(target_prefix: str, state_dir: str = "/tmp/studio-looper") -> None:
+    """Local IDs claimed as current_task by a LIVE session, one per line.
+
+    Exists so callers never field-split the `concurrency` lines. SKILL.md Step 2
+    used to do `concurrency | grep '^LIVE:' | cut -d: -f5`, but the deadline is an
+    ISO timestamp whose own colons shift every later field — f5 landed on "00"
+    instead of the task ID, so orphan recovery's live set was always wrong and
+    could reset a genuinely in-flight task back to Queue.
+    """
+    now = datetime.datetime.now()
+    for r in classify_concurrency(_read_state_files(state_dir), target_prefix, now):
+        if r.status == "LIVE" and r.current_task:
+            print(r.current_task)
+
+
 def _cli_orphans(mirror_path: str, live_tasks: str) -> None:
     text = Path(mirror_path).read_text()
     tasks = parse_mirror_tasks(text)
@@ -327,12 +346,15 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 2:
-        print("usage: looper_logic.py {concurrency|queue|orphans|deadline|check-path} ...", file=sys.stderr)
+        print("usage: looper_logic.py {concurrency|live-tasks|queue|orphans|deadline|check-path} ...",
+              file=sys.stderr)
         sys.exit(2)
 
     cmd, args = sys.argv[1], sys.argv[2:]
     if cmd == "concurrency":
         _cli_concurrency(*args)
+    elif cmd == "live-tasks":
+        _cli_live_tasks(*args)
     elif cmd == "queue":
         _cli_queue(*args)
     elif cmd == "orphans":
