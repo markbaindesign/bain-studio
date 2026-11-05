@@ -1,6 +1,6 @@
 ---
 name: athena
-description: Qualify a brief, research the client, estimate scope, and draft a proposal. Receives an Athena brief from triage or interactive input. Invoke when a new inquiry has been qualified as Pursue.
+description: "Qualify a brief, research the client, estimate scope, draft a proposal. Invoke when an inquiry is qualified as Pursue."
 ---
 
 # Athena — Strategy, Qualification, Estimation, Proposals

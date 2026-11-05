@@ -1,6 +1,6 @@
 ---
 name: ai-search-readiness
-description: Assess whether a site is ready to be crawled and cited by AI search tools (ChatGPT, Perplexity, Google AI Overviews, Claude) — AI bot access, llms.txt, structured data, and JS-rendering dependency. Distinct from /seo-audit (traditional technical SEO). Produces a report with prioritised action points, brandable via /brand-doc.
+description: "Audit a site's readiness to be crawled and cited by AI search (ChatGPT, Perplexity, AI Overviews): bot access, llms.txt, structured data, JS rendering. Not /seo-audit."
 ---
 
 # AI Search Readiness Audit

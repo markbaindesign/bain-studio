@@ -1,6 +1,6 @@
 ---
 name: harvest
-description: Generate the three harvest outputs for a completed project — case study, blog post, and testimonial request email. Run after delivery. Updates Mnemosyne harvest status. Enforces Law V.
+description: "Generate the three harvest outputs for a completed project: case study, blog post, testimonial request email. Run after delivery."
 ---
 
 # Harvest
@@ -26,7 +26,7 @@ Check current harvest status:
 ### 3. Gather context
 
 Read the following if they exist:
-- The project directory's `CLAUDE.md` — check CLAUDE.md's active projects table for the path
+- The project directory's `CLAUDE.md` — read the `path:` frontmatter in `docs/projects/{prefix}.md`
 - The project directory's `TODO.md`
 
 Do not invent details not present in the data or these files.

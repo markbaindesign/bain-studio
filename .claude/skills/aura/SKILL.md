@@ -1,6 +1,6 @@
 ---
 name: aura
-description: SEO strategy for a client project. Interprets audit data (seo-audit, Ahrefs CSV, Google Search Console), identifies highest-leverage opportunities, drafts meta copy, and produces a prioritised action plan. Invoke per-project when the question is "how do we improve rankings".
+description: "SEO strategy per project: interprets seo-audit, Ahrefs or Search Console data into a prioritised action plan and meta copy."
 allowed-tools: [Bash, Read, Write, WebSearch]
 ---
 

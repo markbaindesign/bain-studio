@@ -1,6 +1,6 @@
 ---
 name: task-looper
-description: DEPRECATED — superseded by studio-looper (ADR 009). Do not start a task-looper run; redirect to /studio-looper.
+description: "DEPRECATED, superseded by /studio-looper (ADR 009). Do not start a run; redirect to /studio-looper."
 allowed-tools:
   - Read
 ---

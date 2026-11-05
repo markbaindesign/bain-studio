@@ -1,6 +1,6 @@
 ---
 name: perf-audit
-description: Performance audit against a live URL using Google PageSpeed Insights. Runs mobile + desktop, surfaces Core Web Vitals, and produces a prioritised fix list (P1-P4) ordered by impact. Saves a dated markdown report to context/perf/ in the project directory.
+description: "Performance audit of a live URL via PageSpeed Insights, mobile and desktop, with a P1-P4 prioritised fix list."
 allowed-tools: [Bash, Read, Write]
 ---
 

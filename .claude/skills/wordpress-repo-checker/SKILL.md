@@ -1,6 +1,6 @@
 ---
 name: wordpress-repo-checker
-description: Validates a WordPress theme or plugin against wordpress.org repository requirements. Checks licensing, code quality, security, file structure, and compliance rules.
+description: "Validate a WordPress theme or plugin against wordpress.org repository requirements: licensing, code quality, security, structure."
 allowed-tools: [Read, Bash]
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: check-inbox
-description: Read and process any pending messages in the current project's .claude/inbox/ (and studio/inbox/ in bain-studio). Surfaces alerts, handoffs, and events from other agents or the studio system. Archives processed messages.
+description: "Read and process pending messages in the current project's .claude/inbox/, then archive them."
 allowed-tools: [Read, Bash, Edit]
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: studio-looper
-description: Cross-project task queue — works BainBot tasks from any studio project in Asana priority order. Advances tasks through Looper Status field. Hands completed work to Mark for review rather than marking done.
+description: "Cross-project task queue: works BainBot tasks from any studio project in Asana priority order, handing finished work to Mark for review."
 allowed-tools: [Bash, Read, Edit]
 ---
 

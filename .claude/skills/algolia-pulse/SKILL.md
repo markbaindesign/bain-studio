@@ -1,6 +1,6 @@
 ---
 name: algolia-pulse
-description: Keeps Algolia free-tier apps alive by querying one index in each periodically. Prevents auto-closure of inactive applications. Configure via JSON file with app credentials, attach to cron for automated runs.
+description: "Keep Algolia free-tier apps alive by periodically querying one index in each, preventing auto-closure. Cron-driven."
 allowed-tools: [Bash, Read, Write]
 ---
 

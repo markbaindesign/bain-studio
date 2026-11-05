@@ -1,6 +1,7 @@
 ---
 name: interview-me
-description: Real-time voice interview using the grill-me persona. Launches OpenAI Realtime API session. Takes a topic arg.
+description: "Real-time voice interview using the grill-me persona via the OpenAI Realtime API."
+argument-hint: "<topic>"
 ---
 
 Launch a real-time voice interview session.

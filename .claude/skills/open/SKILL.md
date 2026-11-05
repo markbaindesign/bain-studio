@@ -1,6 +1,7 @@
 ---
 name: open
-description: Open a project as a new window in the studio tmux session, with Claude Code running. Takes a project prefix (e.g. /open MCF). Looks up the path from docs/projects/ and opens the window via studio-tmux.
+description: "Open a project as a new window in the studio tmux session with Claude Code running."
+argument-hint: "<PREFIX>"
 allowed-tools: [Bash]
 ---
 

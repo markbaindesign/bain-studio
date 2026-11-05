@@ -1,6 +1,6 @@
 ---
 name: triage
-description: Triage an inbound signal — classify it, qualify it if it's an RFQ, and route it. Paste the signal text as the argument. Handles email, LinkedIn, referral, contact form, and direct outreach. For automated Upwork pipeline signals, use the UAP project pipeline instead.
+description: "Triage an inbound signal: classify, qualify if an RFQ, and route it. Email, LinkedIn, referral, contact form, outreach. Not for Upwork pipeline signals."
 ---
 
 # Triage (Autolycus)

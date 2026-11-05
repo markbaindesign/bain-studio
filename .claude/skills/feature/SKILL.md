@@ -1,6 +1,6 @@
 ---
 name: feature
-description: Capture a feature request — scope it, create an Asana task, and (if large) write a lightweight spec. Works in any active project directory.
+description: "Capture a feature request: scope it, create an Asana task, and if large write a lightweight spec. Works in any active project."
 allowed-tools: [Read, Write, Edit, Bash]
 ---
 

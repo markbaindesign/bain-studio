@@ -1,7 +1,6 @@
 ---
 name: wp-defaults
-description: Apply Bain Design's standard defaults to a fresh WordPress install — debug wp-config constants, and removal of default bundled content/plugins (Hello Dolly, Akismet, Jetpack, sample post/page/comment). Run inside a DDEV WordPress project directory right after `wp core install`. Fresh installs only — an existing site pulled into DDEV keeps its own wp-config and content untouched.
-argument-hint: [path]
+description: "Apply studio defaults to a fresh WordPress install: debug wp-config constants, remove bundled content and plugins. Run after wp core install. Fresh installs only."
 allowed-tools: [Bash]
 ---
 

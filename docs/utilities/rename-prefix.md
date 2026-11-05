@@ -39,7 +39,7 @@ Run it well clear of the top of the hour: 62 Asana writes took about two minutes
 - Verify: `python3 studio/sync.py --project NEW --dry-run` should report no re-homed or newly
   assigned IDs.
 - Update references in docs and code: `docs/projects/{old}.md` (rename the file and its
-  `prefix:`), the Active projects table in `CLAUDE.md`, `docs/studio-map.md`, skills and
+  `prefix:`), `docs/studio-map.md`, skills and
   collectors that pass `--project OLD`. Leave history (changelogs, commit messages, old analyses)
   as it is.
 - The Asana project's own name is not changed.

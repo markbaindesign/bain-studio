@@ -1,6 +1,6 @@
 ---
 name: studio-shutdown
-description: End-of-session studio shutdown routine. Commits any mirror edits, runs a retro to capture learnings, flags anything unfinished, and leaves the studio in a clean state. Run at the end of any work session.
+description: "End-of-session shutdown: commit mirror edits, run a retro, flag anything unfinished. Run at the end of a work session."
 allowed-tools: [Read, Write, Edit, Bash]
 ---
 

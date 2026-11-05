@@ -1,6 +1,6 @@
 ---
 name: linkedin-post
-description: Publish an approved post to Mark's personal LinkedIn profile via studio/linkedin_post.py, then mark it published in the Kairos broadcast log. Use after Aura has drafted and Kairos has timed a post, or when Mark says "post this to LinkedIn".
+description: "Publish an approved post to Mark's LinkedIn profile and mark it published in the Kairos broadcast log."
 allowed-tools: [Read, Edit, Bash]
 ---
 

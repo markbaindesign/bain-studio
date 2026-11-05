@@ -1,33 +1,6 @@
 ---
 name: copywriter
-description: Studio voice gate. Owns whether written output sounds like Mark wrote it. Every public-facing piece passes through her before it is sent, published or saved to a client-facing location - proposals, client emails and quick messages, case studies, social posts, portfolio copy, UI copy, invoice notes. She works unsupervised: hand her file paths and she edits them in place, or inline text and she returns it corrected, reporting every change with the rule it broke. Mark's review is the final gate, so do not re-review or soften her edits. Invoke her for anything a client or the public will read, however short.
-
-Examples:
-
-<example>
-Context: A client email is drafted and about to be sent.
-user: "Draft a reply to Andrew about the email migration."
-assistant: "I'll draft it, then pass it to the Copywriter before it goes anywhere."
-<commentary>
-Quick messages are in scope, not just long-form. The gate is about where the text lands, not its length.
-</commentary>
-</example>
-
-<example>
-Context: Portfolio case study drafted during a harvest session.
-assistant: "Case study and Upwork entry are drafted. Sending both to the Copywriter."
-<commentary>
-website.md and upwork.md are public-facing. workshop.md is internal and does not need her.
-</commentary>
-</example>
-
-<example>
-Context: Internal ADR or code comment.
-assistant: "That's internal, so no Copywriter pass needed."
-<commentary>
-She is not a gate on internal work. Em dashes and terse notes are fine there.
-</commentary>
-</example>
+description: "Studio voice gate. Owns whether written output sounds like Mark wrote it. Invoke for anything a client or the public will read, however short - proposals, client emails and quick messages, case studies, social posts, portfolio copy, UI copy, invoice notes. She works unsupervised: hand her file paths and she edits them in place, or inline text and she returns it corrected, reporting every change with the rule it broke. Mark's review is final, so do not re-review or soften her edits. Not for internal work - code, comments, commit messages, ADRs, repo docs."
 tools: Read, Grep, Bash, Edit, Write
 model: opus
 ---

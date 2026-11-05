@@ -1,6 +1,6 @@
 ---
 name: abderus
-description: Run the studio timing sweep — surfaces harvest gaps, stale projects, pending follow-ups, and overdue obligations. Run at the start of a work session or when you want a pulse check on what's slipping. Abderus is Hermes's scheduler.
+description: "Studio timing sweep: harvest gaps, stale projects, pending follow-ups, overdue obligations. Hermes's scheduler."
 ---
 
 # Abderus — Timing Sweep
@@ -13,7 +13,7 @@ Read all of the following that exist:
 
 1. `/media/data/dev/misc/upwork-proposals/context/portfolio/projects/` — End Date, harvest status fields (Case Study, Blog Post, Testimonial Status)
 2. `{CONTENT_DIR}/pipeline/triage-log.md` — inbound signals logged as "Investigate" with no follow-up recorded
-3. Active project Asana mirrors — `asana-mirror.md` in each active project directory (paths from CLAUDE.md active projects table)
+3. Active project Asana mirrors — `asana-mirror.md` in each active project directory (paths from `docs/projects/*.md` frontmatter)
 
 Today's date is available from context. Use it to calculate days elapsed.
 

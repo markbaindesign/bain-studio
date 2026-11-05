@@ -1,6 +1,7 @@
 ---
 name: seed-tasks
-description: Create initial tasks in an Asana project via the bainbot API. Standalone step — callable directly or by /commission. Args: project-gid "Task 1" "Task 2" ...
+description: "Create initial tasks in an Asana project via the bainbot API."
+argument-hint: "<project-gid> TASK TASK..."
 allowed-tools: [Bash, Read]
 ---
 

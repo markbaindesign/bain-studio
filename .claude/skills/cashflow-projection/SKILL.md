@@ -1,6 +1,6 @@
 ---
 name: cashflow-projection
-description: Cashflow projection for the next 90 days. Reads GnuCash snapshot and active project pipeline, models income against outgoings, flags break-even risk. Run monthly or when planning new work.
+description: "90-day cashflow projection from GnuCash and the active pipeline, flagging break-even risk. Run monthly or when planning new work."
 allowed-tools: [Read, Write, Bash]
 ---
 
