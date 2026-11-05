@@ -188,15 +188,54 @@ column holds 51, so they are stacked rather than compressed: the reset times are
 the header is for. Each account colours on its own worst window, so one going red does not
 drag the other with it.
 
+### Account usage, as bars
+
+Under each account's quota line sit two bars - the five-hour window and the week - each
+filled to its percentage with a **marker where the budget says it should be by now**. Where
+the fill has passed the marker, that account is spending faster than the window allows for.
+
+The pace rules come from the studio dashboard's Claude usage card, and now live in
+`studio/claude_pace.py` so they exist once:
+
+| | Budget | |
+|---|---|---|
+| Weekly | 20% a work day, Monday to Friday | a weekend budgets nothing, so a quiet Sunday does not make Monday look frugal |
+| Five-hour | 20% an hour, linear | no weekend in five hours |
+
+Over budget by more than 5 points colours amber, more than 15 red. **Plus one rule the
+dashboard does not have**: a window at 90% or more is red whatever its pace. Pace alone
+reports green at 95% on a Friday afternoon, because spending the last of the week on the last
+day is exactly on budget - and that is the moment the warning is most wanted.
+`claude_pace.colour_state` is where that floor lives.
+
+`server.py` now serves `five_pace` and `weekly_pace` from the same module and `dashboard.html`
+renders them, so the two displays cannot drift apart. The port was checked against the
+JavaScript it replaced on 40 randomised cases before the JavaScript was deleted: no
+disagreement in either `expected` or `state`.
+
+A window whose reset time has already passed gets **no bar**. Its figure belongs to a window
+that is gone - the text says `reset` rather than quoting it, and a bar would be drawn against
+a budget that no longer applies.
+
 ### Who owns the measurements
 
 `session-status --conky` owns every pixel on the panel and `studio-claude-bg.lua` owns none.
 The script lays out the lines, so it is the only thing that can know where a card's three
-lines fall; it computes each card's rectangle and writes them to
-`~/.cache/bain-studio/claude-dash-cards.txt`, one `y height colour pulse` a line, and the hook
-paints what it is told. The same gap is fed to conky as `${voffset}` and used to place the
-rectangle, which is what stops a card drifting away from its text - a unit test holds the two
-together.
+lines fall; it computes every rectangle and writes them to
+`~/.cache/bain-studio/claude-dash-cards.txt`, one a line, typed by its first word:
+
+```
+card <y> <height> <colour> <pulse>
+bar  <y> <x> <width> <height> <fill> <colour> <marker>
+```
+
+The hook paints what it is told. A marker of `-1` means the window has no known budget.
+
+**A bar's height exists twice** - once as a `${voffset}` in the text and once in the pixel
+total the cards are placed from - because a painted bar takes no space in the text and has to
+have space made for it. If those two disagree, every card below the header is wrong, so a
+test adds up the voffsets in the header and asserts they come to the header's stated height.
+The same holds for the gap between cards.
 
 A read of that file can be one refresh behind the text, and only in the moment a session
 appears or disappears: conky builds its text before it draws.
