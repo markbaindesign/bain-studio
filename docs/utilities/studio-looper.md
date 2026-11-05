@@ -42,7 +42,7 @@ Must be invoked from `/media/data/dev/bain-studio`.
 6. Mark reviews tasks in the Review section, marks them done himself.
 
 The note's template, the `@mark` mention that reaches his filtered inbox, and the
-one-task-one-comment rule are in [looper-review-comments](looper-review-comments.md).
+one-task-one-comment rule are in [asana-comments](asana-comments.md).
 
 ## Permission/access failures never halt the loop
 

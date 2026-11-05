@@ -1031,7 +1031,7 @@ def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
     `mirror_text` is the single mirror line, BLOCK_SEP-encoded. When `story_gid`
     is given, bainbot's existing comment is edited rather than a second one
     posted: a correction must not double the reading (see docs/utilities/
-    looper-review-comments.md). Returns the story GID the text now lives on.
+    asana-comments.md). Returns the story GID the text now lives on.
     """
     html, wants_mention = _render_progress(mirror_text)
     if html is None:
@@ -2038,7 +2038,10 @@ def main():
     parser.add_argument("--task-gid", metavar="GID", default="",
                         help="Asana task GID to comment on (required with --comment)")
     parser.add_argument("--comment-text", metavar="TEXT", default="",
-                        help="Comment text to post (required with --comment)")
+                        help="Comment text to post (required with --comment). "
+                             "Supports the review-note format: a leading @mark "
+                             "becomes a real Asana @-mention, and || separates "
+                             "blocks. See docs/utilities/asana-comments.md")
     parser.add_argument("--get-task", metavar="REF",
                         help="Read-only: print one task (notes + comments) via bainbot. "
                              "REF is an Asana task URL, a GID, or a local ID like BD-152")
@@ -2068,7 +2071,10 @@ def main():
     if args.comment:
         if not args.task_gid or not args.comment_text:
             parser.error("--comment requires --task-gid and --comment-text")
-        leave_comment(args.task_gid, args.comment_text, dry_run=args.dry_run)
+        # Same renderer as a Progress note, so a one-off comment gets the same
+        # @mark mention and || block expansion. Mark's Asana inbox is filtered
+        # to "Mentioned": a plain-text comment from any tool is invisible to him.
+        leave_progress_comment(args.task_gid, args.comment_text, dry_run=args.dry_run)
         log.info(f"Commented on task {args.task_gid}.")
         sys.exit(0)
 
