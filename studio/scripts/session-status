@@ -698,9 +698,17 @@ def main(stdscr):
 # Column positions in pixels, for the panel's font. Pixel gotos rather than
 # character padding, because conky lays the text out proportionally even in a
 # monospace font once ${goto} is in play, and a padded row drifts.
+#
+# They assume the panel's content width, 870px at Roboto Mono 10 - about 8.6px
+# a character. The title is last because it is the only column that can
+# overrun, and CONKY_TITLE_CHARS is what the width left over will hold: the
+# panel reserves the right half of its monitor, and widening it would eat into
+# the half that windows maximize in.
 CONKY_COLUMNS = {"acct": 108, "where": 158, "project": 272,
-                 "model": 446, "ctx": 502, "pct": 562, "last": 616,
-                 "title": 676}
+                 "model": 436, "ctx": 492, "pct": 552, "last": 606,
+                 "title": 666}
+CONKY_PROJECT_CHARS = 18
+CONKY_TITLE_CHARS = 23
 
 # Tokyo Night. The hues carry the same meaning as the curses screen's
 # 256-colour indexes - red wants a human, cyan is a live shell, orange is
@@ -757,8 +765,9 @@ def conky_row(row, show_account, glyph_font=GLYPH_FONT):
                                                 conky_escape(row["account"][:5])))
     parts.append("${goto %d}${color1}%s" % (CONKY_COLUMNS["where"],
                                             conky_escape(row["where"])))
-    parts.append("${goto %d}${color}%s" % (CONKY_COLUMNS["project"],
-                                           conky_escape(row["project"][:20])))
+    parts.append("${goto %d}${color}%s" % (
+        CONKY_COLUMNS["project"],
+        conky_escape(row["project"][:CONKY_PROJECT_CHARS])))
     parts.append("${goto %d}${color3}%s" % (CONKY_COLUMNS["model"],
                                             conky_escape(short_model(row["model"])[:5])))
     parts.append("${goto %d}%s" % (CONKY_COLUMNS["ctx"], tokens(row["ctx"])))
@@ -768,7 +777,8 @@ def conky_row(row, show_account, glyph_font=GLYPH_FONT):
     # The title is the most useful column and the only one that can overrun, so
     # it goes last and is cut to what the panel's width leaves for it.
     parts.append("${goto %d}${color3}%s${color}" % (
-        CONKY_COLUMNS["title"], conky_escape(row["title"][:30]) if row["title"] else "-"))
+        CONKY_COLUMNS["title"],
+        conky_escape(row["title"][:CONKY_TITLE_CHARS]) if row["title"] else "-"))
     return "".join(parts)
 
 

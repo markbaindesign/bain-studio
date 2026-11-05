@@ -121,17 +121,34 @@ groups both windows under Terminator. Clicking the Terminator launcher icon had 
 problem - it raised whichever of the two it felt like. A dash is read, not typed into, so the
 fix is to stop it being a window at all.
 
-The window is `_NET_WM_WINDOW_TYPE_NORMAL` with `SKIP_TASKBAR`, `SKIP_PAGER`, `ABOVE` and
-`STICKY` set (verified with `xprop` on the running panel). `SKIP_TASKBAR` keeps it out of
+Conky's `panel` window type is `_NET_WM_WINDOW_TYPE_DOCK` with `SKIP_TASKBAR`, `SKIP_PAGER`
+and `STICKY` set (verified with `xprop` on the running panel), which keeps it out of
 `Super+Tab` and out of the launcher icon's reach - that icon now has only the working terminal
-to raise - and `ABOVE` keeps it in front of ordinary windows.
+to raise.
 
-**Not the `panel` type**, which was the first attempt. That one is a dock window, and a dock
-defines struts: the work area shrank from 5760 to 4796 px wide, and **nothing on that monitor
-could go fullscreen any more**. It was briefly sold as a feature, on the grounds that a
-maximized window would stop at the panel's edge rather than cover it. It is not worth losing
-fullscreen for. With `normal` + `above` there are no struts, and a fullscreen window goes in
-front of the dash, which is what fullscreen is for.
+### The reserved half
+
+A dock also publishes `_NET_WM_STRUT_PARTIAL`, which asks the window manager to keep that band
+free, and mutter takes it out of the work area that maximize uses. **That is deliberate**: the
+right half of the third monitor belongs to the panels. The window's left edge is what sets the
+band - the strut runs from there to the edge of the screen - so the panel is placed at x=4800
+on a monitor starting at 3840, reserving exactly 960px.
+
+Measured, with a probe window on each monitor:
+
+| | Monitor 3, struts off | Monitor 3, struts on | Monitors 1 and 2 |
+|---|---|---|---|
+| Maximize | 1920px | **960px**, the left half | 1920px, unaffected |
+| Fullscreen | 1920x1080 | **1920x1080** | 1920x1080 |
+
+**Struts do not block fullscreen.** They constrain maximize. The two were confused once here,
+and the dash was briefly rebuilt as a `normal` window to fix a problem it did not have; the
+numbers above are what settled it. A fullscreen window still covers the whole monitor,
+panel included.
+
+Because nothing can sit under the dash any more, its background is opaque: the translucency
+was there to let the desktop through, and with the band reserved there is nothing but desktop
+behind it anyway. `ALPHA` in `studio-claude-bg.lua` is the one place to change that.
 
 | | |
 |---|---|
@@ -187,11 +204,13 @@ toggled with `Super+c`, and hiding them should not take the dash down.
   rather than saying anything was wrong.
   The window itself draws nothing (`own_window_argb_value = 0`); the background is a rounded
   rectangle filled by `studio-claude-bg.lua` from `lua_draw_hook_pre`, which carries both the
-  colour and the 94% opacity. That is **real** transparency, not the root-pixmap kind: a dock
+  colour and the opacity. That is **real** transparency, not the root-pixmap kind: a dock
   window takes an ARGB visual quite happily. An *override-redirect* window is the one that
   cannot - conky dies with a BadMatch on `X_CreateWindow` - which was tried first and is a
-  property of that type, not of panels. 205 of 255 was too far: the wallpaper competed with
-  the dim text; 240 leaves it a ghost.
+  property of that type, not of panels. While the dash was strut-free, ordinary windows sat
+  under it and bled through: 205 of 255 let the wallpaper compete with the dim text, and even
+  240 left a bright window underneath readable as a soft rectangle. With the band reserved
+  the question is moot and the fill is opaque.
 
 ### Two traps in the rounded background
 
