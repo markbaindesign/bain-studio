@@ -1,7 +1,6 @@
 ---
 name: studio-delivery-gate
-description: Run the full delivery gate sequence for a completed project — Themis QA → Mark sign-off package → Iris announce → Harvest trigger. Invoke when a project is ready to ship. Enforces the Law of the Gate.
-argument-hint: <project-slug>
+description: "Full delivery gate for a completed project: Themis QA, Mark sign-off package, Iris announce, harvest trigger."
 allowed-tools: [Read, Write, Bash]
 ---
 

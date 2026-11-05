@@ -1,6 +1,6 @@
 ---
 name: ivas-prep
-description: Prepare quarterly IVA packet for the gestor — scaffold folders, download Harvest invoices, sort loose PDFs, pull expense invoices from Gmail.
+description: "Prepare the quarterly IVA packet for the gestor: scaffold folders, download Harvest invoices, sort PDFs, pull expense invoices from Gmail."
 allowed-tools: [Bash, Read]
 ---
 

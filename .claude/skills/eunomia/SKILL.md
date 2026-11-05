@@ -1,6 +1,6 @@
 ---
 name: eunomia
-description: Scope compliance check only. Compare agreed deliverables against what has been built. Returns a compliance table with Pass / Fail / Flag per item. Use when you need scope check without the full Themis QA suite.
+description: "Scope compliance check only: agreed deliverables against what was built. Pass/Fail/Flag per item, without the full Themis QA suite."
 allowed-tools: [Read, Write]
 ---
 

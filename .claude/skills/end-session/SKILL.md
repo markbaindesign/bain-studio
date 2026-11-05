@@ -1,6 +1,6 @@
 ---
 name: end-session
-description: Wrap up the current project session. Commits pending changes, syncs the mirror for this project only, and writes a one-paragraph handoff note so the next session can pick up cleanly. Lighter and faster than studio-shutdown (which is end-of-day, all projects).
+description: "Wrap up this project's session: commit, sync this mirror only, write a handoff note. Lighter than /studio-shutdown (end-of-day, all projects)."
 allowed-tools: [Read, Write, Edit, Bash]
 ---
 

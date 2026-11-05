@@ -1,6 +1,6 @@
 ---
 name: issue
-description: Report a QA issue for the current project. Assigns a reference number, creates a structured file in qa/qa-inbox/, and logs it. Invoke when you want to register a bug, visual problem, or QA item without running the full /qa workflow.
+description: "Register a QA issue for the current project in qa/qa-inbox/ with a reference number, without running the full /qa workflow."
 allowed-tools: [Bash, Read, Write]
 ---
 

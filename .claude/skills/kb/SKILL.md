@@ -1,6 +1,6 @@
 ---
 name: kb
-description: Add or update an entry in the studio knowledge base (docs/). Routes the entry to the correct location based on type — god doc, utility, checklist, ADR, or project doc.
+description: "Add or update an entry in the studio knowledge base (docs/), routed to the right location by type."
 allowed-tools: [Read, Write, Edit, Bash]
 ---
 

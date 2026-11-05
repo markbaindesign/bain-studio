@@ -1,6 +1,7 @@
 ---
 name: focus
-description: Mid-day project context switch. Run from the bain-studio directory with a project prefix (e.g. /focus MCF). Looks up the project path and produces a full /recap brief without needing to cd there first.
+description: "Mid-day project context switch from the bain-studio directory: looks up the project path and gives a full /recap brief."
+argument-hint: "<PREFIX>"
 allowed-tools: [Read, Bash]
 ---
 

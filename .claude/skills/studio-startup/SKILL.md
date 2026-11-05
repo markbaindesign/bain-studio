@@ -1,6 +1,6 @@
 ---
 name: studio-startup
-description: Morning studio startup routine. Syncs all project mirrors, runs the Abderus timing sweep, surfaces overdue tasks and harvest gaps, and gives a pulse check to start the day. Run at the beginning of any work session.
+description: "Morning startup: sync all mirrors, run the Abderus timing sweep, surface overdue tasks and harvest gaps."
 allowed-tools: [Read, Bash]
 ---
 

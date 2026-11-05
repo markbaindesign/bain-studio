@@ -1,6 +1,7 @@
 ---
 name: raise-invoice
-description: Check uninvoiced Harvest hours and raise a Harvest draft invoice, from a project's unbilled time or as a fixed milestone. Invoke with a project name fragment or Harvest project ID, or with no args to see what is unbilled. Only ever creates drafts; Mark sends from Harvest.
+description: "Check uninvoiced Harvest hours and raise a draft invoice, from unbilled time or a fixed milestone. Drafts only; Mark sends."
+argument-hint: "[project name or id]"
 allowed-tools: [Bash, Read]
 ---
 

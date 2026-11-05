@@ -1,7 +1,6 @@
 ---
 name: onboard-client
-description: Orchestrates onboarding a new WordPress client — quizzes Mark for project details, then chains commission, DDEV codebase setup, tech access request, and Dropbox folder creation. Prints a manual-steps checklist for anything that can't be automated (Harvest client/project, Chrome bookmarks, git remote). Invoke when a new WordPress client deal has been signed and it's time to set up the project.
-argument-hint: <client name>
+description: "Onboard a new WordPress client: quiz for details, then chain commission, DDEV setup, tech access request and Dropbox folders, plus a manual-steps checklist."
 allowed-tools: [Read, Write, Edit, Bash, AskUserQuestion]
 ---
 

@@ -1,6 +1,7 @@
 ---
 name: looper-onboard
-description: Onboard a project onto the Studio Looper — wires the shared Local ID/Last Synced custom fields, runs the first real sync so existing tasks get proper prefixed IDs, and verifies bainbot actually has access. Run this any time a project gains Asana wiring, before multi-homing any of its tasks into Studio Looper (SL). Args: prefix
+description: "Onboard a project onto the Studio Looper: wire the shared custom fields, run the first sync for prefixed IDs, verify bainbot access. Run before multi-homing tasks into SL."
+argument-hint: "<PREFIX>"
 allowed-tools: [Read, Edit, Bash, AskUserQuestion]
 ---
 

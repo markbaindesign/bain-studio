@@ -1,6 +1,6 @@
 ---
 name: abderus
-description: Run the studio timing sweep — surfaces harvest gaps, stale projects, pending follow-ups, and overdue obligations. Run at the start of a work session or when you want a pulse check on what's slipping. Abderus is Hermes's scheduler.
+description: "Studio timing sweep: harvest gaps, stale projects, pending follow-ups, overdue obligations. Hermes's scheduler."
 ---
 
 # Abderus — Timing Sweep

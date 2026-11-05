@@ -1,6 +1,6 @@
 ---
 name: financial-review
-description: Margin check, tax awareness, and viability review for a proposal. Reviews every proposal against the Law of Margin. Produces quarterly tax prep and cashflow projections.
+description: "Margin, tax and viability review of a proposal against the Law of Margin."
 ---
 
 # Financial Review

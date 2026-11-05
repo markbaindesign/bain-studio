@@ -1,6 +1,6 @@
 ---
 name: harvest
-description: Generate the three harvest outputs for a completed project — case study, blog post, and testimonial request email. Run after delivery. Updates Mnemosyne harvest status. Enforces Law V.
+description: "Generate the three harvest outputs for a completed project: case study, blog post, testimonial request email. Run after delivery."
 ---
 
 # Harvest

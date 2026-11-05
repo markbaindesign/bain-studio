@@ -1,6 +1,6 @@
 ---
 name: brand-doc
-description: Convert a Markdown file to a Bain Design branded PDF using the brand-doc tool.
+description: "Convert a Markdown file to a Bain Design branded PDF."
 allowed-tools: [Bash]
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: proposal-writer
-description: Turn a completed proposal skeleton (from proposal-intake) or other supplied content into a client-ready proposal in studio voice, using the studio's researched proposal structure, then generate the branded PDF. Always scans the invoking folder for a proposal-intake skeleton, plus whatever's supplied with the invocation. Does not touch the pipeline, Mnemosyne, or snippet libraries.
+description: "Turn a completed proposal skeleton into a client-ready proposal in studio voice, then generate the branded PDF."
 allowed-tools: [Read, Write, Bash, Glob]
 ---
 

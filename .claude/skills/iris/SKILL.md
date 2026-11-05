@@ -1,7 +1,6 @@
 ---
 name: iris
-description: Studio presence, social media, and project event broadcasting. Watches for moments worth sharing, writes platform-appropriate posts, and manages publishing rhythm. Invoke at project milestones, project close (harvest), or whenever something notable happens in the studio.
-argument-hint: signal | harvest | draft
+description: "Studio presence and social broadcasting: spot moments worth sharing, write platform-appropriate posts, manage publishing rhythm."
 allowed-tools: [Read, Write, Bash]
 ---
 

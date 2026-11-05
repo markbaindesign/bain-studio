@@ -1,6 +1,6 @@
 ---
 name: blooper-check
-description: Scans a piece of writing for bloopers — typos, broken URLs, wrong names, formatting slips — and reports them as a list. Does NOT edit the file or suggest rewrites. Trigger phrases: "blooper check", "check for bloopers", "proofread this", "/blooper-check".
+description: "Scan writing for bloopers (typos, broken URLs, wrong names, formatting slips) and report them. Does not edit or rewrite."
 allowed-tools: [Read]
 ---
 

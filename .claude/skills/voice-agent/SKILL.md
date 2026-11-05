@@ -1,6 +1,6 @@
 ---
 name: voice-agent
-description: Hands-free spoken studio agent. Opens a terminal tab running an OpenAI Realtime voice that hands work to background Claude sessions with full studio access and reads results back. Trigger phrases: "voice agent", "talk to the studio", "/voice-agent".
+description: "Hands-free spoken studio agent: opens a terminal tab with an OpenAI Realtime voice that hands work to background Claude sessions."
 ---
 
 Launch the voice agent in a new Terminator tab:

@@ -1,6 +1,6 @@
 ---
 name: tax-prep
-description: Quarterly tax preparation — Modelo 303 (IVA) and Modelo 130 (IRPF). Run at the end of each quarter. Reads GnuCash snapshot and Harvest invoice data, produces a clean summary for filing or gestora review.
+description: "Quarterly tax prep, Modelo 303 (IVA) and 130 (IRPF), from GnuCash and Harvest data, summarised for filing or the gestora."
 allowed-tools: [Read, Write, Bash]
 ---
 

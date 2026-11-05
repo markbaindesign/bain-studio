@@ -1,6 +1,7 @@
 ---
 name: commission
-description: Commission a new project from an approved spec — scaffolds the directory, creates the Asana project, registers it in the studio, writes CLAUDE.md, and seeds initial tasks. The graduation ceremony. Args: spec name fragment, or path to spec file.
+description: "Commission a new project from an approved spec: scaffold the directory, create the Asana project, register it, write CLAUDE.md, seed tasks."
+argument-hint: "<spec name or path>"
 allowed-tools: [Read, Write, Edit, Bash]
 ---
 

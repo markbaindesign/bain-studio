@@ -1,6 +1,6 @@
 ---
 name: ga-report
-description: Pull Google Analytics 4 data for a client project and compile a branded benchmark report with action points. Authenticates via service account, fetches sessions/users/channels/pages/devices, draws charts, writes a markdown report to the client's Dropbox folder, and outputs a branded PDF via brand-doc.
+description: "Pull GA4 data for a client project and compile a branded benchmark PDF with action points, written to the client's Dropbox folder."
 allowed-tools: [Read, Bash, Write]
 ---
 

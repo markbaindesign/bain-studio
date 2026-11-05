@@ -1,6 +1,6 @@
 ---
 name: copywriter
-description: Studio voice review and copy editing. Pass any text - proposal, social post, email, UI copy, case study - and get it back in studio voice with specific edits applied. The keeper of how the studio sounds.
+description: "Studio voice review and copy editing. Pass any text (proposal, social post, email, UI copy, case study) and get it back edited in studio voice."
 allowed-tools: [Agent]
 ---
 

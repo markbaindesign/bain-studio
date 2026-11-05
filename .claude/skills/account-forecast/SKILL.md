@@ -1,6 +1,6 @@
 ---
 name: account-forecast
-description: Per-account forecast of upcoming transactions with running balance and insufficient-funds flags. Shows what comes off which account and when. Run before scheduling payments, or any time you need to check whether a specific account can cover what's coming.
+description: "Per-account forecast of upcoming transactions with running balance and insufficient-funds flags. Run before scheduling payments."
 allowed-tools: [Read, Write, Bash]
 ---
 

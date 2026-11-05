@@ -1,6 +1,7 @@
 ---
 name: register-project
-description: Register a project in the bain-studio system — adds to projects.json, docs/projects/, the CLAUDE.md active projects table, and (if it has an Asana project) the Asana block in the project's own CLAUDE.md. Standalone step — callable directly or by /commission. Args: path prefix name
+description: "Register a project in the studio: projects.json, docs/projects/, the CLAUDE.md table, and the project's own Asana block."
+argument-hint: "<path> <PREFIX> <name>"
 allowed-tools: [Read, Edit, Write, Bash, AskUserQuestion]
 ---
 

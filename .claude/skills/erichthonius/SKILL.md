@@ -1,6 +1,7 @@
 ---
 name: erichthonius
-description: Estimate hours and cost for a brief using Mnemosyne comps. Invoke with a brief slug or scope description. Returns a low/mid/high estimate table with cited comparable projects.
+description: "Estimate hours and cost for a brief using Mnemosyne comps. Returns low/mid/high with cited comparable projects."
+argument-hint: "<brief slug or scope>"
 allowed-tools: [Read, Bash]
 ---
 

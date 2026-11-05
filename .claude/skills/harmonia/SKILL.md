@@ -1,6 +1,6 @@
 ---
 name: harmonia
-description: Define layout architecture for a project — grid system, spacing, typographic hierarchy, component structure. Invoke with a design brief, Aphrodite direction doc, or a description of what needs to be laid out.
+description: "Define layout architecture: grid, spacing, typographic hierarchy, component structure. Takes a design brief or Aphrodite direction doc."
 allowed-tools: [Read, Write]
 ---
 

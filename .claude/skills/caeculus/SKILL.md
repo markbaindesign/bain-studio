@@ -1,6 +1,6 @@
 ---
 name: caeculus
-description: Frontend architecture plan or code review for React, Next.js, TypeScript, or headless WordPress. Invoke with a project brief, a file path to review, or a specific technical question.
+description: "Frontend architecture plan or code review for React, Next.js, TypeScript, or headless WordPress."
 allowed-tools: [Read, Write, Bash]
 ---
 

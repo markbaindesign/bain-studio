@@ -1,7 +1,6 @@
 ---
 name: tech-access-request
-description: Generate a personalised Tech Access Request doc for a client — greets them by name and lets pre-obtained items be checked off. Produces a branded PDF via brand-doc, one Asana task per access item, and an access record to fill in as they land. Trigger phrases " tech access request", "access request doc", "/tech-access-request".
-argument-hint: <contact name> [--project-gid GID]
+description: "Generate a personalised Tech Access Request doc for a client: branded PDF, one Asana task per access item, and an access record."
 allowed-tools: [Bash, Read, Write]
 ---
 

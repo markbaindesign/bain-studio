@@ -1,6 +1,6 @@
 ---
 name: internal-project-seed
-description: Interview Mark to capture an internal project idea and produce a structured brief + ready-to-run sync.py --create command. Use when Mark has a rough idea for an internal studio project and wants to kick off the studio workflow from claude.ai.
+description: "Interview Mark to capture an internal project idea and produce a brief plus a ready-to-run sync.py --create command."
 ---
 
 # Seed — Internal Project Intake
