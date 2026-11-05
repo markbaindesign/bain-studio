@@ -153,8 +153,10 @@ toggled with `Super+c`, and hiding them should not take the dash down.
   draws at 1s while its `execpi` still only runs the script every 5s: at `update_interval = 5`
   the pulse was a five-second stare. Confirmed by sampling the glyph's mean brightness over
   four one-second crops - it alternates.
-- **Statuses keep their colours**, as hex rather than 256-colour indexes, so a row means the
-  same thing on the panel as in the terminal. A unit test holds the two palettes together.
+- **The palette is Tokyo Night**, and the status hues carry the same meaning as the terminal's
+  256-colour indexes - red wants a human, cyan is a live shell, orange is parked, green needs
+  nothing - without being the same values. The panel is a themed surface in front of the
+  desktop; the terminal app is a terminal, and keeps its own.
 - **The tally line takes the colour of the most demanding status present**, so the panel
   answers "does anything want me?" before a row is read.
 - **The glyph and the reset arrow name their own font.** Roboto Mono for Powerline, which the
@@ -173,8 +175,11 @@ toggled with `Super+c`, and hiding them should not take the dash down.
   interval absorbs. `claude` is found on the session PATH at login (`~/.local/bin` is on it),
   which matters because `run()` swallows a failed call and the panel would read "no sessions"
   rather than saying anything was wrong.
-  `own_window_argb_visual` is off: the panel type cannot take an ARGB visual (conky dies with a
-  BadMatch on `X_CreateWindow`), so it is opaque where the others sit at 96%.
+  The panel sits at `own_window_argb_value = 240` of 255, about 94%, over Tokyo Night's darker
+  background. That is **real** transparency, not the root-pixmap kind: a dock window takes an
+  ARGB visual quite happily. An *override-redirect* window is the one that cannot - conky dies
+  with a BadMatch on `X_CreateWindow` - which was tried first and is a property of that type,
+  not of panels. 205 was too far: the wallpaper competed with the dim text.
 
 ## The `shell` status, and why the CLI cannot be trusted alone
 

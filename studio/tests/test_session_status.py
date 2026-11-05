@@ -356,7 +356,7 @@ def test_only_waiting_blinks():
         assert "${blink" not in s.conky_row(_row(status), False)
 
 
-def test_each_status_keeps_its_terminal_colour():
+def test_each_status_keeps_its_own_colour():
     for status, colour in s.CONKY_STATUS_COLOUR.items():
         assert colour in s.conky_row(_row(status), False)
 

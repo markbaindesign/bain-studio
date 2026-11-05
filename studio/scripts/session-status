@@ -702,15 +702,17 @@ CONKY_COLUMNS = {"acct": 108, "where": 158, "project": 272,
                  "model": 446, "ctx": 502, "pct": 562, "last": 616,
                  "title": 676}
 
-# The 256-colour indexes the curses screen uses, as hex, so a row means the
-# same thing on the panel as in the terminal: red wants a human, cyan is a
-# live shell, orange is parked and may want picking up, green needs nothing.
-CONKY_STATUS_COLOUR = {"waiting": "cc3333", "shell": "00cdcd",
-                       "idle": "ff8700", "working": "5faf5f"}
+# Tokyo Night. The hues carry the same meaning as the curses screen's
+# 256-colour indexes - red wants a human, cyan is a live shell, orange is
+# parked and may want picking up, green needs nothing - but the panel is a
+# themed surface rather than a terminal, so the values are the palette's own.
+CONKY_STATUS_COLOUR = {"waiting": "f7768e", "shell": "7dcfff",
+                       "idle": "ff9e64", "working": "9ece6a"}
 # The quota line's own thresholds, kept off the status palette for the same
-# reason the curses version keeps pair 2 to itself.
-QUOTA_AMBER_HEX = "e1b12c"
-QUOTA_RED_HEX = "c23616"
+# reason the curses version keeps pair 2 to itself: recolouring the rows should
+# not touch the header. Tokyo Night's yellow, then its red.
+QUOTA_AMBER_HEX = "e0af68"
+QUOTA_RED_HEX = "f7768e"
 
 # The panel's own font, Roboto Mono for Powerline, has none of the status
 # circles and no arrow (verified with fc-list ":charset=25d0"), and conky
