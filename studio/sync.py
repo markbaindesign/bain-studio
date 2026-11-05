@@ -1265,6 +1265,37 @@ def leave_comment(task_gid: str, text: str, dry_run=False):
     return (resp.get("data") or {}).get("gid")
 
 
+# Asana does not notify a mentioned user unless they already follow the task:
+# an html_text @-mention on its own reaches the thread and nothing else. The
+# fix Asana prescribes is POST /tasks/{gid}/addFollowers, then a short pause
+# before creating the story (https://developers.asana.com/docs/rich-text).
+# Being the assignee is not enough in practice — BD-204 was posted to an
+# assigned-but-unfollowed task on 2026-11-05 and never reached the inbox.
+# Mark's inbox is filtered to "Mentioned", so without this every review and
+# blocked note sync.py has ever posted was invisible to him.
+MENTION_FOLLOW_WAIT = 3.0   # seconds, between addFollowers and the story
+
+
+def _ensure_follower(task_gid: str, user_gid: str) -> bool:
+    """Make `user_gid` follow `task_gid` so an @-mention actually notifies.
+
+    Returns True when a follower was just added, meaning the caller should
+    pause before posting. Never raises: a note that cannot be signalled is
+    still worth posting, so a failure warns and carries on.
+    """
+    try:
+        data = (_get(f"/tasks/{task_gid}", {"opt_fields": "followers.gid"}) or {}).get("data") or {}
+        if any((f or {}).get("gid") == user_gid for f in (data.get("followers") or [])):
+            return False
+        _post(f"/tasks/{task_gid}/addFollowers", {"data": {"followers": [user_gid]}})
+        log.info(f"    Added {user_gid} as a follower of {task_gid} so the @-mention notifies")
+        return True
+    except Exception as e:
+        log.warning(f"    Could not add {user_gid} as a follower of {task_gid} ({e}) — "
+                    f"posting the note anyway, but the mention may not reach the inbox")
+        return False
+
+
 def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
                            dry_run=False) -> str:
     """Post (or edit in place) the review comment built from a Progress note.
@@ -1297,6 +1328,11 @@ def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
             return story_gid
         except Exception as e:
             log.warning(f"    Could not edit story {story_gid} ({e}) — posting a new comment")
+    # Only a fresh post can notify: re-mentioning someone already mentioned on
+    # an edited story raises nothing, which is why an already-posted note that
+    # missed the inbox cannot be rescued by editing it.
+    if wants_mention and USER_GID and _ensure_follower(task_gid, USER_GID):
+        time.sleep(MENTION_FOLLOW_WAIT)
     resp = _post(f"/tasks/{task_gid}/stories", {"data": {"html_text": html}})
     return (resp.get("data") or {}).get("gid")
 
@@ -2453,6 +2489,9 @@ def main():
                         help="Post a comment to an Asana task via bainbot (use with --task-gid and --comment-text)")
     parser.add_argument("--task-gid", metavar="GID", default="",
                         help="Asana task GID to comment on (required with --comment)")
+    parser.add_argument("--story-gid", metavar="GID", default="",
+                        help="With --comment: edit this existing bainbot comment in place "
+                             "instead of posting a second one (how a note is corrected)")
     parser.add_argument("--comment-text", metavar="TEXT", default="",
                         help="Comment text to post (required with --comment). "
                              "Supports the review-note format: a leading @mark "
@@ -2498,8 +2537,18 @@ def main():
         if bad:
             log.error(f"Not posting: {bad}")
             sys.exit(1)
-        leave_progress_comment(args.task_gid, args.comment_text, dry_run=args.dry_run)
-        log.info(f"Commented on task {args.task_gid}.")
+        # A bare task GID carries no project state, so --comment cannot find the
+        # note it posted last time: without --story-gid it always posts afresh,
+        # leaving the old note above the new one. Correcting a note means passing
+        # the story GID this run prints.
+        new_story = leave_progress_comment(args.task_gid, args.comment_text,
+                                           args.story_gid, dry_run=args.dry_run)
+        if args.story_gid:
+            log.info(f"Edited comment {args.story_gid} on task {args.task_gid}.")
+        else:
+            log.info(f"Commented on task {args.task_gid} (story {new_story}). To correct "
+                     f"this note, re-run with --story-gid {new_story}; without it a second "
+                     f"comment is posted below the first.")
         sys.exit(0)
 
     if args.create:

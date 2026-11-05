@@ -1675,3 +1675,66 @@ def test_field_regex_only_matches_a_top_level_bullet():
     assert sync.FIELD_RE.findall("- **Priority:** High") == [("Priority", "High")]
     assert sync.FIELD_RE.findall("  - **Priority:** High") == []
     assert sync.FIELD_RE.findall("see - **Priority:** High inline") == []
+
+
+# ---------------------------------------------------------------------------
+# @-mention notification (follower precondition)
+# ---------------------------------------------------------------------------
+
+def test_mention_adds_follower_before_posting():
+    # Asana notifies on an html_text mention only if the person already follows
+    # the task, so the note must be preceded by addFollowers.
+    calls = []
+
+    def fake_post(path, payload):
+        calls.append(path)
+        return {"data": {"gid": "NEW1"}}
+
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "MENTION_FOLLOW_WAIT", 0), \
+         patch.object(sync, "_get", return_value={"data": {"followers": []}}), \
+         patch.object(sync, "_post", side_effect=fake_post):
+        got = sync.leave_progress_comment("TASK1", REVIEW_NOTE)
+    assert got == "NEW1"
+    assert calls == ["/tasks/TASK1/addFollowers", "/tasks/TASK1/stories"]
+
+
+def test_mention_skips_add_when_already_following():
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "MENTION_FOLLOW_WAIT", 0), \
+         patch.object(sync, "_get",
+                      return_value={"data": {"followers": [{"gid": "507443625075"}]}}), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}) as post:
+        sync.leave_progress_comment("TASK1", REVIEW_NOTE)
+    assert [c[0][0] for c in post.call_args_list] == ["/tasks/TASK1/stories"]
+
+
+def test_follower_failure_still_posts_the_note():
+    # A note that cannot be signalled is still worth posting.
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "MENTION_FOLLOW_WAIT", 0), \
+         patch.object(sync, "_get", side_effect=RuntimeError("403")), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}) as post:
+        got = sync.leave_progress_comment("TASK1", REVIEW_NOTE)
+    assert got == "NEW1"
+    assert post.call_args[0][0] == "/tasks/TASK1/stories"
+
+
+def test_note_without_mention_adds_no_follower():
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "_get") as get, \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}) as post:
+        sync.leave_progress_comment("TASK1", "Checked 2026-11-05.")
+    get.assert_not_called()
+    assert [c[0][0] for c in post.call_args_list] == ["/tasks/TASK1/stories"]
+
+
+def test_edited_story_adds_no_follower():
+    # Re-mentioning someone on an edited story raises no notification, so there
+    # is nothing to prepare for — and an already-missed note cannot be rescued.
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "_get") as get, patch.object(sync, "_put"), \
+         patch.object(sync, "_post") as post:
+        sync.leave_progress_comment("TASK1", REVIEW_NOTE, story_gid="STORY9")
+    get.assert_not_called()
+    post.assert_not_called()
