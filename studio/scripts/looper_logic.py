@@ -162,8 +162,8 @@ def window_summary(label: str, tasks_done: int, remaining: list[str],
 
     return (
         f"window {label}: iteration cap reached — {n} task(s) still queued: {left}",
-        f"{base} hit the {tasks_done}-iteration cap; {n} task(s) still queued ({left}). "
-        f"They carry over to the next window.",
+        f"{base} hit its iteration cap after {tasks_done} productive iteration(s); "
+        f"{n} task(s) still queued ({left}). They carry over to the next window.",
         "normal",
     )
 

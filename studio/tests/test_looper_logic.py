@@ -436,6 +436,10 @@ def test_window_summary_iteration_cap_with_work_left_is_not_an_early_stop():
     assert priority == "normal"
     assert "cap" in log_line
     assert "refused to start" not in msg
+    # tasks_done is PRODUCTIVE iterations, never the cap value — "hit the
+    # 30-iteration cap" would be a lie whenever some iteration made no progress.
+    assert "30-iteration cap" not in msg
+    assert "after 30 productive iteration(s)" in msg
 
 
 def test_window_summary_truncates_a_long_remaining_list():
