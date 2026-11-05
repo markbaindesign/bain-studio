@@ -72,7 +72,11 @@ lands in the thread and nowhere else, which is silent: nothing fails, nothing lo
 adding the follower fails it warns and posts anyway: an unsignalled note still beats no note.
 
 Only a **fresh post** can notify. Re-mentioning someone on an edited story raises nothing, so
-a note that already missed the inbox cannot be rescued by editing it — tell Mark another way.
+a comment that already missed the inbox cannot be rescued by editing it. **Posting it again
+does work** — `leave_progress_comment` does no text-based dedupe, so without a story GID it
+adds the follower and posts a new story, identical text and all, which notifies. That leaves
+two identical comments on the thread: worth it for a comment Mark never saw, not for anything
+he has already replied to. Read the thread before reposting from a list.
 
 This is the whole signalling mechanism, and it is why `sync.py` must never add the mention
 unconditionally. Use the token for **review** and **blocked** notes — the two cases where
