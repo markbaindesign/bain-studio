@@ -148,6 +148,12 @@ python3 studio/sync.py --comment --task-gid {GID} --story-gid {STORY_GID} \
 From a project mirror there is nothing to pass: the scheduled sync tracks the story GID in
 `asana-ids.json` and edits in place on its own.
 
+One edge: `--comment` writes no mirror and no state, so the follower it adds normally survives
+(the story bumps `modified_at`, so the next run pulls). If a scheduled sync stamped that same
+task in the same window, the next run reads the mirror as newer and removes the follower once.
+The note still arrived; only a later mention on that task would be silent. Posting the next
+note re-adds the follower, so nothing needs doing.
+
 ## Enforcement
 
 `validate_progress_note` runs before anything is posted, on **both** write paths. A note over
