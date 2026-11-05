@@ -81,6 +81,129 @@ def _get_looper_status_option_gid(name: str):
             log.warning(f"Could not fetch Looper Status enum options: {e}")
     return _LOOPER_STATUS_OPTIONS.get(name.lower())
 
+
+# --- Generic custom fields -------------------------------------------------
+# Every custom field on a task is mirrored. These five types are also pushed
+# back from the mirror; anything else (people, formula, reference/milestone) is
+# rendered from Asana's own display_value and left read-only, because Asana
+# either computes it or takes a shape the mirror cannot express on one line.
+PUSHABLE_FIELD_TYPES = {"text", "number", "date", "enum", "multi_enum"}
+
+# Mirror keys owned by built-in lines. A custom field whose name collapses to
+# one of these would render a second line with the same key, and the parser
+# keeps only the last — so it is mirrored by neither name nor pushed. Priority
+# is the exception: it has a built-in line AND is a plain enum custom field, so
+# it is excluded from generic rendering but pushed through the generic path.
+RESERVED_MIRROR_KEYS = {
+    "local_id", "asana_id", "section", "priority", "looper_status", "due", "start",
+    "assignee", "assignee_status", "tags", "followers", "dependencies", "dependents",
+    "notes", "blockers", "progress", "comments", "attachments", "modified", "url",
+}
+
+# Enum option names → GIDs per custom field GID, filled on demand once per run.
+_ENUM_OPTIONS: dict = {}
+# Field names already warned about this run, so a collision is logged once, not
+# once per task.
+_FIELD_WARNED: set = set()
+
+
+def _cf_type(cf: dict) -> str:
+    return cf.get("resource_subtype") or cf.get("type") or ""
+
+
+def _mirror_key(name: str) -> str:
+    return (name or "").strip().lower().replace(" ", "_")
+
+
+def _cf_mirror_value(cf: dict) -> str:
+    """The mirror string for a custom field value, or "none" when it is unset.
+
+    `_mirror_override` is set by the push path: build_mirror() renders from the
+    same task object later in the run, so without it the mirror would be written
+    with the pre-push value and the next run would push that stale value back
+    over what we just set.
+    """
+    if "_mirror_override" in cf:
+        return cf["_mirror_override"]
+    ftype = _cf_type(cf)
+    if ftype == "enum":
+        return (cf.get("enum_value") or {}).get("name") or "none"
+    if ftype == "multi_enum":
+        names = [o.get("name") or "" for o in (cf.get("multi_enum_values") or [])]
+        return ", ".join(n for n in names if n) or "none"
+    if ftype == "number":
+        val = cf.get("number_value")
+        if val is None:
+            return "none"
+        return str(int(val)) if float(val).is_integer() else str(val)
+    if ftype == "date":
+        dv = cf.get("date_value") or {}
+        return dv.get("date") or dv.get("date_time") or "none"
+    if ftype == "text":
+        return (cf.get("text_value") or "").strip() or "none"
+    return (cf.get("display_value") or "").strip() or "none"
+
+
+def _enum_option_gid(cf: dict, name: str):
+    """GID of an enum option by name, matched case-insensitively.
+
+    Option labels drift ("In Progress" vs "In progress"), so never match exactly.
+    enum_options come back on the task payload; a field that does not carry them
+    is fetched once and cached.
+    """
+    gid = cf.get("gid")
+    opts = {
+        (o.get("name") or "").lower(): o.get("gid")
+        for o in (cf.get("enum_options") or [])
+        if o.get("gid")
+    }
+    if not opts:
+        if gid not in _ENUM_OPTIONS:
+            try:
+                data = _get(f"/custom_fields/{gid}")["data"]
+                _ENUM_OPTIONS[gid] = {
+                    (o.get("name") or "").lower(): o.get("gid")
+                    for o in (data.get("enum_options") or [])
+                }
+            except Exception as e:
+                log.warning(f"Could not fetch enum options for custom field {gid}: {e}")
+                _ENUM_OPTIONS[gid] = {}
+        opts = _ENUM_OPTIONS[gid]
+    return opts.get((name or "").strip().lower())
+
+
+def _managed_field_gids() -> set:
+    """Fields this script owns. Never mirrored as generic lines, never pushed."""
+    return {g for g in (SHARED_FIELD_GID, LAST_SYNCED_FIELD_GID) if g}
+
+
+def _mirrorable_fields(t: dict) -> list:
+    """The task's custom fields that get a generic mirror line, in Asana order."""
+    out = []
+    for cf in t.get("custom_fields", []):
+        gid  = cf.get("gid")
+        name = (cf.get("name") or "").strip()
+        if not gid or not name or gid in _managed_field_gids():
+            continue
+        key = _mirror_key(name)
+        if key in RESERVED_MIRROR_KEYS:
+            # Priority and Looper Status have their own lines; a third-party
+            # field colliding with a built-in key is a naming problem to fix in
+            # Asana, and is called out once per run.
+            if key not in ("priority", "looper_status") and name not in _FIELD_WARNED:
+                _FIELD_WARNED.add(name)
+                log.warning(f"  Custom field '{name}' collides with the built-in mirror "
+                            f"field '{key}' — not mirrored. Rename it in Asana.")
+            continue
+        out.append(cf)
+    return out
+
+
+def _custom_field_lines(t: dict) -> list:
+    return [f"- **{(cf.get('name') or '').strip()}:** {_cf_mirror_value(cf)}"
+            for cf in _mirrorable_fields(t)]
+
+
 JUNK_PATTERNS  = re.compile(r"^- |😍|📰|\[Product Update\]", re.IGNORECASE)
 PLAIN_CHECK    = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
 # "none" is written into the mirror by the --create-task path and by older
@@ -163,6 +286,30 @@ def validate_progress_note(text: str) -> str:
         return (f"a block runs to {len(worst)} chars, over the {BLOCK_MAX_CHARS}-char "
                 f"limit — one line each: {worst[:60]!r}...")
     return ""
+
+
+# Limit on a task description (Asana's `notes`) written through this script.
+# Loose on purpose, like the comment limits above: the median studio
+# description is ~500 chars, while the walls of text this exists to stop ran
+# 2,000-3,500. A description says what the task is, what done looks like and
+# where the work is. How the problem arose, what was ruled out and the session
+# narrative belong in a commit message or a comment.
+#
+# Only descriptions written through this script are checked. Tasks that arrive
+# by Asana's own email intake never pass through here, so a forwarded alert or
+# vendor email is unaffected however long it is.
+DESCRIPTION_MAX_CHARS = 1200
+
+
+def validate_task_description(text: str) -> str:
+    """Why this description may not be written, or "" when it is fine."""
+    body = (text or "").strip()
+    if len(body) <= DESCRIPTION_MAX_CHARS:
+        return ""
+    return (f"description is {len(body)} chars, over the {DESCRIPTION_MAX_CHARS}-char limit. "
+            f"State what the task is, what done looks like and where the work is. The "
+            f"history, the alternatives and the session narrative belong in a commit "
+            f"message or a comment.")
 
 
 def _progress_plain(text: str) -> str:
@@ -527,7 +674,12 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
         "opt_fields": (
             "gid,name,notes,due_on,due_at,start_on,completed,modified_at,permalink_url,"
             "assignee.gid,assignee.name,assignee_status,"
-            "custom_fields.gid,custom_fields.text_value,custom_fields.enum_value.name,custom_fields.enum_value.gid,"
+            "custom_fields.gid,custom_fields.name,custom_fields.type,custom_fields.resource_subtype,"
+            "custom_fields.text_value,custom_fields.number_value,custom_fields.date_value,"
+            "custom_fields.display_value,"
+            "custom_fields.enum_value.name,custom_fields.enum_value.gid,"
+            "custom_fields.enum_options.gid,custom_fields.enum_options.name,"
+            "custom_fields.multi_enum_values.gid,custom_fields.multi_enum_values.name,"
             "memberships.section.name,memberships.section.gid,memberships.project.gid,"
             "tags.gid,tags.name,"
             "followers.gid,followers.name,"
@@ -909,6 +1061,9 @@ def parse_existing_mirror(proj: ProjectConfig) -> dict:
             "blockers":        fields.get("blockers", "None identified."),
             "progress":        NO_PROGRESS.sub("", fields.get("progress", "")),
             "modified":        fields.get("modified", ""),
+            # Every parsed line, keyed the same way, so a custom field added to
+            # a project needs no change here to be pushed.
+            "_raw":            fields,
         }
     return carried
 
@@ -980,6 +1135,7 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
         f"- **Section:** {section}",
         f"- **Priority:** {priority}",
         f"- **Looper Status:** {looper_status}",
+        *_custom_field_lines(t),
         f"- **Due:** {due}{overdue}",
         f"- **Start:** {start}",
         f"- **Assignee:** {assignee_str}",
@@ -1107,9 +1263,19 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
     def _diff(mirror_val, asana_val):
         return (mirror_val or "").strip() != (asana_val or "").strip()
 
-    # Notes are read-only in the mirror — multi-line content doesn't survive the
-    # FIELD_RE single-line parser, so pushing notes would silently truncate them.
-    # Edit notes directly in Asana.
+    # The description (Asana's `notes`) is deliberately read-only in the mirror:
+    # it is the brief a task was created with, and it changes on purpose, not as
+    # a side effect of a file edit. Amendments belong in a comment; a genuinely
+    # wrong description is rewritten with --update-task, which logs the change.
+    # FIELD_RE is also single-line, so a pushed description would truncate at
+    # the first newline. Say so when an edit is spotted rather than swallowing
+    # it: only the first line can be compared, which is enough to notice.
+    mirror_desc = (prev.get("notes") or "").strip()
+    asana_desc  = (t.get("notes") or "").strip()
+    asana_first = asana_desc.split("\n", 1)[0].strip() or "No notes."
+    if mirror_desc and mirror_desc != asana_first:
+        log.warning(f"  [{prefix}] {lid}: description edited in the mirror — not pushed. "
+                    f"Use: sync.py --update-task --task-gid {gid} --task-notes '...'")
 
     due = prev.get("due", "none")
     if _diff(due, t.get("due_on") or "none"):
@@ -1193,6 +1359,125 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
     except Exception as e:
         log.warning(f"  [{prefix}] Could not push fields to {lid}: {e}")
         return False
+
+
+def _cf_push_value(cf: dict, mirror_val: str, lid: str, prefix: str):
+    """(True, payload value) for a custom field, or (False, None) to skip it.
+
+    A value the field cannot hold is skipped with a warning rather than sent:
+    Asana 400s the whole PUT, which would lose every other field in the same
+    push. "none" clears the field.
+    """
+    ftype = _cf_type(cf)
+    name  = (cf.get("name") or "").strip()
+    blank = mirror_val.strip().lower() in ("", "none")
+    if ftype == "text":
+        return True, ("" if blank else mirror_val.strip())
+    if ftype == "number":
+        if blank:
+            return True, None
+        try:
+            return True, float(mirror_val.strip())
+        except ValueError:
+            log.warning(f"  [{prefix}] {lid}: '{mirror_val}' is not a number for "
+                        f"'{name}' — skipping")
+            return False, None
+    if ftype == "date":
+        if blank:
+            return True, None
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", mirror_val.strip()):
+            log.warning(f"  [{prefix}] {lid}: '{mirror_val}' is not an ISO date for "
+                        f"'{name}' — skipping")
+            return False, None
+        return True, mirror_val.strip()
+    if ftype == "enum":
+        if blank:
+            return True, None
+        opt = _enum_option_gid(cf, mirror_val)
+        if not opt:
+            log.warning(f"  [{prefix}] {lid}: '{mirror_val.strip()}' is not an option of "
+                        f"'{name}' — skipping")
+            return False, None
+        return True, opt
+    if ftype == "multi_enum":
+        if blank:
+            return True, []
+        gids = []
+        for part in mirror_val.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            opt = _enum_option_gid(cf, part)
+            if not opt:
+                log.warning(f"  [{prefix}] {lid}: '{part}' is not an option of "
+                            f"'{name}' — skipping the whole field")
+                return False, None
+            gids.append(opt)
+        return True, gids
+    return False, None
+
+
+def _push_custom_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool:
+    """Push every changed custom field from the mirror to Asana.
+
+    Generic on purpose: a field added to a project in Asana is mirrored and
+    pushable with no change here. Looper Status is excluded because
+    _push_simple_fields owns it — it carries queue-specific defaulting rules
+    that a plain value comparison would undo.
+
+    A multi-enum push writes exactly the set the mirror shows, which replaces
+    whatever Asana held. That is what a mirror means; it also means a stale
+    mirror line removes options, which is why the pull/push direction is decided
+    by modified_at before this is ever called.
+    """
+    gid     = t["gid"]
+    lid     = t.get("_local_id", gid)
+    raw     = prev.get("_raw") or {}
+    updates = {}
+    applied = {}
+
+    for cf in t.get("custom_fields", []):
+        fgid = cf.get("gid")
+        name = (cf.get("name") or "").strip()
+        if not fgid or not name or fgid in _managed_field_gids():
+            continue
+        if LOOPER_STATUS_FIELD_GID and fgid == LOOPER_STATUS_FIELD_GID:
+            continue
+        if _cf_type(cf) not in PUSHABLE_FIELD_TYPES:
+            continue
+        key = _mirror_key(name)
+        if key in RESERVED_MIRROR_KEYS and key != "priority":
+            continue
+        if key not in raw:
+            continue  # written by an older sync.py — nothing to compare against
+        mirror_val = raw[key].strip()
+        if mirror_val == _cf_mirror_value(cf):
+            continue
+        ok, value = _cf_push_value(cf, mirror_val, lid, prefix)
+        if not ok:
+            continue
+        updates[fgid] = value
+        applied[fgid] = (cf, mirror_val)
+
+    if not updates:
+        return False
+    names = sorted((cf.get("name") or "") for cf, _ in applied.values())
+    if dry_run:
+        log.info(f"    [DRY-RUN] Would set custom fields on {lid}: {names}")
+        return False
+    try:
+        _put(f"/tasks/{gid}", {"data": {"custom_fields": updates}})
+        log.info(f"  [{prefix}] Pushed custom fields to {lid}: {names}")
+    except Exception as e:
+        log.warning(f"  [{prefix}] Could not push custom fields to {lid}: {e}")
+        return False
+    # Reflect what Asana now holds, so the mirror written later this run shows
+    # the pushed value rather than the stale one it would otherwise push again.
+    for fgid, (cf, mirror_val) in applied.items():
+        cf["_mirror_override"] = mirror_val or "none"
+        if fgid == PRIORITY_FIELD_GID:
+            t["_priority"] = mirror_val or "none"
+    return True
 
 
 def _parse_refs(text: str) -> dict:
@@ -1353,6 +1638,10 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
             lid = t.get("_local_id", gid)
 
             if _push_simple_fields(t, prev, dry_run, proj.prefix):
+                pushed += 1
+                touched_gids.add(gid)
+
+            if _push_custom_fields(t, prev, dry_run, proj.prefix):
                 pushed += 1
                 touched_gids.add(gid)
 
@@ -1568,6 +1857,10 @@ def create_task(project_gid: str, name: str, notes: str = '', assignee_gid: str 
     Create a task in the given Asana project via bainbot, return the new task GID.
     Optionally set it as a dependency of depends_on_gid.
     """
+    bad = validate_task_description(notes)
+    if bad:
+        raise ValueError(bad)
+
     payload = {
         "data": {
             "name": name,
@@ -1608,6 +1901,10 @@ def update_task(task_gid: str, name: str = None, notes: str = None,
     Replaces the notes wholesale; read the current value first if you mean to
     amend rather than overwrite.
     """
+    bad = validate_task_description(notes) if notes is not None else ""
+    if bad:
+        raise ValueError(bad)
+
     data = {}
     if name is not None:
         data["name"] = name
@@ -1656,6 +1953,10 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
     blocks; if linking it fails, the task exists but this raises.
     """
     from datetime import datetime
+
+    bad = validate_task_description(notes)
+    if bad:
+        raise ValueError(bad)
 
     # 1. Resolve section GID
     sections = fetch_sections(proj)
@@ -2054,7 +2355,9 @@ def main():
     parser.add_argument("--task-name", metavar="NAME",
                         help="Task name (required with --create-task)")
     parser.add_argument("--task-notes", metavar="NOTES", default="",
-                        help="Task notes/description (optional with --create-task)")
+                        help=f"Task description (optional with --create-task). "
+                             f"Refused over {DESCRIPTION_MAX_CHARS} chars — see "
+                             f"docs/utilities/new-task.md")
     parser.add_argument("--task-section", metavar="SECTION", default="NEXT UP",
                         help="Section to place the task in (default: NEXT UP)")
     parser.add_argument("--task-due", metavar="YYYY-MM-DD", default="",
@@ -2103,10 +2406,14 @@ def main():
             parser.error("--update-task requires --task-gid")
         if not args.task_name and not args.task_notes:
             parser.error("--update-task requires --task-name and/or --task-notes")
-        update_task(args.task_gid,
-                    name=args.task_name or None,
-                    notes=args.task_notes or None,
-                    dry_run=args.dry_run)
+        try:
+            update_task(args.task_gid,
+                        name=args.task_name or None,
+                        notes=args.task_notes or None,
+                        dry_run=args.dry_run)
+        except ValueError as e:
+            log.error(f"Not updating {args.task_gid}: {e}")
+            sys.exit(1)
         sys.exit(0)
 
     if args.comment:
@@ -2175,6 +2482,9 @@ def main():
                 depends_on=args.task_depends_on,
                 dry_run=args.dry_run,
             )
+        except ValueError as e:
+            log.error(f"Not creating task: {e}")
+            sys.exit(1)
         except RuntimeError as e:
             log.error(str(e))
             sys.exit(1)

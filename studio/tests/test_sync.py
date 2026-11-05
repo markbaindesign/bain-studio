@@ -1278,3 +1278,323 @@ def test_validate_rejects_too_many_blocks():
 def test_validate_rejects_an_overlong_note_under_the_block_limit():
     note = " || ".join(["x" * 150] * 7)   # each block legal, total is not
     assert "exceeds the 900-char limit" in sync.validate_progress_note(note)
+
+
+# ---------------------------------------------------------------------------
+# Task descriptions — a wall of text is not written at all (BSTD-864)
+# ---------------------------------------------------------------------------
+
+# Trimmed from BSTD-856's real description: the brief, then a history of how the
+# problem arose, which is what the limit exists to keep out of a task.
+REAL_DESCRIPTION_WALL = (
+    "brand-voice.md is the single source of truth for all writing rules and it is "
+    "not in version control. It lives in Dropbox at Work/Content/Brand Voice/.\n\n"
+    "Why it matters now: on 2026-11-04 it went from 1,618 to ~3,890 words in one "
+    "session - typography.md folded in, the VOICE DNA doc folded in, the "
+    "passive-voice rule rewritten, the paragraph-length rule removed, rules added "
+    "from Wikipedia Signs of AI writing, and seven words taken off the banned "
+    "list. Dropbox has file history but no commit log, no diff and no message "
+    "explaining any of it.\n\n" + "Padding that stands in for the rest of it. " * 20
+)
+
+
+def test_description_limit_rejects_the_wall_of_text_that_prompted_this():
+    assert len(REAL_DESCRIPTION_WALL) > sync.DESCRIPTION_MAX_CHARS
+    assert "over the 1200-char limit" in sync.validate_task_description(REAL_DESCRIPTION_WALL)
+
+
+def test_description_limit_passes_a_normal_description():
+    # The studio median is ~500 chars; the limit must not bite one of those.
+    assert sync.validate_task_description("x" * 500) == ""
+    assert sync.validate_task_description("") == ""
+    assert sync.validate_task_description(None) == ""
+    assert sync.validate_task_description(
+        "Severity: Medium | Area: Contact form\n\n"
+        "The partner enquiry form redirects to the thank-you page for the wrong "
+        "form.\n\nScreenshot: /home/bain/Pictures/shot.png") == ""
+
+
+def test_create_task_full_refuses_an_overlong_description_before_any_write(proj, fake_asana):
+    with pytest.raises(ValueError, match="over the 1200-char limit"):
+        sync.create_task_full(proj, "Do it", notes=REAL_DESCRIPTION_WALL)
+    assert fake_asana == []   # nothing reached Asana
+
+
+def test_create_task_refuses_an_overlong_description(proj, fake_asana):
+    with pytest.raises(ValueError, match="over the 1200-char limit"):
+        sync.create_task("proj_gid_123", "Do it", notes=REAL_DESCRIPTION_WALL)
+    assert fake_asana == []
+
+
+def test_update_task_refuses_an_overlong_description(monkeypatch):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    with pytest.raises(ValueError, match="over the 1200-char limit"):
+        sync.update_task("111222333", notes=REAL_DESCRIPTION_WALL)
+    assert puts == []
+
+
+def test_dry_run_still_refuses_an_overlong_description(proj, fake_asana):
+    # A caller must be able to find out with --dry-run that the description fails.
+    with pytest.raises(ValueError):
+        sync.create_task_full(proj, "Do it", notes=REAL_DESCRIPTION_WALL, dry_run=True)
+
+
+def test_update_task_allows_a_short_description(monkeypatch):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sync.update_task("111222333", notes="Corrected: the form redirects to /thanks.")
+    assert puts[0][1]["data"]["notes"].startswith("Corrected:")
+
+
+# ---------------------------------------------------------------------------
+# Descriptions stay read-only in the mirror, but an edit is not swallowed
+# ---------------------------------------------------------------------------
+
+def test_mirror_description_edit_is_not_pushed_but_is_reported(sample_task, caplog):
+    prev = {"notes": "Rewritten in the mirror.", "due": "2026-05-25", "start": "none",
+            "assignee": "Bot (999888777)", "assignee_status": "today"}
+    with caplog.at_level("WARNING"):
+        pushed = _push_simple_fields(sample_task, prev, dry_run=True, prefix="TEST")
+    assert pushed is False
+    assert "description edited in the mirror" in caplog.text
+    assert "--update-task" in caplog.text
+
+
+def test_unedited_description_is_silent(sample_task, caplog):
+    prev = {"notes": "Some notes here.", "due": "2026-05-25", "start": "none",
+            "assignee": "Bot (999888777)", "assignee_status": "today"}
+    with caplog.at_level("WARNING"):
+        _push_simple_fields(sample_task, prev, dry_run=True, prefix="TEST")
+    assert "description edited" not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Generic custom fields — mirrored and pushed by name
+# ---------------------------------------------------------------------------
+
+def _cf_priority(value=None):
+    return {
+        "gid": "1155368350785978", "name": "Priority", "resource_subtype": "enum",
+        "enum_value": {"gid": "1155368350785979", "name": value} if value else None,
+        "enum_options": [
+            {"gid": "1155368350785979", "name": "High"},
+            {"gid": "1155368350785980", "name": "Medium"},
+            {"gid": "1155368350785981", "name": "Low"},
+        ],
+    }
+
+
+def _cf_features(*values):
+    opts = [
+        {"gid": "1216075949558841", "name": "Greenhouse"},
+        {"gid": "1220254742605531", "name": "Security"},
+        {"gid": "1216075949558848", "name": "Dev Ops"},
+    ]
+    by_name = {o["name"]: o for o in opts}
+    return {
+        "gid": "1215208851588973", "name": "Features", "resource_subtype": "multi_enum",
+        "multi_enum_values": [by_name[v] for v in values],
+        "enum_options": opts,
+    }
+
+
+@pytest.fixture
+def cf_env(monkeypatch):
+    monkeypatch.setattr(sync, "PRIORITY_FIELD_GID", "1155368350785978")
+    monkeypatch.setattr(sync, "LOOPER_STATUS_FIELD_GID", "looper_field")
+    monkeypatch.setattr(sync, "SHARED_FIELD_GID", "local_id_field")
+    monkeypatch.setattr(sync, "LAST_SYNCED_FIELD_GID", "last_synced_field")
+    monkeypatch.setattr(sync, "_ENUM_OPTIONS", {})
+    monkeypatch.setattr(sync, "_FIELD_WARNED", set())
+
+
+def test_cf_mirror_value_covers_every_value_shape():
+    assert sync._cf_mirror_value(_cf_priority("High")) == "High"
+    assert sync._cf_mirror_value(_cf_priority()) == "none"
+    assert sync._cf_mirror_value(_cf_features("Greenhouse", "Security")) == "Greenhouse, Security"
+    assert sync._cf_mirror_value(_cf_features()) == "none"
+    assert sync._cf_mirror_value(
+        {"gid": "n", "name": "Score", "resource_subtype": "number", "number_value": 7.0}) == "7"
+    assert sync._cf_mirror_value(
+        {"gid": "n", "name": "Score", "resource_subtype": "number", "number_value": 7.5}) == "7.5"
+    assert sync._cf_mirror_value(
+        {"gid": "n", "name": "Score", "resource_subtype": "number", "number_value": None}) == "none"
+    assert sync._cf_mirror_value(
+        {"gid": "d", "name": "Shipped", "resource_subtype": "date",
+         "date_value": {"date": "2026-11-05"}}) == "2026-11-05"
+    assert sync._cf_mirror_value(
+        {"gid": "t", "name": "Ref", "resource_subtype": "text", "text_value": " ABC "}) == "ABC"
+    # A type the mirror cannot express is still shown, using Asana's own rendering.
+    assert sync._cf_mirror_value(
+        {"gid": "m", "name": "Milestone", "resource_subtype": "reference",
+         "display_value": "Launch"}) == "Launch"
+
+
+def test_custom_field_lines_skip_managed_and_built_in_fields(cf_env):
+    t = {"custom_fields": [
+        {"gid": "local_id_field", "name": "Local ID", "resource_subtype": "text",
+         "text_value": "TEST-001"},
+        {"gid": "last_synced_field", "name": "Last Synced", "resource_subtype": "text",
+         "text_value": "2026-11-05"},
+        _cf_priority("High"),
+        {"gid": "looper_field", "name": "Looper Status", "resource_subtype": "enum",
+         "enum_value": {"gid": "q", "name": "Queue"}},
+        _cf_features("Security"),
+        {"gid": "rev", "name": "Review Status", "resource_subtype": "enum",
+         "enum_value": {"gid": "r1", "name": "Needs review"}},
+    ]}
+    lines = sync._custom_field_lines(t)
+    # Local ID and Last Synced belong to the sync; Priority and Looper Status
+    # already have their own mirror lines.
+    assert lines == ["- **Features:** Security", "- **Review Status:** Needs review"]
+
+
+def test_task_lines_render_custom_fields_after_looper_status(cf_env, sample_task):
+    sample_task["custom_fields"] = [_cf_features("Security"), _cf_priority("High")]
+    sample_task["_priority"] = "High"
+    lines = _task_lines(sample_task, {}, {})
+    assert "- **Priority:** High" in lines
+    assert "- **Features:** Security" in lines
+    assert lines.index("- **Features:** Security") == lines.index("- **Looper Status:** none") + 1
+
+
+def test_parse_existing_mirror_carries_every_parsed_field(proj, mirror_text):
+    proj.mirror_file.write_text(mirror_text.replace(
+        "- **Section:** DOING", "- **Section:** DOING\n- **Features:** Security"))
+    carried = parse_existing_mirror(proj)
+    assert carried["111222333"]["_raw"]["features"] == "Security"
+
+
+def test_push_custom_fields_sets_a_changed_enum(cf_env, monkeypatch, sample_task):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_priority(None)]
+    prev = {"_raw": {"priority": "High"}}
+    assert sync._push_custom_fields(sample_task, prev, dry_run=False, prefix="TEST") is True
+    assert puts == [("/tasks/111222333",
+                     {"data": {"custom_fields": {"1155368350785978": "1155368350785979"}}})]
+    # Reflected on the task, so the mirror written later this run shows High and
+    # the next run does not push a stale "none" back over it.
+    assert sample_task["_priority"] == "High"
+    assert sync._cf_mirror_value(sample_task["custom_fields"][0]) == "High"
+
+
+def test_push_custom_fields_matches_enum_options_case_insensitively(cf_env, monkeypatch, sample_task):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_priority(None)]
+    sync._push_custom_fields(sample_task, {"_raw": {"priority": "high"}},
+                             dry_run=False, prefix="TEST")
+    assert puts[0][1]["data"]["custom_fields"]["1155368350785978"] == "1155368350785979"
+
+
+def test_push_custom_fields_skips_an_unknown_enum_value_loudly(cf_env, monkeypatch, sample_task, caplog):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_priority("High")]
+    with caplog.at_level("WARNING"):
+        changed = sync._push_custom_fields(sample_task, {"_raw": {"priority": "Urgent"}},
+                                           dry_run=False, prefix="TEST")
+    assert changed is False
+    assert puts == []   # a bad value never goes in a PUT: Asana 400s the whole thing
+    assert "'Urgent' is not an option of 'Priority'" in caplog.text
+
+
+def test_push_custom_fields_writes_a_multi_enum_as_the_whole_set(cf_env, monkeypatch, sample_task):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_features("Greenhouse")]
+    sync._push_custom_fields(sample_task, {"_raw": {"features": "Greenhouse, Security"}},
+                             dry_run=False, prefix="TEST")
+    assert puts[0][1]["data"]["custom_fields"]["1215208851588973"] == [
+        "1216075949558841", "1220254742605531"]
+
+
+def test_push_custom_fields_clears_a_field_set_to_none(cf_env, monkeypatch, sample_task):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_priority("High"), _cf_features("Security")]
+    sync._push_custom_fields(sample_task, {"_raw": {"priority": "none", "features": "none"}},
+                             dry_run=False, prefix="TEST")
+    fields = puts[0][1]["data"]["custom_fields"]
+    assert fields["1155368350785978"] is None
+    assert fields["1215208851588973"] == []
+
+
+def test_push_custom_fields_leaves_looper_status_to_push_simple_fields(cf_env, monkeypatch, sample_task):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [
+        {"gid": "looper_field", "name": "Looper Status", "resource_subtype": "enum",
+         "enum_value": None, "enum_options": [{"gid": "q", "name": "Queue"}]}]
+    assert sync._push_custom_fields(sample_task, {"_raw": {"looper_status": "Queue"}},
+                                    dry_run=False, prefix="TEST") is False
+    assert puts == []
+
+
+def test_push_custom_fields_ignores_a_field_absent_from_the_mirror(cf_env, monkeypatch, sample_task):
+    # A mirror written by an older sync.py has no line for the field. There is
+    # nothing to compare against, so it must not be read as "cleared".
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_priority("High")]
+    assert sync._push_custom_fields(sample_task, {"_raw": {"due": "2026-05-25"}},
+                                    dry_run=False, prefix="TEST") is False
+    assert puts == []
+
+
+def test_push_custom_fields_dry_run_writes_nothing(cf_env, monkeypatch, sample_task, caplog):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_priority(None)]
+    with caplog.at_level("INFO"):
+        assert sync._push_custom_fields(sample_task, {"_raw": {"priority": "High"}},
+                                        dry_run=True, prefix="TEST") is False
+    assert puts == []
+    assert "Would set custom fields" in caplog.text
+
+
+def test_push_custom_fields_skips_a_read_only_field_type(cf_env, monkeypatch, sample_task):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [
+        {"gid": "m", "name": "Milestone", "resource_subtype": "reference",
+         "display_value": "Launch"}]
+    assert sync._push_custom_fields(sample_task, {"_raw": {"milestone": "Something else"}},
+                                    dry_run=False, prefix="TEST") is False
+    assert puts == []
+
+
+def test_push_custom_fields_rejects_a_non_numeric_number(cf_env, monkeypatch, sample_task, caplog):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [
+        {"gid": "n", "name": "Score", "resource_subtype": "number", "number_value": 7.0}]
+    with caplog.at_level("WARNING"):
+        sync._push_custom_fields(sample_task, {"_raw": {"score": "high-ish"}},
+                                 dry_run=False, prefix="TEST")
+    assert puts == []
+    assert "is not a number" in caplog.text
+
+
+def test_push_custom_fields_rejects_a_non_iso_date(cf_env, monkeypatch, sample_task, caplog):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [
+        {"gid": "d", "name": "Shipped", "resource_subtype": "date",
+         "date_value": {"date": "2026-11-05"}}]
+    with caplog.at_level("WARNING"):
+        sync._push_custom_fields(sample_task, {"_raw": {"shipped": "05/11/2026"}},
+                                 dry_run=False, prefix="TEST")
+    assert puts == []
+    assert "is not an ISO date" in caplog.text
+
+
+def test_custom_field_colliding_with_a_built_in_line_is_warned_once(cf_env, caplog):
+    t = {"custom_fields": [
+        {"gid": "x", "name": "Blockers", "resource_subtype": "text", "text_value": "hi"}]}
+    with caplog.at_level("WARNING"):
+        assert sync._custom_field_lines(t) == []
+        sync._custom_field_lines(t)
+    assert caplog.text.count("collides with the built-in mirror field") == 1
