@@ -695,21 +695,6 @@ def main(stdscr):
 
 # ---------------------------------------------------------------- conky mode
 
-# Column positions in pixels, for the panel's font. Pixel gotos rather than
-# character padding, because conky lays the text out proportionally even in a
-# monospace font once ${goto} is in play, and a padded row drifts.
-#
-# They assume the panel's content width, 870px at Roboto Mono 10 - about 8.6px
-# a character. The title is last because it is the only column that can
-# overrun, and CONKY_TITLE_CHARS is what the width left over will hold: the
-# panel reserves the right half of its monitor, and widening it would eat into
-# the half that windows maximize in.
-CONKY_COLUMNS = {"acct": 108, "where": 158, "project": 272,
-                 "model": 436, "ctx": 492, "pct": 552, "last": 606,
-                 "title": 666}
-CONKY_PROJECT_CHARS = 18
-CONKY_TITLE_CHARS = 23
-
 # Tokyo Night. The hues carry the same meaning as the curses screen's
 # 256-colour indexes - red wants a human, cyan is a live shell, orange is
 # parked and may want picking up, green needs nothing - but the panel is a
@@ -731,10 +716,45 @@ QUOTA_RED_HEX = "f7768e"
 # has to be restated because ${font} with no size does not inherit the panel's.
 GLYPH_FONT = "DejaVu Sans Mono:size=10"
 
+# ---- panel geometry ------------------------------------------------------
+#
+# This script owns every measurement on the panel, and studio-claude-bg.lua
+# owns none: it paints the rectangles this says, at the pixel offsets this
+# gives it, through CARD_STATE. Keeping the arithmetic in one place is what
+# stops the cards drifting away from the text they are meant to sit behind.
+#
+# The values match studio-claude.conf: a 480px band on the third monitor, a
+# 20px inner margin, Roboto Mono 10 at an 18px line.
+CONKY_TEXT_LEFT = 20
+CONKY_TEXT_TOP = 20
+CONKY_LINE_HEIGHT = 18
+CONKY_CHAR_WIDTH = 8.6
+CONKY_CONTENT_WIDTH = 440
+CONKY_CARD_X = 8
+CONKY_CARD_WIDTH = 464
+CONKY_CARD_LINES = 3
+# Padding and gap are what decide how many cards the column holds, and 13 is
+# the number worth hitting: 12 sessions have been seen running at once, and a
+# card that forces the 12th into an overflow line defeats the point of the app.
+CONKY_CARD_PAD = 5          # above the first line and below the last
+CONKY_CARD_GAP = 6          # between one card and the next
+CONKY_PANEL_HEIGHT = 1080
 
-def in_glyph_font(text, font):
-    """Draw this much in a font that has the character, then switch back."""
-    return "${font %s}%s${font}" % (font, text)
+# Where the card rectangles are handed to the Lua hook. A cache path, not
+# studio state: it is rewritten every refresh and means nothing once the panel
+# stops.
+CARD_STATE = Path.home() / ".cache" / "bain-studio" / "claude-dash-cards.txt"
+
+# Column positions within a card. ${goto} measures from the window's left
+# edge, not from the text area, so these include the 20px inner margin: 20 is
+# where conky starts a line of its own accord, and every line of a card lines
+# up on it.
+CARD_WHERE_X = 150
+CARD_BODY_X = 20
+
+# What a 440px line holds at 8.6px a character, less the columns beside it.
+CONKY_TITLE_CHARS = int((CONKY_CONTENT_WIDTH - CARD_BODY_X) / CONKY_CHAR_WIDTH)
+CONKY_PROJECT_CHARS = 22
 
 
 def conky_escape(text):
@@ -747,101 +767,171 @@ def conky_escape(text):
     return str(text).replace("$", "$$")
 
 
-def conky_row(row, show_account, glyph_font=GLYPH_FONT):
-    """One session as a line of conky markup.
+def in_glyph_font(text, font):
+    """Draw this much in a font that has the character, then switch back."""
+    return "${font %s}%s${font}" % (font, text)
 
-    Only `waiting` blinks. It is the one status that is asking for something,
-    and a panel that is in the corner of the eye all day has to spend movement
-    carefully: anything else that moved would train the eye to ignore all of it.
+
+def conky_card(row, show_account, glyph_font=GLYPH_FONT):
+    """One session as three lines of conky markup.
+
+    Three, not four, because the card height is what decides how many sessions
+    the column holds: at three lines it takes 13, which covers the busiest day
+    seen so far, and at four it takes 10.
+
+    Nothing in the text moves. `waiting` pulses, because it is the one status
+    asking for something and a panel in the corner of the eye all day has to
+    spend movement carefully - but the pulse is on the card's status bar,
+    which the Lua hook draws. conky's ${blink} was tried on the glyph and
+    shifted the rest of the line sideways on every tick: in its off phase it
+    does not occupy the same width as the glyph it hides.
     """
     colour = CONKY_STATUS_COLOUR.get(row["status"], "9a948a")
-    glyph = GLYPH.get(row["status"], "?")
-    if row["status"] == "waiting":
-        glyph = "${blink " + glyph + "}"
-    glyph = in_glyph_font(glyph, glyph_font)
-    parts = ["${color %s}%s %s" % (colour, glyph, row["status"])]
+    glyph = in_glyph_font(GLYPH.get(row["status"], "?"), glyph_font)
+
+    account = ""
     if show_account:
-        parts.append("${goto %d}${color3}%s" % (CONKY_COLUMNS["acct"],
-                                                conky_escape(row["account"][:5])))
-    parts.append("${goto %d}${color1}%s" % (CONKY_COLUMNS["where"],
-                                            conky_escape(row["where"])))
-    parts.append("${goto %d}${color}%s" % (
-        CONKY_COLUMNS["project"],
-        conky_escape(row["project"][:CONKY_PROJECT_CHARS])))
-    parts.append("${goto %d}${color3}%s" % (CONKY_COLUMNS["model"],
-                                            conky_escape(short_model(row["model"])[:5])))
-    parts.append("${goto %d}%s" % (CONKY_COLUMNS["ctx"], tokens(row["ctx"])))
-    parts.append("${goto %d}%s" % (CONKY_COLUMNS["pct"],
-                                   f"{row['ctx_pct']}%" if row["ctx_pct"] else ""))
-    parts.append("${goto %d}${color}%s" % (CONKY_COLUMNS["last"], ago(row["for"])))
-    # The title is the most useful column and the only one that can overrun, so
-    # it goes last and is cut to what the panel's width leaves for it.
-    parts.append("${goto %d}${color3}%s${color}" % (
-        CONKY_COLUMNS["title"],
-        conky_escape(row["title"][:CONKY_TITLE_CHARS]) if row["title"] else "-"))
-    return "".join(parts)
+        account = "${color3}%s " % conky_escape(row["account"][:5])
+    head = "${color %s}%s %s ${goto %d}%s${color1}%s${alignr}${color3}%s" % (
+        colour, glyph, row["status"], CARD_WHERE_X, account,
+        conky_escape(row["where"]), ago(row["for"]))
+
+    figures = " \u00b7 ".join(part for part in (
+        short_model(row["model"])[:5], tokens(row["ctx"]),
+        f"{row['ctx_pct']}%" if row["ctx_pct"] else "") if part)
+    body = "${goto %d}${color}%s${alignr}${color3}%s" % (
+        CARD_BODY_X, conky_escape(row["project"][:CONKY_PROJECT_CHARS]), figures)
+
+    title = "${goto %d}${color3}%s" % (
+        CARD_BODY_X,
+        conky_escape(row["title"][:CONKY_TITLE_CHARS]) if row["title"] else "-")
+    return [head, body, title]
 
 
-def conky_header(rows, show_account):
-    """The tally line, then the column legend.
+def conky_header(rows, found, glyph_font=GLYPH_FONT):
+    """Title and tally on one line, then the quota, one line per account.
 
-    Same order as the curses heading, and the tally takes the colour of the
-    most demanding status present, so the panel says whether anything wants a
-    human before any row is read.
+    The quota runs to about 60 characters for two accounts and the column holds
+    51, so the accounts are stacked rather than compressed: the reset times are
+    half of what the header is for when deciding whether to start something.
     """
     counts = {name: sum(1 for r in rows if r["status"] == name)
               for name in ("waiting", "shell", "idle", "working")}
+    colour = (CONKY_STATUS_COLOUR["waiting"] if counts["waiting"]
+              else CONKY_STATUS_COLOUR["shell"] if counts["shell"] else None)
+    plural = "" if len(rows) == 1 else "s"
+    count = "%d session%s" % (len(rows), plural)
+    if colour:
+        count = "${color %s}%s${color}" % (colour, count)
+    lines = ["${color2}CLAUDE${color3}${alignr}%s" % count]
+
     tally = " \u00b7 ".join(f"{counts[n]} {n}"
                             for n in ("waiting", "shell", "idle", "working")
                             if n != "shell" or counts["shell"])
-    colour = (CONKY_STATUS_COLOUR["waiting"] if counts["waiting"]
-              else CONKY_STATUS_COLOUR["shell"] if counts["shell"]
-              else None)
-    head = "${color1}%d sessions${color3}   %s${color}" % (len(rows), tally)
-    if colour:
-        head = "${color %s}%d sessions   %s${color}" % (colour, len(rows), tally)
-
-    legend = ["${color3}  status"]
-    if show_account:
-        legend.append("${goto %d}acct" % CONKY_COLUMNS["acct"])
-    for name, label in (("where", "where"), ("project", "project"),
-                        ("model", "model"), ("ctx", "ctx"), ("pct", "ctx%"),
-                        ("last", "last"), ("title", "title")):
-        legend.append("${goto %d}%s" % (CONKY_COLUMNS[name], label))
-    legend.append("${color}")
-    return [head, "".join(legend)]
+    lines.append("${color3}%s${color}" % tally)
+    lines.extend(conky_quota(found, glyph_font))
+    lines.append("")
+    return lines
 
 
 def conky_quota(found, glyph_font=GLYPH_FONT):
-    """The quota line, coloured by the worst window of any account.
+    """One line per account, coloured by the worse of its two windows.
 
-    `quota_text` was written to be readable without a screen, so the figure
-    and the thresholds are shared with the curses version and only the colour
-    is applied here.
+    `quota_text` writes every account on one line for the terminal; here each
+    is asked for on its own, which is also what lets one account go amber
+    without dragging the other with it.
     """
-    if not found:
-        return []
-    text, worst = quota_text(found)
-    text = conky_escape(text).replace(
-        "\u2192", in_glyph_font("\u2192", glyph_font))
-    colour = (QUOTA_RED_HEX if worst >= QUOTA_RED
-              else QUOTA_AMBER_HEX if worst >= QUOTA_AMBER else None)
-    if colour:
-        return ["${color %s}%s${color}" % (colour, text)]
-    return ["${color3}%s${color}" % text]
+    lines = []
+    for account in found:
+        text, worst = quota_text([account])
+        text = conky_escape(text).replace(
+            "\u2192", in_glyph_font("\u2192", glyph_font))
+        colour = (QUOTA_RED_HEX if worst >= QUOTA_RED
+                  else QUOTA_AMBER_HEX if worst >= QUOTA_AMBER else None)
+        if colour:
+            lines.append("${color %s}%s${color}" % (colour, text))
+        else:
+            lines.append("${color3}%s${color}" % text)
+    return lines
+
+
+def card_capacity(header_lines):
+    """How many cards fit below the header, in the height of the band."""
+    card_height = (CONKY_CARD_LINES * CONKY_LINE_HEIGHT) + (2 * CONKY_CARD_PAD)
+    room = (CONKY_PANEL_HEIGHT - CONKY_TEXT_TOP
+            - (header_lines * CONKY_LINE_HEIGHT) - CONKY_TEXT_TOP)
+    return max(0, int((room + CONKY_CARD_GAP) / (card_height + CONKY_CARD_GAP)))
+
+
+def card_rect(index, header_lines):
+    """The pixel rectangle of card `index`, as (y, height).
+
+    The text of card n starts CARD_PAD below the card's top, and each card is
+    offset from the one above by its own height plus the gap. The same offsets
+    are fed to conky as ${voffset}, so the two cannot disagree.
+    """
+    card_height = (CONKY_CARD_LINES * CONKY_LINE_HEIGHT) + (2 * CONKY_CARD_PAD)
+    top = (CONKY_TEXT_TOP + header_lines * CONKY_LINE_HEIGHT
+           + index * (card_height + CONKY_CARD_GAP))
+    return top, card_height
+
+
+def write_card_state(rects, path=CARD_STATE):
+    """Hand the card rectangles to the Lua hook: `y height colour pulse` a line.
+
+    Plain text rather than JSON because the hook has no JSON parser, and the
+    file is three numbers a card. It is rewritten whole every refresh, so a
+    stale read can only ever be one refresh behind - the hook draws the cards
+    of the list the text is about to show, because conky builds its text before
+    it draws.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as handle:
+            for top, height, colour, pulse in rects:
+                handle.write(f"{top} {height} {colour} {pulse}\n")
+    except OSError:
+        # The panel still reads correctly without its card surfaces.
+        pass
 
 
 def emit_conky(glyph_font=GLYPH_FONT):
-    """Print the screen once as conky markup. The panel config holds the title
-    and the rule above this; everything that changes is printed here."""
+    """Print the panel once as conky markup, and leave the card rectangles
+    where the Lua hook will find them."""
     rows = collect()
     show_account = len({r["account"] for r in rows}) > 1
-    lines = conky_quota(quotas(), glyph_font)
-    lines += conky_header(rows, show_account)
-    if rows:
-        lines += [conky_row(r, show_account, glyph_font) for r in rows]
-    else:
+    header = conky_header(rows, quotas(), glyph_font)
+    capacity = card_capacity(len(header))
+
+    overflow = max(0, len(rows) - capacity)
+    if overflow:
+        # One card's worth of room is given back to say what is not shown,
+        # so a session can never be silently missing - the whole point of the
+        # app is that it is not.
+        capacity -= 1
+        overflow = len(rows) - capacity
+
+    lines = list(header)
+    rects = []
+    for index, row in enumerate(rows[:capacity]):
+        top, height = card_rect(index, len(header))
+        rects.append((top, height,
+                      CONKY_STATUS_COLOUR.get(row["status"], "9a948a"),
+                      1 if row["status"] == "waiting" else 0))
+        card = conky_card(row, show_account, glyph_font)
+        # The gap and the card's top padding, as one shift before its first
+        # line; card_rect() adds the same amounts.
+        card[0] = "${voffset %d}%s" % (
+            CONKY_CARD_PAD if index == 0 else CONKY_CARD_GAP + 2 * CONKY_CARD_PAD,
+            card[0])
+        lines.extend(card)
+    if not rows:
         lines.append("${color3}no sessions${color}")
+    if overflow > 0:
+        lines.append("${voffset %d}${color3}+%d more${color}"
+                     % (CONKY_CARD_GAP + CONKY_CARD_PAD, overflow))
+
+    write_card_state(rects)
     print("\n".join(lines))
 
 

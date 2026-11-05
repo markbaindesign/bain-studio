@@ -110,9 +110,10 @@ tmux prefix.
 
 ## The pinned panel on the third monitor
 
-`session-status --conky` prints the same screen once as conky markup and exits. It is what
-feeds `~/.config/conky/studio-claude.conf`, a panel pinned to the right half of the third
-monitor - the slot a second Terminator window used to hold.
+`session-status --conky` prints the same sessions once as conky markup and exits - as a column
+of cards rather than a table, which is what fits. It is what feeds
+`~/.config/conky/studio-claude.conf`, a panel filling the right quarter of the third monitor,
+the screen a second Terminator window used to sit on.
 
 **The reason is focus, not space.** Running the app in a terminal on that screen made it a
 second Terminator window, and getting back to the one holding the tmux sessions meant cycling
@@ -126,19 +127,19 @@ and `STICKY` set (verified with `xprop` on the running panel), which keeps it ou
 `Super+Tab` and out of the launcher icon's reach - that icon now has only the working terminal
 to raise.
 
-### The reserved half
+### The reserved quarter
 
 A dock also publishes `_NET_WM_STRUT_PARTIAL`, which asks the window manager to keep that band
 free, and mutter takes it out of the work area that maximize uses. **That is deliberate**: the
-right half of the third monitor belongs to the panels. The window's left edge is what sets the
-band - the strut runs from there to the edge of the screen - so the panel is placed at x=4800
-on a monitor starting at 3840, reserving exactly 960px.
+right quarter of the third monitor belongs to the panels. The window's left edge is what sets
+the band - the strut runs from there to the edge of the screen - so the panel is placed at
+x=5280 on a monitor starting at 3840, reserving exactly 480px.
 
 Measured, with a probe window on each monitor:
 
 | | Monitor 3, struts off | Monitor 3, struts on | Monitors 1 and 2 |
 |---|---|---|---|
-| Maximize | 1920px | **960px**, the left half | 1920px, unaffected |
+| Maximize | 1920px | **1440px** | 1920px, unaffected |
 | Fullscreen | 1920x1080 | **1920x1080** | 1920x1080 |
 
 **Struts do not block fullscreen.** They constrain maximize. The two were confused once here,
@@ -146,73 +147,74 @@ and the dash was briefly rebuilt as a `normal` window to fix a problem it did no
 numbers above are what settled it. A fullscreen window still covers the whole monitor,
 panel included.
 
-Because nothing can sit under the dash any more, its background is opaque: the translucency
-was there to let the desktop through, and with the band reserved there is nothing but desktop
-behind it anyway. `ALPHA` in `studio-claude-bg.lua` is the one place to change that.
+The dash fills its band - full height, no gutter, square corners - because a reserved column
+is not a card floating on the desktop. It is opaque for the same reason: nothing can sit under
+it, so the translucency it had was only ever letting the wallpaper through. `ALPHA` in
+`studio-claude-bg.lua` is the one place to change that.
 
-| | |
-|---|---|
-| Panel | `~/.config/conky/studio-claude.conf` |
-| Background | `~/.config/conky/studio-claude-bg.lua` |
-| Launcher | `~/bin/studio-claude-dash {start\|stop\|restart\|toggle\|status}` |
-| Autostart | `~/.config/autostart/studio-claude-dash.desktop`, 10s after login |
+## One card a session
 
-It needs the **`conky-all`** package, not `conky-std`. Both are 1.10.8 and `conky-std` has the
-Lua interpreter, but only `conky-all` ships the cairo binding (`/usr/lib/conky/libcairo.so`)
-that `require 'cairo'` loads, and the rounded background is drawn with cairo.
+The column is 480px wide, which is about 51 characters: a table does not fit, so each session
+is a card instead - a rounded surface a shade lighter than the panel, with its status colour
+as a bar down the left edge.
 
-Those three are desktop configuration, so they sit with the other studio panels rather than in
-this repo; only the `--conky` mode is here. The panel invokes the **ops worktree** copy, like
-the `claude-sessions-status` alias, so it runs a released tag. Unlike the tmux window, it needs
-no respawn after a deploy: every refresh is a new process, so the next tick picks the new
-script up.
+```
+CLAUDE                              5 sessions
+1 waiting · 1 shell · 2 idle · 1 working
+bain 5h 42% →22:20 · wk 64% →Tue
+kf 5h 4% →23:40 · wk 11% →Sun
 
-It is deliberately **not** in `studio-conky`'s `PANELS` list. Those panels are a cheatsheet
-toggled with `Super+c`, and hiding them should not take the dash down.
+┃ ● waiting      mwe:1.1                  12m
+┃ middlewayeducation       o5.5 · 118k · 12%
+┃ Passiko project setup
 
-### What is different on a panel
+┃ ◑ shell        studio:1.0               54m
+┃ bain-studio              o5.5 · 282k · 28%
+┃ Invoices bookkeeping
+```
 
-- **Only `waiting` moves.** It blinks, with conky's `${blink}`. The spin and the slower
-  `shell` breath are gone: they were driven by a redraw loop that a one-shot process does not
-  have, and a thing in the corner of the eye all day has to spend movement carefully - anything
-  else that moved would train the eye to ignore the one status that is asking for something.
-  `${blink}` toggles **once per `update_interval`**, not per refresh, which is why the panel
-  draws at 1s while its `execpi` still only runs the script every 5s: at `update_interval = 5`
-  the pulse was a five-second stare. Confirmed by sampling the glyph's mean brightness over
-  four one-second crops - it alternates.
-- **The palette is Tokyo Night**, and the status hues carry the same meaning as the terminal's
-  256-colour indexes - red wants a human, cyan is a live shell, orange is parked, green needs
-  nothing - without being the same values. The panel is a themed surface in front of the
-  desktop; the terminal app is a terminal, and keeps its own.
-- **The tally line takes the colour of the most demanding status present**, so the panel
-  answers "does anything want me?" before a row is read.
-- **The glyph and the reset arrow name their own font.** Roboto Mono for Powerline, which the
-  studio panels use, has neither the status circles nor `→` (`fc-list ":charset=25d0"` returns
-  nothing for it), and conky drives Xft directly - a comma-separated family list in the config
-  is *not* a fallback chain, it takes the first family and draws a blank. So those characters
-  are wrapped in `${font DejaVu Sans Mono:size=11}` and switched back, set by `--glyph-font`
-  because `${font}` with no size does not inherit the panel's.
-- **Columns are fixed pixel `${goto}`s, not padding**, because conky lays text out
-  proportionally once `${goto}` is in play and a padded row drifts. There is no narrowing
-  ladder: the panel has one width.
-- **`$` in a title or project name is escaped to `$$`.** It is conky's variable sigil, and an
-  unescaped one swallows the rest of the line.
-- **The transcript cache is cold on every refresh**, since each one is a new process. A full
-  collect is ~0.4s of CPU, all of it local with no API call, which the 5-second `execpi`
-  interval absorbs. `claude` is found on the session PATH at login (`~/.local/bin` is on it),
-  which matters because `run()` swallows a failed call and the panel would read "no sessions"
-  rather than saying anything was wrong.
-  The window itself draws nothing (`own_window_argb_value = 0`); the background is a rounded
-  rectangle filled by `studio-claude-bg.lua` from `lua_draw_hook_pre`, which carries both the
-  colour and the opacity. That is **real** transparency, not the root-pixmap kind: a dock
-  window takes an ARGB visual quite happily. An *override-redirect* window is the one that
-  cannot - conky dies with a BadMatch on `X_CreateWindow` - which was tried first and is a
-  property of that type, not of panels. While the dash was strut-free, ordinary windows sat
-  under it and bled through: 205 of 255 let the wallpaper compete with the dim text, and even
-  240 left a bright window underneath readable as a soft rectangle. With the band reserved
-  the question is moot and the fill is opaque.
+**Three lines a card**, because the card's height is what decides how many sessions the column
+holds: three fits 13, four fits 10, and 12 sessions have been seen running at once. The
+padding and the gap were tightened from 6 and 8 to 5 and 6 for exactly that - at the first
+numbers the count came out at 12, which would have pushed the twelfth session into an
+overflow line.
 
-### Two traps in the rounded background
+Anything beyond the thirteenth is counted on a `+N more` line rather than dropped. A session
+that is not on screen still has to be accounted for; the app exists because one can otherwise
+go unnoticed.
+
+The quota is one line an account. It runs to about 60 characters for two accounts and the
+column holds 51, so they are stacked rather than compressed: the reset times are half of what
+the header is for. Each account colours on its own worst window, so one going red does not
+drag the other with it.
+
+### Who owns the measurements
+
+`session-status --conky` owns every pixel on the panel and `studio-claude-bg.lua` owns none.
+The script lays out the lines, so it is the only thing that can know where a card's three
+lines fall; it computes each card's rectangle and writes them to
+`~/.cache/bain-studio/claude-dash-cards.txt`, one `y height colour pulse` a line, and the hook
+paints what it is told. The same gap is fed to conky as `${voffset}` and used to place the
+rectangle, which is what stops a card drifting away from its text - a unit test holds the two
+together.
+
+A read of that file can be one refresh behind the text, and only in the moment a session
+appears or disappears: conky builds its text before it draws.
+
+### The pulse is on the bar, not the glyph
+
+`waiting` pulses once a second, and it is the only thing on the panel that moves - a thing in
+the corner of the eye all day has to spend movement carefully, or the eye learns to ignore all
+of it. The pulse is drawn by the hook, dimming that card's status bar on alternate seconds.
+
+conky's `${blink}` was tried on the glyph first. **In its off phase it does not occupy the
+width of the glyph it hides**, so the rest of the line jumped sideways every tick. A bar
+cannot move anything.
+
+Because the hook redraws every second while `execpi` only reruns the script every five, the
+panel's `update_interval` is 1 and its `execpi` interval is 5.
+
+### Two traps in the cairo background
 
 Both cost an hour, and both look like "nothing is drawing":
 
@@ -221,15 +223,18 @@ Both cost an hour, and both look like "nothing is drawing":
    `lua_draw_hook_pre` is the only layer that lands behind it.
 2. **`CAIRO_OPERATOR_SOURCE` fills the whole window, not the path.** It is one of cairo's
    *unbounded* operators: it paints the entire clip region regardless of the path, so the
-   corners it was meant to cut come out square. The default `OVER` is bounded, and over a
-   transparent destination it keeps the source's alpha anyway, which is all `SOURCE` was
-   wanted for.
+   rounded corners it was meant to cut come out square. The default `OVER` is bounded, and
+   over a transparent destination it keeps the source's alpha anyway, which is all `SOURCE`
+   was wanted for.
 
-   **Check the result with `gnome-screenshot`, not `import -window root`.** Under mutter's
-   compositor the root window does not reliably hold what is on screen for a translucent
-   window, and `import` returned images that disagreed with each other and with the screen -
-   which is what made the first two diagnoses of this wrong. A magenta fill helps too:
-   `#16161e` against a dark desktop is hard to tell from no background at all.
+**Check the result with `gnome-screenshot`, not `import -window root`.** Under mutter's
+compositor the root window does not reliably hold what is on screen for a translucent window,
+and `import` returned images that disagreed with each other and with the screen - which is
+what made the first two diagnoses of this wrong.
+
+One more, in the text rather than the paint: **`${goto}` measures from the window's left edge,
+not from the text area**, so a card's body lines have to repeat the 20px inner margin or they
+slide under the status bar. A unit test pins `CARD_BODY_X` to the margin.
 
 ## The `shell` status, and why the CLI cannot be trusted alone
 

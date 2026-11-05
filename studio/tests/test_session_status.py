@@ -1,6 +1,7 @@
 import importlib.machinery
 import importlib.util
 import json
+import re
 import time
 from pathlib import Path
 
@@ -348,71 +349,159 @@ def _row(status="idle", **over):
     return row
 
 
-def test_only_waiting_blinks():
-    # A panel sits in the corner of the eye all day: anything else that moved
-    # would train the eye to ignore the one status that is asking for something.
-    assert "${blink" in s.conky_row(_row("waiting"), False)
-    for status in ("shell", "idle", "working"):
-        assert "${blink" not in s.conky_row(_row(status), False)
+def _quota(pct=10, weekly=20):
+    return {"account": "bain", "pct": pct, "reset_ts": NOW + 3600,
+            "weekly_pct": weekly, "weekly_reset_ts": NOW + 200000}
+
+
+def test_a_card_is_three_lines():
+    # The card height is what decides how many sessions the column holds.
+    assert len(s.conky_card(_row(), False)) == s.CONKY_CARD_LINES == 3
+
+
+def test_nothing_in_a_card_blinks():
+    # ${blink} was tried on the glyph and shifted the rest of the line
+    # sideways in its off phase. The pulse lives on the card's bar instead.
+    for status in ("waiting", "shell", "idle", "working"):
+        assert "${blink" not in "".join(s.conky_card(_row(status), False))
+
+
+def test_only_waiting_is_flagged_to_pulse(monkeypatch):
+    written = []
+    monkeypatch.setattr(s, "collect",
+                        lambda: [_row("waiting"), _row("idle")])
+    monkeypatch.setattr(s, "quotas", lambda: [])
+    monkeypatch.setattr(s, "write_card_state", lambda rects: written.extend(rects))
+    s.emit_conky()
+    assert [rect[3] for rect in written] == [1, 0]
 
 
 def test_each_status_keeps_its_own_colour():
     for status, colour in s.CONKY_STATUS_COLOUR.items():
-        assert colour in s.conky_row(_row(status), False)
+        assert colour in "".join(s.conky_card(_row(status), False))
 
 
 def test_a_dollar_in_a_title_is_escaped():
     # conky reads $ as its variable sigil, so an unescaped title would swallow
     # the rest of the line.
-    out = s.conky_row(_row(title="fix $HOME in deploy"), False)
+    out = "".join(s.conky_card(_row(title="fix $HOME in deploy"), False))
     assert "$$HOME" in out
     assert "$HOME" not in out.replace("$$HOME", "")
 
 
-def test_the_account_column_appears_only_with_two_accounts():
-    assert "bain" in s.conky_row(_row(), True)
-    assert "bain" not in s.conky_row(_row(), False)
+def test_the_account_label_appears_only_with_two_accounts():
+    assert "bain" in "".join(s.conky_card(_row(), True))
+    assert "bain" not in "".join(s.conky_card(_row(), False))
 
 
 def test_the_glyph_is_drawn_in_a_font_that_has_it():
     # Roboto Mono for Powerline has no U+25D0-25D1 and conky's Xft takes no
     # fallback list, so the glyph has to name its own family.
-    out = s.conky_row(_row("working"), False)
-    assert "${font DejaVu Sans Mono" in out
-    assert out.count("${font}") == 1
+    head = s.conky_card(_row("working"), False)[0]
+    assert "${font DejaVu Sans Mono" in head
+    assert head.count("${font}") == 1
 
 
-def test_the_quota_arrow_is_drawn_in_that_font_too():
-    found = [{"account": "bain", "pct": 42, "reset_ts": NOW + 3600,
-              "weekly_pct": 64, "weekly_reset_ts": NOW + 200000}]
-    line = s.conky_quota(found)[0]
-    assert "${font DejaVu Sans Mono" in line
+def test_every_line_of_a_card_starts_on_the_same_column():
+    # The body lines are placed with ${goto}, which measures from the window
+    # edge, not from the text area - so they have to repeat the inner margin
+    # or they slide under the card's status bar.
+    assert s.CARD_BODY_X == s.CONKY_TEXT_LEFT
+    for line in s.conky_card(_row(), False)[1:]:
+        assert line.startswith("${goto %d}" % s.CONKY_TEXT_LEFT)
 
 
-def test_the_quota_line_colours_on_the_worst_window():
-    base = {"account": "bain", "pct": 10, "reset_ts": NOW + 3600,
-            "weekly_reset_ts": NOW + 200000}
-    assert s.QUOTA_RED_HEX in s.conky_quota([dict(base, weekly_pct=95)])[0]
-    assert s.QUOTA_AMBER_HEX in s.conky_quota([dict(base, weekly_pct=75)])[0]
-    assert "color3" in s.conky_quota([dict(base, weekly_pct=20)])[0]
+# --- the card rectangles handed to the Lua hook ---------------------------
+
+def test_card_rectangles_match_the_offsets_the_text_is_given():
+    # The invariant the whole split rests on: the gap fed to conky as
+    # ${voffset} and the gap used to place the rectangle are the same number,
+    # so a card cannot drift away from the text it sits behind.
+    first_top, height = s.card_rect(0, 5)
+    second_top, _ = s.card_rect(1, 5)
+    assert height == (3 * s.CONKY_LINE_HEIGHT) + (2 * s.CONKY_CARD_PAD)
+    assert second_top - first_top == height + s.CONKY_CARD_GAP
 
 
-def test_the_tally_takes_the_colour_of_the_most_demanding_status():
-    waiting = s.conky_header([_row("waiting"), _row("idle")], False)[0]
+def test_the_first_card_sits_below_the_header():
+    top, _ = s.card_rect(0, 5)
+    assert top == s.CONKY_TEXT_TOP + 5 * s.CONKY_LINE_HEIGHT
+
+
+def test_the_column_holds_a_busy_day():
+    # 12 sessions have been seen at once; three-line cards were chosen to fit
+    # more than that.
+    assert s.card_capacity(5) >= 13
+
+
+def test_the_state_file_is_what_the_lua_hook_parses(tmp_path):
+    # studio-claude-bg.lua matches "^(%d+) (%d+) (%x%x%x%x%x%x) (%d)$".
+    path = tmp_path / "cards.txt"
+    s.write_card_state([(110, 66, "f7768e", 1), (184, 66, "9ece6a", 0)], path)
+    lines = path.read_text().splitlines()
+    assert lines == ["110 66 f7768e 1", "184 66 9ece6a 0"]
+    for line in lines:
+        assert re.match(r"^\d+ \d+ [0-9a-f]{6} [01]$", line)
+
+
+def test_an_unwritable_state_file_does_not_stop_the_panel(tmp_path):
+    # The panel still reads correctly without its card surfaces.
+    s.write_card_state([(1, 2, "f7768e", 0)], tmp_path / "no" / "such" / "x")
+
+
+# --- the header -----------------------------------------------------------
+
+def test_the_count_takes_the_colour_of_the_most_demanding_status():
+    waiting = s.conky_header([_row("waiting"), _row("idle")], [])[0]
     assert s.CONKY_STATUS_COLOUR["waiting"] in waiting
-    shell = s.conky_header([_row("shell"), _row("idle")], False)[0]
+    shell = s.conky_header([_row("shell"), _row("idle")], [])[0]
     assert s.CONKY_STATUS_COLOUR["shell"] in shell
-    quiet = s.conky_header([_row("idle"), _row("working")], False)[0]
+    quiet = s.conky_header([_row("idle"), _row("working")], [])[0]
     assert s.CONKY_STATUS_COLOUR["waiting"] not in quiet
 
 
 def test_the_shell_count_is_left_out_when_it_is_zero():
-    assert "shell" not in s.conky_header([_row("idle")], False)[0]
-    assert "1 shell" in s.conky_header([_row("shell")], False)[0]
+    assert "shell" not in s.conky_header([_row("idle")], [])[1]
+    assert "1 shell" in s.conky_header([_row("shell")], [])[1]
+
+
+def test_one_quota_line_per_account():
+    two = [dict(_quota(), account="bain"), dict(_quota(), account="kf")]
+    lines = s.conky_quota(two)
+    assert len(lines) == 2
+    assert "bain" in lines[0] and "kf" in lines[1]
+
+
+def test_an_account_colours_on_its_own_worst_window():
+    # One account going red must not drag the other with it.
+    lines = s.conky_quota([dict(_quota(weekly=95), account="bain"),
+                           dict(_quota(weekly=20), account="kf")])
+    assert s.QUOTA_RED_HEX in lines[0]
+    assert s.QUOTA_RED_HEX not in lines[1]
+    assert s.QUOTA_AMBER_HEX in s.conky_quota([_quota(weekly=75)])[0]
+
+
+def test_the_quota_arrow_is_drawn_in_the_glyph_font():
+    assert "${font DejaVu Sans Mono" in s.conky_quota([_quota()])[0]
+
+
+# --- overflow -------------------------------------------------------------
+
+def test_more_sessions_than_fit_are_counted_not_dropped(monkeypatch):
+    # A session that is not on screen must still be accounted for: the app
+    # exists because a session can otherwise go unnoticed.
+    monkeypatch.setattr(s, "collect", lambda: [_row() for _ in range(40)])
+    monkeypatch.setattr(s, "quotas", lambda: [])
+    monkeypatch.setattr(s, "write_card_state", lambda rects: None)
+    out = []
+    monkeypatch.setattr("builtins.print", lambda text: out.append(text))
+    s.emit_conky()
+    assert "more" in out[0]
 
 
 def test_no_sessions_says_so(monkeypatch, capsys):
     monkeypatch.setattr(s, "collect", lambda: [])
     monkeypatch.setattr(s, "quotas", lambda: [])
+    monkeypatch.setattr(s, "write_card_state", lambda rects: None)
     s.emit_conky()
     assert "no sessions" in capsys.readouterr().out
