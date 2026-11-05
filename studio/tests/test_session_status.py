@@ -1,6 +1,7 @@
 import importlib.machinery
 import importlib.util
 import json
+import re
 import time
 from pathlib import Path
 
@@ -336,3 +337,226 @@ def test_a_cli_busy_session_mid_turn_is_shown_as_working(monkeypatch):
 def test_a_cli_busy_session_whose_turn_is_over_is_still_shell(monkeypatch):
     # A live background shell holding the CLI at busy is the case this exists for.
     assert _one_session(monkeypatch, finished=True) == "shell"
+
+
+# --- the conky panel mode -------------------------------------------------
+
+def _row(status="idle", **over):
+    row = {"status": status, "ctx": 118000, "ctx_pct": 12, "model": "Opus 5.5",
+           "title": "Passiko project setup", "account": "bain",
+           "where": "mwe:1.1", "project": "middlewayeducation", "for": 720}
+    row.update(over)
+    return row
+
+
+def _quota(pct=10, weekly=20):
+    return {"account": "bain", "pct": pct, "reset_ts": NOW + 3600,
+            "weekly_pct": weekly, "weekly_reset_ts": NOW + 200000}
+
+
+def _header(rows=None, found=None):
+    """conky_header returns (lines, pixel height, bar rectangles)."""
+    return s.conky_header(rows if rows is not None else [_row()], found or [])
+
+
+def test_a_card_is_three_lines():
+    # The card height is what decides how many sessions the column holds.
+    assert len(s.conky_card(_row(), False)) == s.CONKY_CARD_LINES == 3
+
+
+def test_nothing_in_a_card_blinks():
+    # ${blink} was tried on the glyph and shifted the rest of the line
+    # sideways in its off phase. The pulse lives on the card's bar instead.
+    for status in ("waiting", "shell", "idle", "working"):
+        assert "${blink" not in "".join(s.conky_card(_row(status), False))
+
+
+def test_only_waiting_is_flagged_to_pulse(monkeypatch):
+    written = []
+    monkeypatch.setattr(s, "collect",
+                        lambda: [_row("waiting"), _row("idle")])
+    monkeypatch.setattr(s, "quotas", lambda: [])
+    monkeypatch.setattr(s, "write_card_state",
+                        lambda cards, bars=(): written.extend(cards))
+    s.emit_conky()
+    assert [rect[3] for rect in written] == [1, 0]
+
+
+def test_each_status_keeps_its_own_colour():
+    for status, colour in s.CONKY_STATUS_COLOUR.items():
+        assert colour in "".join(s.conky_card(_row(status), False))
+
+
+def test_a_dollar_in_a_title_is_escaped():
+    # conky reads $ as its variable sigil, so an unescaped title would swallow
+    # the rest of the line.
+    out = "".join(s.conky_card(_row(title="fix $HOME in deploy"), False))
+    assert "$$HOME" in out
+    assert "$HOME" not in out.replace("$$HOME", "")
+
+
+def test_the_account_label_appears_only_with_two_accounts():
+    assert "bain" in "".join(s.conky_card(_row(), True))
+    assert "bain" not in "".join(s.conky_card(_row(), False))
+
+
+def test_the_glyph_is_drawn_in_a_font_that_has_it():
+    # Roboto Mono for Powerline has no U+25D0-25D1 and conky's Xft takes no
+    # fallback list, so the glyph has to name its own family.
+    head = s.conky_card(_row("working"), False)[0]
+    assert "${font DejaVu Sans Mono" in head
+    assert head.count("${font}") == 1
+
+
+def test_every_line_of_a_card_starts_on_the_same_column():
+    # The body lines are placed with ${goto}, which measures from the window
+    # edge, not from the text area - so they have to repeat the inner margin
+    # or they slide under the card's status bar.
+    assert s.CARD_BODY_X == s.CONKY_TEXT_LEFT
+    for line in s.conky_card(_row(), False)[1:]:
+        assert line.startswith("${goto %d}" % s.CONKY_TEXT_LEFT)
+
+
+# --- the card rectangles handed to the Lua hook ---------------------------
+
+def test_card_rectangles_match_the_offsets_the_text_is_given():
+    # The invariant the whole split rests on: the gap fed to conky as
+    # ${voffset} and the gap used to place the rectangle are the same number,
+    # so a card cannot drift away from the text it sits behind.
+    first_top, height = s.card_rect(0, 200)
+    second_top, _ = s.card_rect(1, 200)
+    assert height == (3 * s.CONKY_LINE_HEIGHT) + (2 * s.CONKY_CARD_PAD)
+    assert second_top - first_top == height + s.CONKY_CARD_GAP
+
+
+def test_the_column_holds_a_busy_day():
+    # 12 sessions have been seen at once; three-line cards were chosen to fit
+    # more than that. Measured against a real two-account header.
+    _, height, _ = _header(found=[_quota(), dict(_quota(), account="kf")])
+    assert s.card_capacity(height) >= 12
+
+
+def test_the_state_file_is_what_the_lua_hook_parses(tmp_path):
+    # studio-claude-bg.lua matches these two shapes and nothing else.
+    path = tmp_path / "cards.txt"
+    s.write_card_state([(110, 66, "f7768e", 1)],
+                       [(78, 20, 440, 6, 220, "9ece6a", 150),
+                        (87, 20, 440, 6, 12, "e0af68", -1)], path)
+    lines = path.read_text().splitlines()
+    assert lines[0] == "card 110 66 f7768e 1"
+    assert re.match(r"^card \d+ \d+ [0-9a-f]{6} [01]$", lines[0])
+    for line in lines[1:]:
+        assert re.match(r"^bar \d+ \d+ \d+ \d+ \d+ [0-9a-f]{6} -?\d+$", line)
+
+
+def test_an_unwritable_state_file_does_not_stop_the_panel(tmp_path):
+    # The panel still reads correctly without its surfaces.
+    s.write_card_state([(1, 2, "f7768e", 0)], [], tmp_path / "no" / "such" / "x")
+
+
+# --- the header -----------------------------------------------------------
+
+def test_the_count_takes_the_colour_of_the_most_demanding_status():
+    waiting = _header([_row("waiting"), _row("idle")])[0][0]
+    assert s.CONKY_STATUS_COLOUR["waiting"] in waiting
+    shell = _header([_row("shell"), _row("idle")])[0][0]
+    assert s.CONKY_STATUS_COLOUR["shell"] in shell
+    quiet = _header([_row("idle"), _row("working")])[0][0]
+    assert s.CONKY_STATUS_COLOUR["waiting"] not in quiet
+
+
+def test_the_shell_count_is_left_out_when_it_is_zero():
+    assert "shell" not in _header([_row("idle")])[0][1]
+    assert "1 shell" in _header([_row("shell")])[0][1]
+
+
+def test_one_quota_line_per_account():
+    two = [dict(_quota(), account="bain"), dict(_quota(), account="kf")]
+    lines = _header(found=two)[0]
+    assert any("bain" in line for line in lines)
+    assert any("kf" in line for line in lines)
+
+
+def test_the_quota_arrow_is_drawn_in_the_glyph_font():
+    assert "${font DejaVu Sans Mono" in s.quota_line(_quota())[0]
+
+
+# --- the usage bars -------------------------------------------------------
+
+def test_two_bars_an_account_one_a_window():
+    bars = _header(found=[_quota()])[2]
+    assert len(bars) == 2
+
+
+def test_a_window_that_has_already_reset_gets_no_bar():
+    # Its figure belongs to a window that is gone - quota_text says "reset"
+    # rather than quoting it, and there is nothing to draw either.
+    stale = dict(_quota(), reset_ts=NOW - 60)
+    assert len(_header(found=[stale])[2]) == 1
+
+
+def test_the_fill_is_the_percentage_of_the_track():
+    bars = _header(found=[_quota(pct=50)])[2]
+    fill = bars[0][4]
+    assert fill == s.BAR_WIDTH // 2
+
+
+def test_the_marker_sits_where_the_budget_says():
+    # Half way through the five-hour window, the budget is 50%.
+    half = dict(_quota(), reset_ts=NOW + 2.5 * 3600)
+    marker = _header(found=[half])[2][0][6]
+    assert abs(marker - s.BAR_WIDTH // 2) <= 2
+
+
+def test_a_bar_takes_the_colour_of_its_pace():
+    # Just opened and already 60% spent: far over any budget.
+    fresh = dict(_quota(pct=60), reset_ts=NOW + 5 * 3600 - 60)
+    assert _header(found=[fresh])[2][0][5] == s.PACE_COLOUR[s.claude_pace.FAST]
+    calm = dict(_quota(pct=1), reset_ts=NOW + 5 * 3600 - 60)
+    assert _header(found=[calm])[2][0][5] == s.PACE_COLOUR[s.claude_pace.OK]
+
+
+def test_a_nearly_spent_window_is_red_however_well_paced():
+    # The level floor, which the dashboard's own rule does not have.
+    spent = dict(_quota(pct=95), reset_ts=NOW + 60)
+    assert _header(found=[spent])[2][0][5] == s.PACE_COLOUR[s.claude_pace.FAST]
+
+
+def test_the_space_voffset_makes_is_the_space_counted():
+    # Bars are painted, not written, so their height exists twice: once as a
+    # ${voffset} in the text and once in the pixel total the cards are placed
+    # from. If those disagree, every card below the header is wrong.
+    lines, height, bars = _header(found=[_quota()])
+    shift = sum(int(re.search(r"\$\{voffset (-?\d+)\}", line).group(1))
+                for line in lines if line.startswith("${voffset"))
+    text_lines = sum(1 for line in lines if not line.startswith("${voffset"))
+    voffset_lines = len(lines) - text_lines
+    assert (s.CONKY_TEXT_TOP + (text_lines + voffset_lines) * s.CONKY_LINE_HEIGHT
+            + shift) == height
+
+
+def test_the_first_card_starts_where_the_header_ends():
+    _, height, _ = _header(found=[_quota()])
+    assert s.card_rect(0, height)[0] == height
+
+
+# --- overflow -------------------------------------------------------------
+
+def test_more_sessions_than_fit_are_counted_not_dropped(monkeypatch):
+    # A session that is not on screen must still be accounted for: the app
+    # exists because a session can otherwise go unnoticed.
+    monkeypatch.setattr(s, "collect", lambda: [_row() for _ in range(40)])
+    monkeypatch.setattr(s, "quotas", lambda: [])
+    monkeypatch.setattr(s, "write_card_state", lambda cards, bars=(): None)
+    out = []
+    monkeypatch.setattr("builtins.print", lambda text: out.append(text))
+    s.emit_conky()
+    assert "more" in out[0]
+
+
+def test_no_sessions_says_so(monkeypatch, capsys):
+    monkeypatch.setattr(s, "collect", lambda: [])
+    monkeypatch.setattr(s, "quotas", lambda: [])
+    monkeypatch.setattr(s, "write_card_state", lambda cards, bars=(): None)
+    s.emit_conky()
+    assert "no sessions" in capsys.readouterr().out
