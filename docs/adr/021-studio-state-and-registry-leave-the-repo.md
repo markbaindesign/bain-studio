@@ -170,3 +170,82 @@ with it, and `/focus` (currently `projects.json`) and `/open` (currently `docs/p
 should be brought onto whatever wins at the same time.
 
 The ADR as a whole stays **Proposed**; only this question is settled.
+
+### Addendum (2026-11-06): question 1 resolved — `docs/projects/` leaves the repo
+
+Open question 1 offered three answers. **The third is taken: moved out of the public repo.**
+Settled by instruction — "no client data should go in this repo" — after a release push
+prompted a survey of what the repo actually carries.
+
+The survey found client-identifying content in **44 tracked files** of 435, across eight
+categories: client names, project files whose *filenames* are client identifiers, live
+domains and hosting install hostnames, a Cloudways application ID, two analytics property
+IDs, Dropbox client paths, private repository URLs, and Asana project GIDs. Two local feature
+branches are themselves named after a client. Nothing is a credential: no token, key or
+private key has ever been tracked, and `.env` has never been committed. This is a
+confidentiality defect, not a breach.
+
+The count was arrived at twice. A hand-written name regex returned a union of 82 files, which
+double-counted the *variable name* `ASANA_PROJECT_GID` and the studio's own repository URLs,
+while missing three clients whose names the regex did not anticipate. 44 is the figure a
+denylist **generated from the registry** returns. The lesson is recorded here because it is
+the same lesson as the rest of this ADR: a hand-maintained list of what the studio works on
+disagrees with the real one.
+
+#### What was decided
+
+1. **The split in this ADR is kept, and extended to the prose.** `registry.json` under
+   `$XDG_DATA_HOME/bain-studio/` holds identity. The per-project prose — stack, hosting,
+   system enrollment, context — becomes a document under `$STUDIO_CONTENT_DIR/projects/`,
+   where `documents-in-dropbox.md` already puts documents. The repo keeps nothing per-project.
+2. **The registry schema grows beyond this ADR's `path`, `prefix`, `gid`, `name`, `status`.**
+   It also carries `client`, `domains`, `repo` and `kind`. Not for the tools: for the
+   enforcement denylist, which cannot be generated without them, and which must distinguish
+   client entries from internal ones or every commit naming an internal project is refused.
+   `kind` is already derivable — half the current project files declare an internal client.
+3. **ADRs keep project prefixes and lose everything else.** Once the prefix-to-client mapping
+   is out of the repo, a bare prefix identifies nobody, and the toolchain speaks in prefixes
+   throughout. Client names, domains, install hostnames and provider IDs go; the detail moves
+   to that project's `Dev Ops/` note in Dropbox first, which ADRs 023 and 024 already cite as
+   its home. Six ADRs are affected: 016, 017, 018, 019, 023, 024.
+4. **Git history is left intact.** No rewrite, no force-push. The repo has no forks, no stars,
+   no workflows, no deploy keys and a single contributor, so a rewrite was available and was
+   considered; it was declined. The data has been public for roughly six months, a rewrite
+   would re-tag the 40 tags the ops worktree is pinned to, and nothing exposed is a credential.
+   The rule is met going forward, not retroactively, and this records that deliberately.
+5. **`CHANGELOG.md` is redacted going forward only.** Past entries stay as written. The
+   identical text is in `git log` either way, so rewriting a dated record would buy a tidier
+   snapshot and nothing else. New entries name prefixes.
+6. **Enforcement is a hook, not a rule** — the conclusion ADR 026 reached the same day. A rule
+   alone is what produced the defect: the "What belongs in this repo" section of `CLAUDE.md`
+   listed `docs/projects/` as belonging, three lines below the sentence "It is public." That
+   section is rewritten as part of this work.
+
+#### The denylist must never be committed
+
+A list of client names and domains, checked into the public repo so a hook can grep for it, is
+the exact data the hook exists to keep out. The denylist is **generated at run time** from
+`registry.json`, which is outside the repo. The hook script is versioned; its subject is not.
+
+Three failure modes are designed against, because each one makes the hook useless while
+appearing to work:
+
+- **It must scan added lines only.** A diff-wide match refuses the redaction commits themselves.
+- **It must also run on the commit message.** `pre-commit` never sees the message, and the
+  studio's own rules direct reasoning into commit messages, which are public.
+- **It must refuse, not pass, when the registry is absent** — a fresh clone, or another
+  machine. An empty denylist otherwise lets everything through silently.
+
+#### Migration order
+
+This ADR's own ordering constraint binds harder here than it did for state, because the ops
+worktree runs scheduled jobs off a release tag and several of them read `docs/projects/`
+frontmatter. The registry and the out-of-repo config files are written first, then a resolver
+that reads them with a fallback to the old location, then a release and `ops-deploy.sh`, and
+only then do the files move. The fallback is removed last, once ops is proven on the new
+reader.
+
+One collector is invoked from `crontab` by a filename that names a client. Renaming it is a
+cron edit in the same change, or the collector stops silently.
+
+The ADR as a whole stays **Proposed**. Question 1 is now settled; questions 3 and 4 are not.
