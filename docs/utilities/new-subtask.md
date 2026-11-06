@@ -18,7 +18,7 @@ feedback item, is a top-level task. See [ADR 022](../adr/022-asana-tasks-carry-t
 ```bash
 python3 /media/data/dev/bain-studio/studio/sync.py \
   --create-subtask \
-  --task-gid 1217094791482756 \
+  --task-gid {GID} \
   --subtask-name "Audit redirects" \
   --subtask-name "Fix the ones that 404" \
   --subtask-name "Re-crawl and confirm"

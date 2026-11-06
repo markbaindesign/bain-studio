@@ -6,7 +6,8 @@ each through the statuses via the Looper Status custom field.
 
 ## Asana
 
-ASANA_PROJECT_GID: 1216260498940192
+# ASANA_PROJECT_GID is not recorded here: this repo is public.
+# Resolve it with: python3 studio/registry.py --prefix SL --field gid
 ASANA_TASK_PREFIX: SL
 ASANA_PROJECT_NAME: Studio Looper
 

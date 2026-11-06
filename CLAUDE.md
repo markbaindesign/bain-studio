@@ -82,8 +82,11 @@ per-project case study folders above.
 
 ## Custom fields (workspace-level)
 
-- Local ID: `ASANA_LOCAL_ID_FIELD_GID=1214878337481923`
-- Last Synced: `ASANA_LAST_SYNCED_FIELD_GID=1214914270230951`
+Two workspace-level custom fields carry the local ID and the last-synced stamp.
+`sync.py` reads their GIDs from `studio/.env` (untracked) as
+`ASANA_LOCAL_ID_FIELD_GID` and `ASANA_LAST_SYNCED_FIELD_GID`; see
+`studio/.env.example`. **The values are not repeated here** — this file is
+tracked and this repo is public.
 
 ## Active projects
 
@@ -142,9 +145,19 @@ comment, are in `~/.claude/rules/asana-comments.md` (loaded in every session) an
 
 ## Asana
 
-ASANA_PROJECT_GID: 1215208851588912
 ASANA_TASK_PREFIX: BSTD
 ASANA_PROJECT_NAME: Bain Studio
+
+This project's Asana GID is **not** recorded here. This file is tracked and this
+repo is public, so identifiers live in the registry outside it. Resolve it with:
+
+```bash
+python3 studio/registry.py --prefix BSTD --field gid
+```
+
+`sync.py` does this itself — the registry wins over this file for every project
+(see `docs/utilities/registry.md`). A client project's own `CLAUDE.md` is in that
+client's private repo and still carries its GID.
 
 ## Dropbox
 

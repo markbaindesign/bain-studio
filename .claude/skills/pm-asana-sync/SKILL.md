@@ -14,10 +14,10 @@ Sync the current project's Asana tasks to its local mirror and summarise the res
 
 Read `CLAUDE.md` in the current working directory. Extract:
 - `ASANA_TASK_PREFIX` — e.g. `MCF`
-- `ASANA_PROJECT_GID` — confirm it's present
+- The Asana project GID — resolve from the registry first (`python3 /media/data/dev/bain-studio/studio/registry.py --prefix {PREFIX} --field gid`), falling back to the project's own `CLAUDE.md`. A project inside the public bain-studio repo carries no GID in its `CLAUDE.md`; a client project's does, in its own private repo.
 - `ASANA_PROJECT_NAME` — for the summary header
 
-If `ASANA_PROJECT_GID` is not in `CLAUDE.md`, report: "No Asana project configured for this directory. Add ASANA_PROJECT_GID to CLAUDE.md to enable sync."
+If neither the registry nor `CLAUDE.md` yields a GID, report: "No Asana project configured for this directory. Register it (`/register-project`) or add ASANA_PROJECT_GID to CLAUDE.md to enable sync."
 
 ---
 

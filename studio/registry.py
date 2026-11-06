@@ -178,6 +178,30 @@ def path_for(prefix, entries=None, repo_root=None, stem=True):
     return Path(entry["path"]).expanduser()
 
 
+def by_path(path, entries=None, repo_root=None):
+    """Entry whose `path` is this directory. None when unknown.
+
+    sync.py discovers projects by walking paths, so it needs the reverse lookup:
+    given a project root, what does the registry know about it?
+    """
+    if entries is None:
+        entries, _ = load(repo_root=repo_root)
+    try:
+        want = Path(path).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return None
+    for entry in entries.values():
+        raw = entry.get("path")
+        if not raw:
+            continue
+        try:
+            if Path(raw).expanduser().resolve() == want:
+                return entry
+        except (OSError, RuntimeError):
+            continue
+    return None
+
+
 def active(entries=None):
     if entries is None:
         entries, _ = load()
