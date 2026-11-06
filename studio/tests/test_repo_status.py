@@ -254,12 +254,12 @@ def test_a_missing_ops_worktree_says_so():
 
 # --- fitting the row to the pane -------------------------------------------
 
-ROW = {"state": "dirty", "name": "middlewayeducation", "branch": "develop",
+ROW = {"state": "dirty", "name": "lanternaschools", "branch": "develop",
        "note": "", "upstream": "origin/develop", "ahead": 2, "tracked": 3,
        "mirror": 0, "untracked": 2, "conflicts": 0, "worktrees": 2, "unmerged": 2,
        "remotes": True,
        "committed": time.time() - 15 * 86400, "subject": "chore: sync Asana mirror",
-       "path": "/media/data/dev/vvv/clients/www/middlewayeducation"}
+       "path": "/media/data/dev/vvv/clients/www/lanternaschools"}
 
 
 def test_row_never_exceeds_the_pane():
@@ -269,7 +269,7 @@ def test_row_never_exceeds_the_pane():
 
 def test_narrow_row_keeps_the_state_name_and_counts():
     text = s.row_text(ROW, 70)
-    assert "dirty" in text and "middlewayeducation" in text and "3M 2?" in text
+    assert "dirty" in text and "lanternaschools" in text and "3M 2?" in text
 
 
 def test_subject_goes_before_the_parked_work_counts():

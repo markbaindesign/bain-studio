@@ -50,7 +50,7 @@ def test_build_notes_per_type():
     assert "Supplier VAT: ESX0000000X - Customer VAT: NL1" in eu and PAYMENT in eu
     upwork = build_notes("upwork", None, from_date="2026-05-01", to_date="2026-05-31")
     assert upwork == "WordPress development services via Upwork - 1 May 2026 to 31 May 2026"
-    # Techstyle via Upwork keeps the reverse-charge block, still no payment details
+    # A Dutch B.V. client via Upwork keeps the reverse-charge block, still no payment details
     upwork_rc = build_notes("upwork", None, ("ESX0000000X", "NL1"), reverse_charge=True)
     assert "Customer VAT: NL1" in upwork_rc and "Payment details" not in upwork_rc
 

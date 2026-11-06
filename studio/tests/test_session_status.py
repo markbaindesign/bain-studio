@@ -96,7 +96,7 @@ def test_latest_ai_title_wins():
 # --- fitting the row to the pane ------------------------------------------
 
 ROW = {"status": "shell", "account": "bain", "where": "studio:1.0",
-       "project": "middlewayeducation", "ctx": 282744, "ctx_pct": 63,
+       "project": "lanternaschools", "ctx": 282744, "ctx_pct": 63,
        "model": "Opus 5.5", "for": 480, "title": "Invoices bookkeeping"}
 
 
@@ -287,7 +287,7 @@ def test_header_breaks_at_the_same_columns_as_a_row():
         row = s.row_text(ROW, width, True)
         assert header.index("where") == row.index("studio:1.0")
         # Prefix, not the whole name: a narrow pane clips the project column.
-        assert header.index("project") == row.index("middleway")
+        assert header.index("project") == row.index("lanterna")
         if "282k" in row:
             # Numbers and their labels are both right-aligned, so it is the
             # right-hand edges that have to meet.
@@ -343,8 +343,8 @@ def test_a_cli_busy_session_whose_turn_is_over_is_still_shell(monkeypatch):
 
 def _row(status="idle", **over):
     row = {"status": status, "ctx": 118000, "ctx_pct": 12, "model": "Opus 5.5",
-           "title": "Passiko project setup", "account": "bain",
-           "where": "mwe:1.1", "project": "middlewayeducation", "for": 720}
+           "title": "Lanterna project setup", "account": "bain",
+           "where": "lan:1.1", "project": "lanternaschools", "for": 720}
     row.update(over)
     return row
 
