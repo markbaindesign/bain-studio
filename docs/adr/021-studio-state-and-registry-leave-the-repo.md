@@ -259,3 +259,52 @@ from this work. Only that collector's docstring, which spells the client's name 
 redacted.
 
 The ADR as a whole stays **Proposed**. Question 1 is now settled; questions 3 and 4 are not.
+
+### Addendum (2026-11-06, later): question 1 is implemented, not just decided
+
+The work is done and released. What this ADR now records as fact rather than intent:
+
+- **`docs/projects/` and `docs/projects.base` are gone from this repo.** The twenty notes are
+  `$STUDIO_CONTENT_DIR/projects/*.md`, with the index beside them; its filter is tag-based, so
+  it works unchanged in a directory that was already a vault.
+- **`registry.json` is the single source of project identity**, with 23 entries, three more
+  than there were project files: two projects existed only in the gitignored `projects.json`
+  and had no note at all, and one of those is a client project.
+- **`studio/registry.py` is the only reader.** `sync.py`, `postman.py`, `/focus`, `/open`,
+  `abderus` and `harvest` all go through it. `sync.py` no longer opens every project's
+  `CLAUDE.md` to resolve one GID — the specific defect this ADR's table names.
+- **No identifier is hardcoded anywhere in the repo.** `studio/templates.json` was deleted
+  outright: tracked, holding a live template GID, and read by nothing.
+- **A commit hook enforces it**, with its term list generated at commit time from the registry
+  outside the repo.
+
+Verified: `git grep` against a generated denylist returns nothing outside `CHANGELOG.md`.
+
+#### Three things this ADR got wrong
+
+1. **The migration order was wrong for this change.** This ADR requires shipping a
+   fallback-capable reader, deploying it, then moving the files — two releases. That is right
+   for runtime *state*, which lives outside git and cannot move atomically with code. It is
+   wrong for *files inside the repo*: a tag checkout swaps code and files in the same instant,
+   so there is no window to protect. One release was correct, and the two-release order would
+   have shipped a release with no observable behaviour to verify.
+2. **The fallback it demands is therefore dead code.** Because the resolver and the
+   directory's removal land in the same commit, the new reader never coexists with the old
+   files. What survives is `projects.json` only — paths, few prefixes — so it is a thin safety
+   net rather than the complete answer the ADR imagines. It is removed once ops has run a
+   cycle on the registry.
+3. **The registry schema in the Decision section is insufficient.** `path`, `prefix`, `gid`,
+   `name`, `status` cannot answer "is this a client?" or "what are their domains?", and
+   without those the enforcement hook cannot be built at all. `kind`, `client`, `domains` and
+   `repo` are not conveniences; they are what makes the rule enforceable.
+
+#### What is still open
+
+Questions 3 and 4 — whether `studio/inbox/` moves, and whether `~/.algolia/` folds in — are
+untouched. The state half of this ADR (the 31 ops symlinks, the `Path(__file__)` state paths)
+is also untouched: this work moved the **registry**, not the state. The acceptance criteria
+about symlinks and `Path(__file__)` remain unmet, so the ADR stays **Proposed**.
+
+One criterion is now partly met: a project's status changes in one place for every consumer
+that reads the registry. The Dropbox note still carries a `status` line for the Obsidian table
+to render, so the two can drift until `register-project` is the only writer of both.
