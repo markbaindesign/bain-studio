@@ -108,7 +108,7 @@ that is done, nothing prompts the monthly run.
 Add a block to the config with the Harvest project id, the Asana project
 gid, the monthly hours and rate from the signed agreement, the top-up day,
 the first cycle start date, and the recipients. Terms come from the signed
-contract in `Dropbox/Work/Projects/Client/<Client>/Admin/Contracts/`, not
+contract in `Dropbox/Work/clients/<Client>/Admin/Contracts/`, not
 from the price list.
 
 ## Related

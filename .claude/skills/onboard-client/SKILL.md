@@ -102,7 +102,7 @@ exist on the board by the time Step 6 runs.
 
 Save the output into the client's Dropbox folder, not the codebase and not the
 shared template folder:
-`/media/data/Dropbox/Work/Projects/Client/{Client Name}/Dev Ops/tech-access-request.md`
+`/media/data/Dropbox/Work/clients/{Client Name}/Dev Ops/tech-access-request.md`
 and `.pdf`.
 
 It goes under `Dev Ops/` because that is where the hosting, DNS and access
@@ -212,7 +212,7 @@ Then branch on project type from Step 1:
 
 ## Step 5 — Dropbox folder
 
-Create at `/media/data/Dropbox/Work/Projects/Client/{Client Name}/` with:
+Create at `/media/data/Dropbox/Work/clients/{Client Name}/` with:
 
 ```
 Admin/

@@ -24,7 +24,7 @@ WordPress plugin for QR-based lead capture at events: each attendee gets a uniqu
 
 - **Local:** https://lead-retriever.ddev.site:34443
 - **Plugin:** `public_html/wp-content/plugins/lead-retriever/`
-- **Spec:** `/media/data/Dropbox/Work/Projects/internal/wp-lead-scanner/Docs/lead_retriever_scope.md` (Dropbox)
+- **Spec:** `/media/data/Dropbox/Work/internal/wp-lead-scanner/Docs/lead_retriever_scope.md` (Dropbox)
 
 ## Notes
 
