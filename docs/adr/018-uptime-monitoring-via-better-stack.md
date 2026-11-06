@@ -4,15 +4,21 @@ Date: 2026-09-16
 Status: Accepted (2026-09-17)
 Related: [ADR 005](005-slack-notifications-via-notifier.md) (Slack notifications go through notifier.py)
 
+> **Redacted 2026-11-06.** Client names, domains, provider hostnames and application
+> IDs were removed from this ADR; project prefixes are kept. The decisions and the
+> reasoning are unchanged. What was removed is in
+> `$STUDIO_CONTENT_DIR/internal/studio-infrastructure-identifiers.md` or in that
+> project's `Dev Ops/` note in Dropbox. See ADR 021, BSTD-875.
+
 ## Context
 
-Ebiz Global (EBIZG) was down for at least four hours on 2026-09-15 before Mark happened to
+EBIZG was down for at least four hours on 2026-09-15 before Mark happened to
 check the project and noticed. There is no uptime monitoring on any studio-maintained site —
-the studio's own monitoring table is empty (noted in `ddev/ebiz-global/docs`'s dev-ops notes).
+the studio's own monitoring table is empty (noted in that project's dev-ops notes).
 An outage is currently caught by chance, not by an alert, and there is no way to say how long
 a site was actually down for.
 
-This is not specific to Ebiz Global. None of the ~17 active projects in
+This is not specific to that project. None of the ~17 active projects in
 `studio/projects.json` have uptime monitoring, and several are live client sites the studio is
 contractually maintaining.
 
@@ -70,37 +76,27 @@ Account created by Mark; API token in `studio/.env` as `BETTERSTACK_API_TOKEN`. 
 created through the API with the same settings: HTTP status check every 3 minutes, from EU, US,
 Asia and Australia regions, 30 s timeout, SSL verified, email alerts only.
 
-| Site | Project |
-|---|---|
-| https://bain.design | BD (existed before the rollout) |
-| https://ebiz-global.com/ | EBIZG |
-| https://khyentsefoundation.org/ | KF-WEB |
-| https://techstyle-accessories.com/ | TSTY |
-| https://thenatureofrealestate.com/ | NORE |
-| https://mhairimcfarlane.com/ | MCF |
-| https://beatoproperties.com/ | Beato |
+Seven monitors: BD (which existed before the rollout), EBIZG, KF-WEB, TSTY, NORE, MCF and JBP.
+**The URLs are not listed here** — they are client domains and this repo is public. They are in
+`$STUDIO_CONTENT_DIR/internal/studio-infrastructure-identifiers.md`.
 
-7 of the 10 free monitors are used. **To add:** tara.khyentsefoundation.org after its production
-cutover (TARA-019, due 2026-09-21; it sits behind HTTP Basic Auth until then).
+7 of the 10 free monitors are used. **To add:** the TARA production hostname after its cutover
+(TARA-019, due 2026-09-21; it sits behind HTTP Basic Auth until then).
 
-**Deliberately not monitored:** foobot.bain.design (being retired, FOOB-001), the KF archive
-site, and WPLSCM.
+**Deliberately not monitored:** the retiring FOOB host (FOOB-001), the KF archive site, and
+WPLSCM.
 
 Stay on the free tier until it is full, then move to the paid tier deliberately.
 
 ### Addendum (2026-10-19): uncached KF monitor
 
-KF 2.12.0 (2026-10-01) turned full-page caching back on, so the khyentsefoundation.org monitor
+KF 2.12.0 (2026-10-01) turned full-page caching back on, so the KF-WEB homepage monitor
 is now answered from the Cloudflare/WP Engine cache and can no longer see PHP worker
 exhaustion. That matters because WP Engine's 504s only hit uncached requests: when every PHP
 worker is busy and the backlog is full, queued requests are evicted with a 504. That
 explanation comes from WP Engine's own support docs only, not a second independent source.
 
-An eighth monitor (id 5096528) checks the uncached path:
-
-| Site | Project |
-|---|---|
-| https://khyentsefoundation.org/donations-kf/ (POST, uncached) | KF-WEB |
+An eighth monitor (id 5096528) checks an uncached KF-WEB path by POST. The URL is in `$STUDIO_CONTENT_DIR/internal/studio-infrastructure-identifiers.md`.
 
 It sends a POST (`uptime_check=1`) because that is the only request found that reliably
 bypasses both caches. Cloudflare caches a query-string variant after its first hit, and it
@@ -112,11 +108,11 @@ PHP worker for 10-20 s.
 If this monitor alerts while the homepage monitor stays green, the cache is hiding a PHP
 capacity problem rather than a full outage.
 
-8 of the 10 free monitors are now used (tara.khyentsefoundation.org is still not added).
+8 of the 10 free monitors are now used (the TARA hostname is still not added).
 
 ### Note: false "down" reports from Spain
 
-khyentsefoundation.org is behind Cloudflare. On 2026-09-17 it was unreachable from the studio's
+KF-WEB is behind Cloudflare. On 2026-09-17 it was unreachable from the studio's
 Telefónica connection while up everywhere else: Spanish ISPs block shared Cloudflare IPs under
 LaLiga's anti-piracy court order (Barcelona Commercial Court No. 6, December 2024), mostly
 during match broadcasts. Better Stack checks from outside Spain, so its monitors are unaffected,
