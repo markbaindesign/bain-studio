@@ -1276,13 +1276,12 @@ def priorities_table(tasks: list) -> str:
 # Comments
 # ---------------------------------------------------------------------------
 
-def leave_comment(task_gid: str, text: str, dry_run=False):
-    """Post a plain-text comment. Returns the new story GID (None on dry run)."""
-    if dry_run:
-        log.info(f"    [DRY-RUN] Would comment on {task_gid}: {text[:80]}...")
-        return None
-    resp = _post(f"/tasks/{task_gid}/stories", {"data": {"text": text}})
-    return (resp.get("data") or {}).get("gid")
+# Every comment goes through leave_progress_comment below. There is deliberately
+# no plain-text poster: a plain-text story cannot carry an @-mention, so it
+# reaches the thread and never an inbox filtered to "Mentioned", while looking
+# perfectly correct on the task. A `leave_comment` that posted
+# {"data": {"text": ...}} sat here unused until 2026-11-06 and was removed
+# rather than left as a loaded gun. See ~/.claude/rules/asana-comments.md.
 
 
 # Asana does not notify a mentioned user unless they already follow the task:
