@@ -16,8 +16,8 @@ python3 studio/scripts/gen-denylist.py
 git grep -lIiwF -f <(python3 studio/scripts/gen-denylist.py) -- . ':!CHANGELOG.md'
 ```
 
-The second command is the acceptance test for [BSTD-875](https://app.asana.com).
-When it returns nothing, this repo carries no client identity.
+The second command is the acceptance test for BSTD-875. When it returns nothing,
+this repo carries no client identity. It reports 53 files today.
 
 ## Why it generates rather than reads a file
 
@@ -30,14 +30,34 @@ outside the repo:
 | Registry | `$XDG_DATA_HOME/bain-studio/registry.json` (`BAIN_REGISTRY`) |
 | Extra terms | `$XDG_DATA_HOME/bain-studio/denylist-extra.txt` (`BAIN_DENYLIST_EXTRA`) |
 
-The extra file holds terms with no registry home: client contact names, hosting
-provider application IDs, the Asana workspace GID, client-owned organisations
-and clients with no project file of their own.
+The extra file holds terms with no registry home: client contact names and email
+addresses, hosting and search provider application IDs, the Asana workspace GID,
+client-owned organisations, and clients or sites with no project file of their
+own.
+
+## The registry is the weak link, not the script
+
+The script is only as good as what the registry knows. Both counts this work
+started from were wrong, and a denylist built from frontmatter alone was still
+wrong: it had no domains for four projects, missed two projects that live only
+in `projects.json`, and missed a named client contact, a client PM, two client
+email addresses, a client site that appears only in prose and two search
+application IDs. Those were found by sweeping the tree for domains, email
+addresses and capitalised names near the word "contact" — not by reading the
+registry.
+
+**A new client entry must carry its domains, or the guard cannot see them.**
+Re-run a discovery sweep when adding one:
+
+```bash
+git grep -hIoE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- . | sort -u
+git grep -hIoE '\b[a-z0-9][a-z0-9-]*\.(com|org|net|io|es)\b' -- . | sort -u
+```
 
 ## It refuses rather than returning nothing
 
-Exit 2, with nothing on stdout, when the registry is missing, unparseable, holds
-no client entries, or `jq`-style assumptions fail. A fresh clone or another
+Exit 2, with nothing on stdout, when the registry is missing, unparseable or
+holds no client entries. A fresh clone or another
 machine has no registry, and an empty denylist would let everything through
 while appearing to pass. Callers must treat exit 2 as a failure, never as "no
 terms matched".
