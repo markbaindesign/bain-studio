@@ -149,10 +149,33 @@ def config_dirs():
     return found or [DEFAULT_CONFIG]
 
 
-# Account label by email domain, the same two names the status line prints
+# Account label by email domain, the same names the status line prints
 # (~/.claude/hooks/statusline.py). That file is outside this repo and the app
 # runs from the ops worktree, so the map is duplicated rather than imported.
-ACCOUNT_LABELS = {"bain.design": "bain", "khyentsefoundation.org": "kf"}
+#
+# Client domains are NOT in this public repo. They are read from
+# $XDG_CONFIG_HOME/bain-studio/account-labels.json, which is why a label may be
+# missing here and present at run time. See ADR 021 addendum, BSTD-875.
+# An unlabelled domain degrades to its first component, so a missing config
+# costs a nicer label and nothing else.
+ACCOUNT_LABELS = {"bain.design": "bain"}
+
+
+def _load_account_labels():
+    """Merge client domain labels from outside the repo. Never raises."""
+    import json as _json
+    cfg_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    path = os.environ.get("BAIN_ACCOUNT_LABELS") or f"{cfg_home}/bain-studio/account-labels.json"
+    try:
+        with open(path) as fh:
+            extra = (_json.load(fh) or {}).get("labels") or {}
+        if isinstance(extra, dict):
+            ACCOUNT_LABELS.update({str(k): str(v) for k, v in extra.items()})
+    except Exception:
+        pass
+
+
+_load_account_labels()
 
 # config dir -> label, filled only on a successful read. Claude Code rewrites
 # .claude.json often, so a 4-second poll will occasionally catch it mid-write;
