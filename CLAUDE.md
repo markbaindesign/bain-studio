@@ -50,9 +50,33 @@ python3 studio/sync.py --create --name "Client Name" --prefix "CLN" --path /path
 - Shared knowledge with lasting value: ADRs, `Pantheon.md`, `studio-map.md`, `cheatsheet.md`, `troubleshooting.md`
 - Agent instructions: `CLAUDE.md`, skill definitions, the `.base` Obsidian indexes
 
-**Audits, investigations, research and analysis do not belong here.** They are point-in-time
-output about the studio's own affairs, they carry client and infrastructure detail, and this
-repo is public. They go to `$STUDIO_CONTENT_DIR/research/` instead.
+### No client data. Ever.
+
+**Nothing that identifies a client goes in this repo, in any file, including a commit
+message.** This is the hard rule, and a commit hook enforces it rather than leaving it to
+memory — see below. It covers:
+
+| Not in this repo | Where it goes |
+|---|---|
+| Client or contact names, email addresses | the registry, or Dropbox |
+| Live domains, staging hostnames, provider install names | the registry's `domains` |
+| Hosting and search provider application IDs | `$STUDIO_CONTENT_DIR/internal/` |
+| Analytics property IDs, Asana GIDs | the registry, or `studio/.env` |
+| Client repository URLs, Dropbox client paths | the registry |
+| Per-project notes and status | `$STUDIO_CONTENT_DIR/projects/` |
+
+**Project prefixes are fine** — `KF-WEB`, `TSTY`, `EBIZG`. A prefix is a code; the mapping
+from prefix to client lives outside this repo, so a bare prefix identifies nobody. Use them
+freely in ADRs, commit messages, docs and sample output. Where an example needs a name, invent
+one — the test fixtures share a fictional cast.
+
+This rule exists because the section you are reading used to list `docs/projects/` among the
+things that belong here, three lines below "It is public", and 56 files followed it. See
+ADR 021's 2026-11-06 addendum and BSTD-875.
+
+**Audits, investigations, research and analysis do not belong here either.** They are
+point-in-time output about the studio's own affairs, they carry client and infrastructure
+detail, and this repo is public. They go to `$STUDIO_CONTENT_DIR/research/` instead.
 
 The test: *would a stranger reading this repo need it to use a tool?* A guide to running
 `wp_pulse` belongs here. An audit of what `wp_pulse` found does not.
@@ -60,6 +84,31 @@ The test: *would a stranger reading this repo need it to use a tool?* A guide to
 Because research goes to Dropbox rather than the repo, **producing it needs no branch and no
 commit.** An agent writing an audit writes it straight to `$STUDIO_CONTENT_DIR/research/`.
 Only changes to tools or their docs need the git flow.
+
+### The commit guard
+
+`studio/hooks/pre-commit` and `commit-msg` refuse a commit whose added lines or message carry
+client data. The terms are generated at commit time from the registry outside this repo by
+`studio/scripts/gen-denylist.py` — a committed list of client names would be the very thing
+the guard exists to exclude.
+
+Set it up once per clone (`core.hooksPath` is per-clone):
+
+```bash
+studio/scripts/setup-machine.sh
+```
+
+With no registry the guard **refuses** rather than passing, because an unconfigured machine is
+exactly where client data would slip through unnoticed. It says how to fix that, and
+`BAIN_SKIP_CLIENT_GUARD=1` is the deliberate one-off. Check the whole tree any time:
+
+```bash
+git grep -lIiwF -f <(python3 studio/scripts/gen-denylist.py) -- . ':!CHANGELOG.md'
+```
+
+Nothing is the expected answer. It stays that way only while every client, domain and install
+name is in the registry — which is why `/register-project` insists on `domains` and `kind`.
+Full detail: `docs/utilities/client-guard.md`.
 
 ## Content locations
 
