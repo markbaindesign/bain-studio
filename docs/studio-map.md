@@ -135,7 +135,7 @@ graph TD
 
 ## Active Projects
 
-See [[projects.base]] for the live project index. Individual project files in `docs/projects/`:
+See [[projects.base]] for the live project index, now in the content vault. Individual project notes live in `$STUDIO_CONTENT_DIR/projects/` (Dropbox, not this repo — ADR 021); identity comes from `python3 /media/data/dev/bain-studio/studio/registry.py --list`:
 
 - [[projects/bstd]] — Bain Studio (internal tooling)
 - [[projects/mcf]] — Mhairi McFarlane (Astro.js author site)

@@ -38,16 +38,23 @@ optionally `ga4_property`.
 | `BAIN_REGISTRY` | the registry file |
 | `BAIN_PROJECTS_JSON` | the fallback's `projects.json` |
 
-## The fallback, and why it is temporary
+## The fallback, and why half of it is already dead
 
-With no registry, it reads `docs/projects/*.md` frontmatter plus `projects.json`
-for the two projects that never had a project file. `--source` says which
-answered.
+With no registry it reads `docs/projects/*.md` frontmatter plus `projects.json`.
+`--source` says which answered.
 
-This exists for one reason: the ops worktree runs scheduled jobs off a release
-tag, so code that reaches the new path has to keep working on a machine where
-the registry has not been written yet. **It is removed once ops is proven on the
-registry** — the last step of BSTD-875. Nothing new should be built on it.
+**The `docs/projects/` half can no longer fire in this tree.** It was written for
+ADR 021's two-release order — ship the reader, deploy it, then move the files —
+which would have left a window where this code ran next to that directory. The
+work shipped as one release instead, so the resolver and the directory's removal
+land in the same commit, and the new code never coexists with the old files. It
+survives only for a checkout of an intermediate commit on
+`feature/no-client-data`.
+
+What is left is `projects.json`, which carries paths but a prefix for only a
+handful of entries, so the fallback is now a thin safety net rather than a
+complete answer. **It is removed outright in the last step of BSTD-875.** Nothing
+new should be built on it, and nothing should rely on it being complete.
 
 Unlike [gen-denylist](gen-denylist.md), this falls back rather than refusing.
 The denylist guard refuses on a missing registry because passing silently would

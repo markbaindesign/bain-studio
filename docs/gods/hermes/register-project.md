@@ -26,7 +26,7 @@ Registers an existing project directory in the studio system so it appears in As
 
 1. **Adds to `projects.json`** — appends `{"path": "{path}", "status": "active"}` if not already present. This is the registry `sync.py` reads to know which projects to sync.
 
-2. ~~Adds to `CLAUDE.md` active projects table~~ — removed 2026-11-05. `docs/projects/{prefix}.md` from step 1 is the only prefix-to-path index; `/focus` and `/open` read it directly.
+2. ~~Adds to `CLAUDE.md` active projects table~~ — removed 2026-11-05. ~~`docs/projects/{prefix}.md` is the prefix-to-path index~~ — superseded 2026-11-06: identity is in `registry.json` outside this repo and `/focus` and `/open` resolve through `studio/registry.py`. See ADR 021 and BSTD-875.
 
 ## Output
 

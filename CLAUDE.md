@@ -46,7 +46,7 @@ python3 studio/sync.py --create --name "Client Name" --prefix "CLN" --path /path
 **This repo is a collection of tools, not a research archive.** It is public. Only these belong here:
 
 - Tool and script source (`studio/`, `.claude/skills/`)
-- Instructions for using those tools (`docs/utilities/`, `docs/gods/`, `docs/projects/`)
+- Instructions for using those tools (`docs/utilities/`, `docs/gods/`)
 - Shared knowledge with lasting value: ADRs, `Pantheon.md`, `studio-map.md`, `cheatsheet.md`, `troubleshooting.md`
 - Agent instructions: `CLAUDE.md`, skill definitions, the `.base` Obsidian indexes
 
@@ -90,13 +90,21 @@ tracked and this repo is public.
 
 ## Active projects
 
-Single source of truth: `docs/projects/` — one file per project, carrying `prefix` and
-`path` in its frontmatter alongside status, stack and system enrollment. Do not duplicate
-project state here; `/focus` and `/open` resolve a prefix to a path from those files.
+Single source of truth: **`registry.json`, outside this repo** — `$XDG_DATA_HOME/bain-studio/registry.json`.
+Resolve anything about a project through it, never by reading a file in here:
+
+```bash
+python3 /media/data/dev/bain-studio/studio/registry.py --list
+python3 /media/data/dev/bain-studio/studio/registry.py --prefix KF-WEB --field path
+```
+
+Per-project human notes live in `$STUDIO_CONTENT_DIR/projects/` in Dropbox. Neither the identity nor the
+notes are in this repo, because it is public — see ADR 021 and
+`docs/utilities/registry.md`.
 
 SL (Studio Looper) is not a codebase — it is the cross-project queue. Tasks are multi-homed into
 it from their home projects and keep their home prefix, so a task listed there is mirrored twice
-and must be worked in the project its prefix resolves to. See `docs/projects/sl.md`, which also
+and must be worked in the project its prefix resolves to. See `$STUDIO_CONTENT_DIR/projects/sl.md`, which also
 covers SLT (`studio/looper-test`).
 
 ## Skills

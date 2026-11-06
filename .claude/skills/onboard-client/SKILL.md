@@ -80,7 +80,7 @@ description) when it asks. This gives you:
   Mark's API token" vs. the "ASANA_USER_PAT not set" warning, and flag it to
   Mark if it's the latter.
 - `CLAUDE.md` written with the `## Asana` block
-- Project registered via `/register-project` (projects.json, docs/projects/,
+- Project registered via `/register-project` (registry.json, the Dropbox project note,
   studio CLAUDE.md table)
 
 ---
