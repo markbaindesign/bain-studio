@@ -1337,6 +1337,41 @@ def _ensure_follower(task_gid: str, user_gid: str):
         return False, ""
 
 
+# A @mark note is the "Mark must act" signal, and Asana cannot deliver it to a
+# Mentioned-filtered inbox (BSTD-878). Slack can, so a fresh @mark note also
+# pings Slack. The Asana comment stays the record; Slack is only the signal.
+#
+# Three rules, each guarding a way this would go wrong:
+#   - The comment is posted FIRST and its GID returned regardless. A Slack
+#     outage must never cost the note.
+#   - Fresh posts only. An edited note does not re-notify in Asana either, and
+#     pinging on every re-sync would flood the channel it exists to keep usable.
+#   - Never raises. notifier.notify() already returns False rather than
+#     throwing, and the import is guarded for a checkout without it.
+def _ping_slack(task_gid: str, mirror_text: str, task: dict = None):
+    """Signal a review/blocked note to Slack. Best-effort, never raises."""
+    try:
+        import notifier
+    except Exception:
+        return False
+    try:
+        blocks = [b.strip() for b in (mirror_text or "").split(BLOCK_SEP)]
+        blocks = [b for b in blocks if b]
+        headline = MENTION_RE.sub("", blocks[0], count=1) if blocks else "(no text)"
+        lid = (task or {}).get("_local_id", "")
+        name = (task or {}).get("name", "")
+        url = f"https://app.asana.com/0/0/{task_gid}/f"
+        subject = f"{lid}: {name}".strip(": ") or f"Asana task {task_gid}"
+        body = f"{headline}\n{url}"
+        details = BLOCK_SEP.join(blocks[1:]).replace(BLOCK_SEP, "\n") if len(blocks) > 1 else ""
+        return notifier.notify(body, subject=subject, priority="high",
+                               sender="asana", details=details)
+    except Exception as e:
+        log.warning(f"    Could not ping Slack for {task_gid} ({e}) — "
+                    f"the comment is posted, only the signal was lost")
+        return False
+
+
 def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
                            dry_run=False, task: dict = None) -> str:
     """Post (or edit in place) the review comment built from a Progress note.
@@ -1387,7 +1422,14 @@ def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
                 if not any((f or {}).get("gid") == USER_GID for f in fols):
                     fols.append({"gid": USER_GID, "name": uname})
     resp = _post(f"/tasks/{task_gid}/stories", {"data": {"html_text": html}})
-    return (resp.get("data") or {}).get("gid")
+    new_story = (resp.get("data") or {}).get("gid")
+    if wants_mention:
+        if _ping_slack(task_gid, mirror_text, task):
+            log.info(f"    Signalled {task_gid} to Slack")
+        else:
+            log.warning(f"    Slack signal for {task_gid} did not send — the "
+                        f"comment is on the task, but it may not reach Mark")
+    return new_story
 
 
 # ---------------------------------------------------------------------------

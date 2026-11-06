@@ -94,6 +94,29 @@ nothing at all.
 **Do not try to fix the markup.** It is already the documented form, three variants make no
 difference, and the limitation is Asana's API, not this code.
 
+### Slack carries the signal instead
+
+Because Asana cannot deliver a `@mark` note where Mark looks, a fresh `@mark`
+post also pings Slack, via `_ping_slack` in `sync.py`. Three rules:
+
+- **The comment is posted first** and its GID returned regardless. A Slack
+  outage never costs the note.
+- **Fresh posts only.** An edited note does not re-notify in Asana either, and
+  pinging on every re-sync would flood the channel it exists to keep usable.
+- **It never raises.** `notifier.notify()` returns `False` rather than throwing,
+  the import is guarded, and a failure logs a warning naming the task — so a
+  lost signal leaves a trace instead of vanishing, which is what made the
+  original diagnosis possible at all.
+
+The message carries the local ID and task name as its subject, the note's first
+block and a task URL as the body, and the remaining blocks as details. It goes
+to `SLACK_WEBHOOK_URL`; a dedicated `review` channel would be one entry in
+`notifier.CHANNEL_WEBHOOKS`.
+
+Clicking the link opens the task in the Asana Chrome instance rather than the
+main browser, via `~/bin/url-dispatch.sh` registered as the system https
+handler. Without it a Slack link lands in a browser that is not signed in.
+
 The 2026-11-05 work (found on BD-204) was right that `@mark` notes had been invisible and right
 about the fix. It was wrong only in believing the result was a filtered-inbox mention.
 
