@@ -164,3 +164,35 @@ def test_nothing_anywhere_yields_empty(tmp_path):
     repo.mkdir()
     entries, _ = registry.load(repo_root=repo)
     assert entries == {}
+
+
+def test_stem_matching_finds_a_hyphenated_prefix(tmp_path):
+    """/open KF has always resolved KF-WEB."""
+    repo = _fake_repo(tmp_path, {"kf.md": "---\nprefix: KF-WEB\npath: /kf\n---\n"})
+    entries, _ = registry.load(repo_root=repo)
+    assert registry.path_for("KF", entries) == Path("/kf")
+    assert registry.path_for("kf", entries) == Path("/kf")
+
+
+def test_stem_matching_can_be_turned_off(tmp_path):
+    repo = _fake_repo(tmp_path, {"kf.md": "---\nprefix: KF-WEB\npath: /kf\n---\n"})
+    entries, _ = registry.load(repo_root=repo)
+    assert registry.resolve("KF", entries, stem=False) is None
+
+
+def test_an_ambiguous_stem_returns_none_rather_than_guessing(tmp_path):
+    repo = _fake_repo(tmp_path, {
+        "a.md": "---\nprefix: KF-WEB\npath: /a\n---\n",
+        "b.md": "---\nprefix: KF-TARA\npath: /b\n---\n",
+    })
+    entries, _ = registry.load(repo_root=repo)
+    assert registry.resolve("KF", entries) is None
+
+
+def test_an_exact_match_beats_a_stem_match(tmp_path):
+    repo = _fake_repo(tmp_path, {
+        "a.md": "---\nprefix: KF\npath: /exact\n---\n",
+        "b.md": "---\nprefix: KF-WEB\npath: /stem\n---\n",
+    })
+    entries, _ = registry.load(repo_root=repo)
+    assert registry.path_for("KF", entries) == Path("/exact")

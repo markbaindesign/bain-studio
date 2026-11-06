@@ -147,8 +147,14 @@ def load(prefer_fallback=False, repo_root=None):
     return {}, SOURCE_FALLBACK
 
 
-def resolve(prefix, entries=None, repo_root=None):
-    """Entry for a prefix, case-insensitively. None when unknown."""
+def resolve(prefix, entries=None, repo_root=None, stem=True):
+    """Entry for a prefix, case-insensitively. None when unknown.
+
+    With `stem`, a prefix that matches nothing exactly also tries the
+    stem form, so "KF" finds "KF-WEB". `/open` has always behaved this way and
+    it is kept deliberately. An ambiguous stem — two projects under one stem —
+    returns None rather than guessing which was meant.
+    """
     if entries is None:
         entries, _ = load(repo_root=repo_root)
     want = (prefix or "").strip().upper()
@@ -157,11 +163,16 @@ def resolve(prefix, entries=None, repo_root=None):
     for entry in entries.values():
         if (entry.get("prefix") or "").upper() == want:
             return entry
+    if stem:
+        hits = [e for e in entries.values()
+                if (e.get("prefix") or "").upper().startswith(want + "-")]
+        if len(hits) == 1:
+            return hits[0]
     return None
 
 
-def path_for(prefix, entries=None, repo_root=None):
-    entry = resolve(prefix, entries, repo_root=repo_root)
+def path_for(prefix, entries=None, repo_root=None, stem=True):
+    entry = resolve(prefix, entries, repo_root=repo_root, stem=stem)
     if not entry or not entry.get("path"):
         return None
     return Path(entry["path"]).expanduser()
@@ -182,6 +193,8 @@ def main():
     ap.add_argument("--json", action="store_true", help="the whole registry as JSON")
     ap.add_argument("--source", action="store_true", help="print which source was used")
     ap.add_argument("--active", action="store_true", help="omit paused and archived")
+    ap.add_argument("--exact", action="store_true",
+                    help="do not fall back to stem matching (KF -> KF-WEB)")
     args = ap.parse_args()
 
     entries, source = load()
@@ -198,7 +211,7 @@ def main():
         print(json.dumps(entries, indent=2, ensure_ascii=False))
         return 0
     if args.prefix:
-        entry = resolve(args.prefix, entries)
+        entry = resolve(args.prefix, entries, stem=not args.exact)
         if not entry:
             print(f"registry: unknown prefix {args.prefix!r}", file=sys.stderr)
             return 1
