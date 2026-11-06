@@ -460,7 +460,7 @@ If the answer is there, use it and carry on. Questions with standing answers tha
 runs before:
 - *Where does a report, audit, research note or test template go?* Never the repo. Studio/internal
   research → `/media/data/Dropbox/Work/Studio/context/research/looper/`; client work →
-  `/media/data/Dropbox/Work/Projects/Client/{Client}/Docs/<Topic>/`. Dated `YYYY-MM-DD-<slug>.md`.
+  `/media/data/Dropbox/Work/clients/{Client}/Docs/<Topic>/`. Dated `YYYY-MM-DD-<slug>.md`.
   Check that folder for an existing document on the topic first.
 - *What format?* Markdown, unless the task names another. A client-facing report also gets a
   branded PDF via brand-doc. Test code/tooling that runs against a codebase is code and lives in

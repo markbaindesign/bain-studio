@@ -32,5 +32,5 @@ The studio's own Algolia search plugin for WordPress, **bd-search** (display nam
 - Git flow: `master` / `develop`, tags `X.Y.Z` (no `v`). Latest release 2.9.0; hotfix 2.9.1 in progress.
 - Unit tests: `vendor/bin/phpunit` in the plugin dir. Host PHP lacks extensions, so run via `ddev exec` or a one-off container from the ddev web image.
 - Third-party Algolia plugins are kept as **reference only** in `Dropbox/Work/Resources/Dev/algolia-reference/` (see NOTICE.md). Never copy code from them.
-- Docs: `Dropbox/Work/Projects/internal/bd-search/Docs/`. Comparison with the official plugins, product options: `Algolia plugin comparison/2026-10-20-algolia-plugin-comparison.md`.
+- Docs: `Dropbox/Work/internal/bd-search/Docs/`. Comparison with the official plugins, product options: `Algolia plugin comparison/2026-10-20-algolia-plugin-comparison.md`.
 - Repo was previously also checked out at `vvv/clients/www/algolia-search` (VVV); the DDEV path is current.

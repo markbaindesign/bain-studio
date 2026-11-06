@@ -55,7 +55,7 @@ future run reads from.
    WordPress admin / SFTP / SSH / Database / cPanel / Repo access — or none?"
 
 3. **Determine the output location.** Default to the client's Dropbox folder:
-   `/media/data/Dropbox/Work/Projects/Client/{Client}/Dev Ops/tech-access-request.md`
+   `/media/data/Dropbox/Work/clients/{Client}/Dev Ops/tech-access-request.md`
    (and the matching `.pdf`). `Dev Ops/` is where the hosting, DNS and access
    notes this request produces already live.
 

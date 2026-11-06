@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.2] - 2026-11-06
+
+### Fixed
+- **Every stored path into the Dropbox client tree pointed at a directory that no longer exists.** `Work/Projects/Client/` became `Work/clients/` and `Work/Projects/internal/` became `Work/internal/` on 2026-11-06, and KF, SINI and BFF gained a `Projects/` level, so `Khyentse Foundation/New KF Website` is now `Khyentse Foundation/Projects/New KF Website`. Repointed across the four skills that resolve a client folder (`ga-report`, `aura`, `studio-looper`, `tech-access-request`), their docs notes, the `client_docs:` frontmatter in seven project files, and the retainer clients example. Released ahead of the `/onboard-project` work it came from, because the ops worktree runs `ga-report`, `retainer-report`, `aura` and the looper off a release tag and every one of them reads these paths. ADR 016, `studio/inbox/processed/` and generated `asana-mirror.md` files are deliberately untouched — they record what was true when written.
+
 ## [1.26.1] - 2026-11-05
 
 ### Changed

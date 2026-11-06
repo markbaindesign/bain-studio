@@ -12,7 +12,7 @@ stack: WordPress FSE block theme · ACF Pro · VVV
 path: /media/data/dev/vvv/clients/www/alex-wright
 asana: "yes"
 qa: "no"
-client_docs: "/media/data/Dropbox/Work/Projects/Client/Alex Wright"
+client_docs: "/media/data/Dropbox/Work/clients/Alex Wright"
 inbox: "no"
 open_tasks: 16
 current_focus: Footer restore (awaiting Alex), plugin/PHP follow-ups, backup rework
