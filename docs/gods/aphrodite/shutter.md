@@ -19,7 +19,7 @@ The studio has two standing profiles:
 | Profile | Folder | Use |
 |---|---|---|
 | `default` | `~/Dropbox/Misc/Screen Captures` | General captures |
-| `QA_Beato` | `.../beato-properties/qa/qa-inbox` | Beato QA |
+| `QA_{PREFIX}` | `.../{project}/qa/qa-inbox` | that project's QA |
 
 New project profiles are created automatically by `scaffold-dir`.
 

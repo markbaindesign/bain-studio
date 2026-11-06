@@ -21,7 +21,7 @@ For each project, check the following. Mark each ✓ (present), ✗ (missing), o
 **Infrastructure**
 - [ ] Path exists on disk
 - [ ] `CLAUDE.md` present at project root
-- [ ] `ASANA_PROJECT_GID` set in `CLAUDE.md`
+- [ ] Asana GID resolvable — from the registry, or `ASANA_PROJECT_GID` in `CLAUDE.md` for a project outside the public repo
 - [ ] `ASANA_TASK_PREFIX` set in `CLAUDE.md`
 - [ ] `asana-mirror.md` exists
 - [ ] Mirror synced within last 7 days (check `Last synced:` line at top of mirror)
@@ -42,7 +42,7 @@ Produce a compact table per project, then a summary of the worst offenders.
 ```
 ## Onboard Audit — YYYY-MM-DD
 
-### MCF — Mhairi McFarlane
+### MCF
 ✓ path  ✓ CLAUDE.md  ✓ Asana GID  ✓ prefix  ✓ mirror  ~ mirror stale (8d)  ✓ settings
 ✓ open-questions  ✓ inbox  ✗ ADR
 ✗ Mnemosyne entry

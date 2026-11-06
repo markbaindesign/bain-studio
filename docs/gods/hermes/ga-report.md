@@ -13,7 +13,7 @@ Generates a Google Analytics 4 benchmark report for a client project and brands 
 
 ```
 /ga-report NORE
-/ga-report NORE --property 542141660
+/ga-report NORE --property {GA4_PROPERTY_ID}
 /ga-report NORE --days 30
 ```
 
@@ -48,11 +48,16 @@ Recommended key location: `~/.config/bain-studio/google-sa.json`
 
 ## Output location
 
-`{client_docs}/analytics/ga-benchmark-YYYY-MM-DD.md`, where `client_docs:` is set in the project file (`docs/projects/{slug}.md`). Client reports are stored with the client in Dropbox, never in the studio.
+`{client_docs}/analytics/ga-benchmark-YYYY-MM-DD.md`, where `client_docs` comes from the project's registry entry. Client reports are stored with the client in Dropbox, never in the studio.
 
-## Known project property IDs
+## Project property IDs
 
-| Project | GA4 Property ID |
-|---------|----------------|
-| NORE | 542141660 |
-| KF-WEB | 341883333 |
+Not listed here. A GA4 property ID identifies a client's analytics, and this repo
+is public, so it lives in the project's registry entry alongside its path and
+GID:
+
+```bash
+python3 /media/data/dev/bain-studio/studio/registry.py --prefix NORE --field ga4_property
+```
+
+See [registry](../../utilities/registry.md) and ADR 021.

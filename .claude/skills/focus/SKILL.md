@@ -19,23 +19,17 @@ The argument is a project prefix (e.g. `MCF`, `NORE`, `WTF`). If no argument pro
 
 ### 2. Look up the project path
 
-Read `studio/projects.json`. Find the entry whose `CLAUDE.md` contains `ASANA_TASK_PREFIX: {PREFIX}`.
+Ask the resolver. It reads the registry outside the repo and falls back to
+`docs/projects/` while that migration runs — see `/media/data/dev/bain-studio/docs/utilities/registry.md`.
 
 ```bash
-python3 -c "
-import json
-from pathlib import Path
-projects = json.loads(Path('studio/projects.json').read_text())
-for p in projects:
-    path = Path(p['path'])
-    claude_md = path / 'CLAUDE.md'
-    if claude_md.exists() and 'ASANA_TASK_PREFIX: {PREFIX}' in claude_md.read_text():
-        print(p['path'])
-        break
-"
+python3 /media/data/dev/bain-studio/studio/registry.py --prefix {PREFIX} --field path
 ```
 
-If not found, list available prefixes and abort.
+It exits 1 and prints nothing on stdout for an unknown prefix. `{PREFIX}` may be a
+stem: `KF` resolves `KF-WEB`.
+
+If it exits non-zero, list the known prefixes with `python3 /media/data/dev/bain-studio/studio/registry.py --list` and abort.
 
 ### 3. Run recap for that project
 

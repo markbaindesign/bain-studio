@@ -4,12 +4,18 @@ Date: 2026-09-16
 Status: Proposed
 Amends: [ADR 006](006-cloudways-client-hosting.md) (its "Staging workflow" section)
 
+> **Redacted 2026-11-06.** Client names, domains, provider hostnames and application
+> IDs were removed from this ADR; project prefixes are kept. The decisions and the
+> reasoning are unchanged. What was removed is in
+> `$STUDIO_CONTENT_DIR/internal/studio-infrastructure-identifiers.md` or in that
+> project's `Dev Ops/` note in Dropbox. See ADR 021, BSTD-875.
+
 ## Context
 
 ADR 006 made Cloudways linked staging (Application → Staging Management → Create Staging,
 with dashboard Push/Pull) the standard dev workflow. In practice the first project built under
-that policy, Beato Properties (BEA), never used it: staging (`vcywemwpuh`) and production
-(`qwpadhybuj`) are two independent apps on the same server, kept in step by project scripts
+that policy, JBP, never used it: its staging and production are two independent apps on the
+same server (application IDs in `$STUDIO_CONTENT_DIR/internal/studio-infrastructure-identifiers.md`), kept in step by project scripts
 (`deploy-code.sh`, `import-local-to-cloudways.sh`, `pull-from-prd.sh`, `pull-tokens.sh`).
 
 The original reason was not written down. When a production → staging sync was needed on

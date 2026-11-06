@@ -19,7 +19,7 @@ An invoice with no tax keeps the two-leg form.
 The bank adapters book the second half. Without this one they clear receivables
 that were never raised, which drives Accounts Receivable negative and leaves the
 income unrecorded in the quarter it belongs to — exactly what happened to the
-2026-08-31 Khyentse invoice, found when AR went to −1,000.00.
+2026-08-31 client invoice, found when AR went to −1,000.00.
 
 Both legs are known, so nothing here needs a categorisation rule.
 """

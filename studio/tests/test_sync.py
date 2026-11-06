@@ -45,7 +45,7 @@ def mirror_text():
     return """\
 # Bot Asana Task Mirror
 Last synced: 2026-05-20
-Workspace GID: 512209774840
+Workspace GID: 1200000000000001
 Assignee GID: 1209202434387214
 
 ## Test Project
@@ -868,7 +868,7 @@ def _registry(tmp_path, monkeypatch, projects):
 
 def test_resolve_task_ref_url_gid_and_local_id(tmp_path, monkeypatch):
     _registry(tmp_path, monkeypatch, {"bd": {"1217094791482756": "BD-152"}})
-    assert sync.resolve_task_ref("https://app.asana.com/1/512209774840/task/1217094791482756?focus=true") == "1217094791482756"
+    assert sync.resolve_task_ref("https://app.asana.com/1/1200000000000001/task/1217094791482756?focus=true") == "1217094791482756"
     assert sync.resolve_task_ref("https://app.asana.com/1/512/project/99/task/42") == "42"
     assert sync.resolve_task_ref(" 1217094791482756 ") == "1217094791482756"
     assert sync.resolve_task_ref("bd-152") == "1217094791482756"

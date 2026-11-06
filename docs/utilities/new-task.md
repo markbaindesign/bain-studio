@@ -100,7 +100,7 @@ replaces it wholesale — read the current text first:
 
 ```bash
 python3 studio/sync.py --get-task BSTD-856
-python3 studio/sync.py --update-task --task-gid 1220199946249933 \
+python3 studio/sync.py --update-task --task-gid {GID} \
   --task-notes "Corrected description."
 ```
 

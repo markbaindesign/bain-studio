@@ -9,7 +9,7 @@ description: "Add Cloudflare Turnstile to a WordPress + Contact Form 7 site: wid
 
 # Turnstile on Contact Form 7 — Setup Checklist
 
-A reusable method for adding Cloudflare Turnstile spam protection to a WordPress + Contact Form 7 (CF7 5.9 or later) site. It was first applied on Techstyle (2026-10-15) after a phishing "formal enquiry" came through the contact form, and then on Ebiz Global.
+A reusable method for adding Cloudflare Turnstile spam protection to a WordPress + Contact Form 7 (CF7 5.9 or later) site. It was first applied on TSTY (2026-10-15) after a phishing "formal enquiry" came through the contact form, and then on EBIZG.
 
 Turnstile blocks automated submissions. It does **not** stop hand-typed phishing.
 
@@ -19,7 +19,7 @@ Turnstile blocks automated submissions. It does **not** stop hand-typed phishing
 - The site doesn't need to be on Cloudflare.
 - Key setup is simpler.
 
-Full write-up: Techstyle `Dev Ops/devops-notes.md`, section "Contact form spam protection: Cloudflare Turnstile - 2026-10-15".
+Full write-up: the TSTY `Dev Ops/` note in that client's Dropbox folder.
 
 ## 1. Create the widget (studio Cloudflare account)
 

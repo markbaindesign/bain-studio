@@ -68,7 +68,7 @@ Ask for any fields that are missing. Show your suggested value and let the user 
 
 4. **Session name** — `CLAUDE_SESSION_NAME` → `.claude/settings.json`
    - Shown in desktop notifications: `[KF Web] Task complete`
-   - Suggest: short project label, 2–4 words (e.g. `KF Web`, `Mhairi Site`)
+   - Suggest: short project label, 2–4 words (e.g. `Acme Web`, `Acme Site`)
 5. **Client name** — full name and role (e.g. "Jane Smith — e-commerce retailer, London") → CLAUDE.md
 6. **Client tone** — one line (e.g. "Warm, professional, concise. No jargon.") → CLAUDE.md
 7. **PM / client contact** — name and email → `.claude/settings.local.json` (gitignored)

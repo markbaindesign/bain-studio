@@ -10,7 +10,7 @@ tags:
 
 # WordPress FSE Development and Deploy Workflow
 
-Applies to all studio projects using a WordPress block theme (FSE). Current projects: NORE, Alex Wright.
+Applies to all studio projects using a WordPress block theme (FSE). Current projects: NORE, AW.
 
 ---
 
@@ -154,9 +154,9 @@ Posts, pages, CPT content, ACF field values, site settings, user accounts, membe
 - Production SSH: `ssh -p 65002 u597309227@82.29.158.75`
 - Theme dir: `public_html/wp-content/themes/nore-theme/`
 - Build: `./build.sh` from theme root
-- Domains: `https://thenatureofrealestate.com` and `http://nore.test`
+- Domains: the production domain from the registry, and `http://nore.test` locally
 
-### Alex Wright
+### AW
 
-- WP-CLI: `cd /media/data/dev/vvv/clients && wp @alex-wright ...`
+- WP-CLI: `cd /media/data/dev/vvv/clients && wp @{alias} ...`
 - Build: `grunt build` from project root

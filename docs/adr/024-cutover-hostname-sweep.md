@@ -3,17 +3,23 @@
 Date: 2026-10-15
 Status: Accepted (2026-10-15)
 Related: [dev-ops](../utilities/dev-ops.md), [ADR 023](023-contact-form-bot-protection-via-cloudflare-turnstile.md),
-Ebiz Global `Dev Ops/devops.md` sections 14 and 17
+the EBIZG `Dev Ops/` note in that client's Dropbox folder
+
+> **Redacted 2026-11-06.** Client names, domains, provider hostnames and application
+> IDs were removed from this ADR; project prefixes are kept. The decisions and the
+> reasoning are unchanged. What was removed is in
+> `$STUDIO_CONTENT_DIR/internal/studio-infrastructure-identifiers.md` or in that
+> project's `Dev Ops/` note in Dropbox. See ADR 021, BSTD-875.
 
 ## Context
 
-Ebiz Global moved from Network Solutions to WP Engine on 2026-10-07. The cutover replaced
-the install's staging hostname, `ebizglobalweb.wpenginepowered.com`, with `ebiz-global.com`,
+EBIZG changed host on 2026-10-07. The cutover replaced the install's provider staging
+hostname with the production domain,
 and a later search for that hostname found nothing.
 
 On 2026-10-15 the live main menu, Elementor content, footer widgets, theme settings and images
 were found to still point at a **second** WP Engine hostname for the same install: the older
-CNAME host `ebizglobalweb.wpengine.com`. There were 1,152 occurrences, over both `http://` and
+the provider's CNAME host. There were 1,152 occurrences, over both `http://` and
 `https://` and in JSON-escaped form (`https:\/\/...`) inside Elementor data. Visitors
 clicking those links left the live domain for the WP Engine hostname. The hostname also wasn't
 on the new Turnstile widget's domain list, so the contact form broke there ("Unable to connect

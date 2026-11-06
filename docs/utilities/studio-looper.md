@@ -171,8 +171,8 @@ interactive runs are fully prompt-free.
 
 ## Test mode
 
-`/studio-looper --test` runs the entire pipeline against a sandbox Asana project (prefix `SLT`,
-GID `1216618878942979`) instead of the real `SL` queue, routing to `studio/looper-test/` instead
+`/studio-looper --test` runs the entire pipeline against a sandbox Asana project (prefix `SLT`)
+instead of the real `SL` queue, routing to `studio/looper-test/` instead
 of `studio/looper/`. Use it to safely test skill/hook changes, headless invocation, or the
 concurrency guard without any risk to the real queue or a client repo. Setup is documented in
 `studio/looper-test/CLAUDE.md` — it needs a one-time manual step from Mark (adding bainbot as a

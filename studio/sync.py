@@ -420,6 +420,14 @@ class ProjectConfig:
 
 PROJECTS_FILE = STUDIO_DIR / "projects.json"
 
+# Project identity resolver (ADR 021). Imported defensively: sync.py is the
+# studio's single Asana entry point and must not fail to start because the
+# resolver is missing on an older checkout.
+try:
+    import registry as _registry
+except ImportError:  # pragma: no cover - only on a checkout without it
+    _registry = None
+
 
 def load_projects_registry() -> list:
     """Load projects.json, migrating flat path arrays to object format."""
@@ -480,13 +488,24 @@ def discover_projects(filter_prefix=None, include_inactive=False, quiet=False) -
 
         gid_m    = re.search(r"ASANA_PROJECT_GID:\s*(\S+)", text)
         prefix_m = re.search(r"ASANA_TASK_PREFIX:\s*(\S+)", text)
-        if not gid_m:
+
+        # The registry wins. A project inside this public repo (this repo, the
+        # looper, the looper test) must not carry its own GID in a tracked
+        # CLAUDE.md, so the registry is the only place it can come from. A
+        # client project's CLAUDE.md lives in that client's own private repo, so
+        # reading it stays fine and is the fallback. See ADR 021 and BSTD-875.
+        reg_entry = _registry.by_path(root) if _registry else None
+        reg_gid    = (reg_entry or {}).get("gid") or ""
+        reg_prefix = (reg_entry or {}).get("prefix") or ""
+
+        if not reg_gid and not gid_m:
             if not quiet:
-                log.warning(f"  Skipping {raw} — no ASANA_PROJECT_GID in CLAUDE.md")
+                log.warning(
+                    f"  Skipping {raw} — no GID in the registry and none in CLAUDE.md")
             continue
 
-        gid    = gid_m.group(1)
-        prefix = prefix_m.group(1) if prefix_m else root.name.upper()[:4]
+        gid    = reg_gid or gid_m.group(1)
+        prefix = reg_prefix or (prefix_m.group(1) if prefix_m else root.name.upper()[:4])
 
         if gid in seen_gids or prefix in SKIP_PREFIXES:
             continue
@@ -494,7 +513,8 @@ def discover_projects(filter_prefix=None, include_inactive=False, quiet=False) -
             continue
 
         name_m = re.search(r"ASANA_PROJECT_NAME:\s*(.+)", text)
-        name   = name_m.group(1).strip() if name_m else (
+        name   = (reg_entry or {}).get("name") or (
+            name_m.group(1).strip() if name_m else
             root.name.replace("_", " ").replace("-", " ").title()
         )
 
