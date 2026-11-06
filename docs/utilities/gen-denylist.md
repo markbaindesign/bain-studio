@@ -17,7 +17,9 @@ git grep -lIiwF -f <(python3 studio/scripts/gen-denylist.py) -- . ':!CHANGELOG.m
 ```
 
 The second command is the acceptance test for BSTD-875. When it returns nothing,
-this repo carries no client identity. It reports 53 files today.
+this repo carries no client identity. **Don't write its result down anywhere** —
+it moved four times in one afternoon as discovery widened, and a recorded count
+is stale by the next commit.
 
 ## Why it generates rather than reads a file
 

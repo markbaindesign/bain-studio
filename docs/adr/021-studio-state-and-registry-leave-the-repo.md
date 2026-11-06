@@ -177,20 +177,28 @@ Open question 1 offered three answers. **The third is taken: moved out of the pu
 Settled by instruction — "no client data should go in this repo" — after a release push
 prompted a survey of what the repo actually carries.
 
-The survey found client-identifying content in **44 tracked files** of 435, across eight
-categories: client names, project files whose *filenames* are client identifiers, live
-domains and hosting install hostnames, a Cloudways application ID, two analytics property
-IDs, Dropbox client paths, private repository URLs, and Asana project GIDs. Two local feature
-branches are themselves named after a client. Nothing is a credential: no token, key or
-private key has ever been tracked, and `.env` has never been committed. This is a
-confidentiality defect, not a breach.
+The survey found client-identifying content across nine categories: client names and client
+contact names, project files whose *filenames* are client identifiers, live domains, hosting
+install names and application IDs, analytics property IDs, client email addresses, Dropbox
+client paths, private repository URLs, and Asana project GIDs. Nothing is a credential: no
+token, key or private key has ever been tracked, and `.env` has never been committed. This is
+a confidentiality defect, not a breach.
 
-The count was arrived at twice. A hand-written name regex returned a union of 82 files, which
-double-counted the *variable name* `ASANA_PROJECT_GID` and the studio's own repository URLs,
-while missing three clients whose names the regex did not anticipate. 44 is the figure a
-denylist **generated from the registry** returns. The lesson is recorded here because it is
-the same lesson as the rest of this ADR: a hand-maintained list of what the studio works on
-disagrees with the real one.
+**No count is recorded here on purpose.** Three were produced in one afternoon — a
+hand-written regex union, the same list deduplicated, and a generated list — and every one was
+superseded within the hour as discovery widened. The regex double-counted the *variable name*
+`ASANA_PROJECT_GID` and the studio's own repository URLs, while missing three clients it never
+anticipated, a client contact, a client-side project manager, two client email addresses, a
+client site named only in prose and two search application IDs. The live figure is whatever
+the acceptance command returns:
+
+```
+git grep -lIiwF -f <(python3 studio/scripts/gen-denylist.py) -- . ':!CHANGELOG.md'
+```
+
+The lesson is the same one as the rest of this ADR: a hand-maintained list of what the studio
+works on disagrees with the real one, and a number written into a document is a hand-maintained
+list of one.
 
 #### What was decided
 
@@ -245,7 +253,9 @@ that reads them with a fallback to the old location, then a release and `ops-dep
 only then do the files move. The fallback is removed last, once ops is proven on the new
 reader.
 
-One collector is invoked from `crontab` by a filename that names a client. Renaming it is a
-cron edit in the same change, or the collector stops silently.
+Project prefixes are a code rather than an identity, so a filename, branch name or path built
+from one needs no change — which removes a collector rename and its matching `crontab` edit
+from this work. Only that collector's docstring, which spells the client's name out, is
+redacted.
 
 The ADR as a whole stays **Proposed**. Question 1 is now settled; questions 3 and 4 are not.
