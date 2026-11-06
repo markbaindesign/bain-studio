@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-06
+
+### Removed
+- **`docs/projects/` and `docs/projects.base` are no longer in this repo.** This repo is public, and twenty tracked project files carried client names, contact names, client email addresses, live domains, provider install names, local paths, repository URLs, Asana GIDs and analytics property IDs — the file *names* were client identifiers too. The notes are now `$STUDIO_CONTENT_DIR/projects/*.md` with the index beside them; the index filters on the `studio-project` tag rather than a path, so the Obsidian table works unchanged in a directory that was already a vault. This answers ADR 021's open question 1 as "moved out of the public repo", seven weeks after that question was written down. **Breaking:** anything reading `docs/projects/` must go through `studio/registry.py`.
+- **`studio/templates.json` is deleted.** It was tracked, held a live Asana template GID, and nothing read it — `sync.py` takes `ASANA_TEMPLATE_PROJECT_GID` from untracked `.env`. A dead file publishing a real identifier.
+- **`docs/utilities/security-audit-2026-06.md` moves to `$STUDIO_CONTENT_DIR/research/`.** `CLAUDE.md` already said audits go to `research/`; this one had been in `docs/utilities/` since June carrying real GIDs.
+
+### Added
+- **`studio/registry.py` — one reader for project identity.** Resolves a prefix to its path, GID, name, status, domains and analytics property from `$XDG_DATA_HOME/bain-studio/registry.json`, outside this repo. `sync.py`, `postman.py`, the voice agent, `/focus`, `/open`, `abderus` and `harvest` all go through it; `/focus` and `/open` each had their own embedded lookup, written two different ways. Keeps `/open KF` resolving `KF-WEB` by stem, and refuses an ambiguous stem rather than guessing. 22 tests.
+- **`studio/scripts/gen-denylist.py`** builds the client-data term list at run time from that registry. The script is versioned; its subject is not, because a committed list of client names would be the data it exists to exclude. Refuses — exit 2, empty stdout — when the registry is missing, unreadable or holds no client entries, since an empty denylist passes everything while appearing to work.
+- **`studio/hooks/pre-commit` and `commit-msg`** refuse a commit whose added lines or message carry client data. Added lines only, or the hook would refuse the very commits that remove client data. The message is checked separately because `pre-commit` never sees it and studio rules deliberately send reasoning there. `studio/scripts/setup-machine.sh` sets `core.hooksPath` and reports a missing registry; `BAIN_SKIP_CLIENT_GUARD=1` is the documented one-off, since `--no-verify` bypasses any pre-commit hook anyway.
+- **`$STUDIO_CONTENT_DIR/internal/studio-infrastructure-identifiers.md`** now holds the uptime monitor URLs, hosting application IDs and provider install names that existed nowhere but ADRs 018 and 019.
+
+### Changed
+- **No identifier is hardcoded in this repo.** `CLAUDE.md` had been reprinting the two workspace custom-field GIDs as documentation, with no consumer — `sync.py` already read them from untracked `.env`. The three `CLAUDE.md` files inside this repo no longer carry `ASANA_PROJECT_GID`; `sync.py` prefers the registry for gid, prefix and name on every project, which also removes the every-project-`CLAUDE.md` scan ADR 021 names as a defect. A client project's own `CLAUDE.md` is in that client's private repo and keeps its GID. `.env.example` was missing four of the nine Asana variables the code reads and now documents all nine. Discovery verified identical before and after: 21 active, 23 including inactive.
+- **ADRs 016, 017, 018, 019, 023 and 024 are redacted.** Project prefixes stay — a prefix is a code, and the mapping lives outside this repo — while client names, domains, provider hostnames and application IDs go. The decisions and reasoning are untouched. Each one says it was altered, with the date and where the detail went: silently editing six dated decision records would be worse than the disclosure.
+- **`ga-report` reads name, `ga4_property` and `client_docs` from the registry.** Its docs note had a table mapping prefixes to GA4 property IDs.
+- **Test fixtures use a fictional cast** instead of real client names, bank counterparty strings and categorisation patterns. A real name in a fixture is worse than in prose: it is indistinguishable from configuration, so the next rule added beside it copies the shape and the name.
+- **`CLAUDE.md`'s "What belongs in this repo" opens with "No client data. Ever."** — a table of what goes where, and explicit permission to use prefixes. That section previously listed `docs/projects/` among the things that belong here, three lines below "It is public", which is why 56 files did.
+- **`/register-project` writes the registry and a Dropbox note** rather than `projects.json` and `docs/projects/`. It now insists on `domains` and `kind`, because the commit guard reads both: a wrong `kind` either leaks a client or refuses every commit naming an internal project.
+
+### Fixed
+- **The voice agent resolved a prefix from the deleted directory.** `studio/voice/tasks.py` assembled its path from components, so neither the client-name scan nor a grep for `docs/projects` ever saw it, and the feature worktree has no `projects.json` so its test took a different path and passed there. Found by searching for code that joins a path component instead of writing the path literally — worth repeating after any file move.
+
+
 ## [1.26.2] - 2026-11-06
 
 ### Fixed
