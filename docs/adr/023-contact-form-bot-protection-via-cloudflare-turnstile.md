@@ -2,17 +2,22 @@
 
 Date: 2026-10-15
 Status: Accepted (2026-10-15)
-Related: Techstyle `Dev Ops/devops-notes.md` ("Contact form spam protection: Cloudflare Turnstile - 2026-10-15"),
-Ebiz Global `Dev Ops/devops.md` sections 16 and 17
+Related: the TSTY and EBIZG `Dev Ops/` notes in each client's Dropbox folder
+
+> **Redacted 2026-11-06.** Client names, domains, provider hostnames and application
+> IDs were removed from this ADR; project prefixes are kept. The decisions and the
+> reasoning are unchanged. What was removed is in
+> `$STUDIO_CONTENT_DIR/internal/studio-infrastructure-identifiers.md` or in that
+> project's `Dev Ops/` note in Dropbox. See ADR 021, BSTD-875.
 
 ## Context
 
-On 2026-10-15 a phishing "formal enquiry" came through the Techstyle contact form. It had a fake
+On 2026-10-15 a phishing "formal enquiry" came through the TSTY contact form. It had a fake
 aerospace-company sender and a Proton Drive PDF whose "View shared document" button led to a
 credential-harvesting page. Client contact forms are an open route for this kind of mail, and
 the notifications land in client inboxes looking as if they came from the client's own site.
 
-Client sites use different form plugins. Techstyle uses Contact Form 7 and Ebiz Global uses
+Client sites use different form plugins. TSTY uses Contact Form 7 and EBIZG uses
 Forminator. Both have Cloudflare Turnstile support built in, so no extra plugin is needed.
 Turnstile is free, has no image puzzles for most visitors, and is set up through an API.
 
@@ -47,7 +52,7 @@ Turnstile is free, has no image puzzles for most visitors, and is set up through
   account. Hand-over means either transferring it or having the client create their own widget
   and swap the keys.
 - A hostname missing from the widget breaks the form for anyone who reaches it ("Unable to
-  connect to website"). On Ebiz Global, old links to `ebizglobalweb.wpengine.com` caused exactly
+  connect to website"). On EBIZG, old links to the provider's CNAME host caused exactly
   this. Before a cutover or migration, also search the database for every old hostname.
 - A leaked secret is rotated with the API (`.../challenges/widgets/<sitekey>/rotate_secret`,
   `invalidate_immediately: true`) and updated on every environment.

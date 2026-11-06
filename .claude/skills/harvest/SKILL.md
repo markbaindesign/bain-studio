@@ -26,7 +26,7 @@ Check current harvest status:
 ### 3. Gather context
 
 Read the following if they exist:
-- The project directory's `CLAUDE.md` — read the `path:` frontmatter in `docs/projects/{prefix}.md`
+- The project directory's `CLAUDE.md` — resolve the path with `python3 /media/data/dev/bain-studio/studio/registry.py --prefix {prefix} --field path` rather than reading `docs/projects/` directly; identity is moving out of this public repo (see `/media/data/dev/bain-studio/docs/utilities/registry.md`)
 - The project directory's `TODO.md`
 
 Do not invent details not present in the data or these files.

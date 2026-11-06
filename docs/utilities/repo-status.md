@@ -15,13 +15,13 @@ so the ones holding unfinished work are at the top.
 19 repos   10 dirty · 4 ahead · 1 untracked · 1 branch · 1 ok · 2 nogit            4s ago
 ops 1.18.0 current
 ● dirty     bain.design          develop                      2ub      2M    5h  BD-171 Rebuild page.php
-● dirty     beato-properties     develop             ↑14      3ub   1M 2?    7d  Env check: P23 Divi Buil
-● dirty     techstyle            feature/compliance  local    1ub  4M 47?   18d  feat: editable page text
+● dirty     brampton-estates     develop             ↑14      3ub   1M 2?    7d  Env check: P23 Divi Buil
+● dirty     marlow-goods            feature/compliance  local    1ub  4M 47?   18d  feat: editable page text
 ▲ ahead     bain-studio          develop             ↑12  7wt 5ub            4m  Merge tag '1.18.0'
-▲ ahead     kf-21                feature/cron-inter  local 2wt 5ub           27m  Run Action Scheduler
+▲ ahead     thornbury-21                feature/cron-inter  local 2wt 5ub           27m  Run Action Scheduler
 ◌ untracked upwork-proposals     develop                      1wt      1?    5h  docs(changelog): correct
 ◐ branch    nore                 feature/react-fron           4ub            4d  feat: update output
-○ ok        kf-tara-web          develop                                   39d  Merge branch 'feature/ta
+○ ok        thornbury-micro          develop                                   39d  Merge branch 'feature/ta
 · nogit     premium_domains      not a git repo                              -
 ```
 
@@ -61,7 +61,7 @@ by nothing. Three things were being added together:
   modified files. A repo with nothing else changed gets the `mirror` state, below `ahead`: it
   still wants a commit, but nobody left work half-done in it.
 - **Untracked files** (`2?`) - nearly every project carries an untracked `.claude/` or `.ddev/`
-  that will never be committed, and techstyle has 47 of them.
+  that will never be committed, and one project has 47 of them.
 
 A mirror change alongside real changes is still `dirty`, and unpushed commits still outrank
 both: that is the bigger fact about the repo.

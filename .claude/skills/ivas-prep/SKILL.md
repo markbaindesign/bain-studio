@@ -99,7 +99,7 @@ IVA Prep — Q{N} {YEAR}
 ========================
 
 Vendes (invoices sent):
-  [x] INVOICE_877 — Beato (€X)
+  [x] INVOICE_877 — {client} (€X)
   [x] INVOICE_878 — ...
   [ ] Check: invoices 881, 882 missing from Harvest?
 

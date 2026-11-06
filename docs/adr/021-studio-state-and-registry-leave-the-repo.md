@@ -170,3 +170,141 @@ with it, and `/focus` (currently `projects.json`) and `/open` (currently `docs/p
 should be brought onto whatever wins at the same time.
 
 The ADR as a whole stays **Proposed**; only this question is settled.
+
+### Addendum (2026-11-06): question 1 resolved — `docs/projects/` leaves the repo
+
+Open question 1 offered three answers. **The third is taken: moved out of the public repo.**
+Settled by instruction — "no client data should go in this repo" — after a release push
+prompted a survey of what the repo actually carries.
+
+The survey found client-identifying content across nine categories: client names and client
+contact names, project files whose *filenames* are client identifiers, live domains, hosting
+install names and application IDs, analytics property IDs, client email addresses, Dropbox
+client paths, private repository URLs, and Asana project GIDs. Nothing is a credential: no
+token, key or private key has ever been tracked, and `.env` has never been committed. This is
+a confidentiality defect, not a breach.
+
+**No count is recorded here on purpose.** Three were produced in one afternoon — a
+hand-written regex union, the same list deduplicated, and a generated list — and every one was
+superseded within the hour as discovery widened. The regex double-counted the *variable name*
+`ASANA_PROJECT_GID` and the studio's own repository URLs, while missing three clients it never
+anticipated, a client contact, a client-side project manager, two client email addresses, a
+client site named only in prose and two search application IDs. The live figure is whatever
+the acceptance command returns:
+
+```
+git grep -lIiwF -f <(python3 studio/scripts/gen-denylist.py) -- . ':!CHANGELOG.md'
+```
+
+The lesson is the same one as the rest of this ADR: a hand-maintained list of what the studio
+works on disagrees with the real one, and a number written into a document is a hand-maintained
+list of one.
+
+#### What was decided
+
+1. **The split in this ADR is kept, and extended to the prose.** `registry.json` under
+   `$XDG_DATA_HOME/bain-studio/` holds identity. The per-project prose — stack, hosting,
+   system enrollment, context — becomes a document under `$STUDIO_CONTENT_DIR/projects/`,
+   where `documents-in-dropbox.md` already puts documents. The repo keeps nothing per-project.
+2. **The registry schema grows beyond this ADR's `path`, `prefix`, `gid`, `name`, `status`.**
+   It also carries `client`, `domains`, `repo` and `kind`. Not for the tools: for the
+   enforcement denylist, which cannot be generated without them, and which must distinguish
+   client entries from internal ones or every commit naming an internal project is refused.
+   `kind` is already derivable — half the current project files declare an internal client.
+3. **ADRs keep project prefixes and lose everything else.** Once the prefix-to-client mapping
+   is out of the repo, a bare prefix identifies nobody, and the toolchain speaks in prefixes
+   throughout. Client names, domains, install hostnames and provider IDs go; the detail moves
+   to that project's `Dev Ops/` note in Dropbox first, which ADRs 023 and 024 already cite as
+   its home. Six ADRs are affected: 016, 017, 018, 019, 023, 024.
+4. **Git history is left intact.** No rewrite, no force-push. The repo has no forks, no stars,
+   no workflows, no deploy keys and a single contributor, so a rewrite was available and was
+   considered; it was declined. The data has been public for roughly six months, a rewrite
+   would re-tag the 40 tags the ops worktree is pinned to, and nothing exposed is a credential.
+   The rule is met going forward, not retroactively, and this records that deliberately.
+5. **`CHANGELOG.md` is redacted going forward only.** Past entries stay as written. The
+   identical text is in `git log` either way, so rewriting a dated record would buy a tidier
+   snapshot and nothing else. New entries name prefixes.
+6. **Enforcement is a hook, not a rule** — the conclusion ADR 026 reached the same day. A rule
+   alone is what produced the defect: the "What belongs in this repo" section of `CLAUDE.md`
+   listed `docs/projects/` as belonging, three lines below the sentence "It is public." That
+   section is rewritten as part of this work.
+
+#### The denylist must never be committed
+
+A list of client names and domains, checked into the public repo so a hook can grep for it, is
+the exact data the hook exists to keep out. The denylist is **generated at run time** from
+`registry.json`, which is outside the repo. The hook script is versioned; its subject is not.
+
+Three failure modes are designed against, because each one makes the hook useless while
+appearing to work:
+
+- **It must scan added lines only.** A diff-wide match refuses the redaction commits themselves.
+- **It must also run on the commit message.** `pre-commit` never sees the message, and the
+  studio's own rules direct reasoning into commit messages, which are public.
+- **It must refuse, not pass, when the registry is absent** — a fresh clone, or another
+  machine. An empty denylist otherwise lets everything through silently.
+
+#### Migration order
+
+This ADR's own ordering constraint binds harder here than it did for state, because the ops
+worktree runs scheduled jobs off a release tag and several of them read `docs/projects/`
+frontmatter. The registry and the out-of-repo config files are written first, then a resolver
+that reads them with a fallback to the old location, then a release and `ops-deploy.sh`, and
+only then do the files move. The fallback is removed last, once ops is proven on the new
+reader.
+
+Project prefixes are a code rather than an identity, so a filename, branch name or path built
+from one needs no change — which removes a collector rename and its matching `crontab` edit
+from this work. Only that collector's docstring, which spells the client's name out, is
+redacted.
+
+The ADR as a whole stays **Proposed**. Question 1 is now settled; questions 3 and 4 are not.
+
+### Addendum (2026-11-06, later): question 1 is implemented, not just decided
+
+The work is done and released. What this ADR now records as fact rather than intent:
+
+- **`docs/projects/` and `docs/projects.base` are gone from this repo.** The twenty notes are
+  `$STUDIO_CONTENT_DIR/projects/*.md`, with the index beside them; its filter is tag-based, so
+  it works unchanged in a directory that was already a vault.
+- **`registry.json` is the single source of project identity**, with 23 entries, three more
+  than there were project files: two projects existed only in the gitignored `projects.json`
+  and had no note at all, and one of those is a client project.
+- **`studio/registry.py` is the only reader.** `sync.py`, `postman.py`, `/focus`, `/open`,
+  `abderus` and `harvest` all go through it. `sync.py` no longer opens every project's
+  `CLAUDE.md` to resolve one GID — the specific defect this ADR's table names.
+- **No identifier is hardcoded anywhere in the repo.** `studio/templates.json` was deleted
+  outright: tracked, holding a live template GID, and read by nothing.
+- **A commit hook enforces it**, with its term list generated at commit time from the registry
+  outside the repo.
+
+Verified: `git grep` against a generated denylist returns nothing outside `CHANGELOG.md`.
+
+#### Three things this ADR got wrong
+
+1. **The migration order was wrong for this change.** This ADR requires shipping a
+   fallback-capable reader, deploying it, then moving the files — two releases. That is right
+   for runtime *state*, which lives outside git and cannot move atomically with code. It is
+   wrong for *files inside the repo*: a tag checkout swaps code and files in the same instant,
+   so there is no window to protect. One release was correct, and the two-release order would
+   have shipped a release with no observable behaviour to verify.
+2. **The fallback it demands is therefore dead code.** Because the resolver and the
+   directory's removal land in the same commit, the new reader never coexists with the old
+   files. What survives is `projects.json` only — paths, few prefixes — so it is a thin safety
+   net rather than the complete answer the ADR imagines. It is removed once ops has run a
+   cycle on the registry.
+3. **The registry schema in the Decision section is insufficient.** `path`, `prefix`, `gid`,
+   `name`, `status` cannot answer "is this a client?" or "what are their domains?", and
+   without those the enforcement hook cannot be built at all. `kind`, `client`, `domains` and
+   `repo` are not conveniences; they are what makes the rule enforceable.
+
+#### What is still open
+
+Questions 3 and 4 — whether `studio/inbox/` moves, and whether `~/.algolia/` folds in — are
+untouched. The state half of this ADR (the 31 ops symlinks, the `Path(__file__)` state paths)
+is also untouched: this work moved the **registry**, not the state. The acceptance criteria
+about symlinks and `Path(__file__)` remain unmet, so the ADR stays **Proposed**.
+
+One criterion is now partly met: a project's status changes in one place for every consumer
+that reads the registry. The Dropbox note still carries a `status` line for the Obsidian table
+to render, so the two can drift until `register-project` is the only writer of both.

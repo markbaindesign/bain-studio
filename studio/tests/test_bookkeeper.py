@@ -110,7 +110,7 @@ def book(book_path):
 def rules():
     return Rules({
         "rules": [
-            {"match": "khyentse", "account": "Income:Client Income", "direction": "in"},
+            {"match": "thornbury", "account": "Income:Client Income", "direction": "in"},
             {"match": "anthropic", "account": "Expenses:Software"},
             {"match": "nowhere", "account": "Expenses:Does Not Exist"},
         ]
@@ -158,7 +158,7 @@ def test_inbound_fee_is_added_back_to_reach_gross():
     """$1,000 sent, $6.11 fee, $993.89 arrives. Income must be the gross."""
     txns = wise.parse_rows([_row(
         Direction="IN",
-        **{"Source name": "KHYENTSE FOUNDATION",
+        **{"Source name": "THORNBURY TRUST",
            "Source fee amount": "6.11", "Source fee currency": "USD",
            "Target amount (after fees)": "993.89"}
     )], WISE_ACCOUNTS, "business")
@@ -247,8 +247,8 @@ def test_rule_naming_a_missing_account_goes_to_review(book, rules):
 
 
 def test_direction_scoped_rule_ignores_the_wrong_direction(book, rules):
-    """The khyentse rule is inbound-only; a refund out must not match it."""
-    txn = Txn(date=date(2026, 9, 1), description="KHYENTSE", counterparty="KHYENTSE")
+    """The thornbury rule is inbound-only; a refund out must not match it."""
+    txn = Txn(date=date(2026, 9, 1), description="THORNBURY", counterparty="THORNBURY")
     txn.legs.append(Leg("Assets:Wise Business (USD)", Fraction(-100, 100), "USD"))
     categorise(txn, rules, book)
     assert txn.needs_review

@@ -5,7 +5,7 @@ Authenticates via service account JSON, pulls standard metrics,
 and outputs JSON for the /ga-report skill to compile into a report.
 
 Usage:
-    python3 ga4_report.py --property 542141660 --sa-json /path/to/sa.json [--days 90] [--include-not-set]
+    python3 ga4_report.py --property GA4_PROPERTY_ID --sa-json /path/to/sa.json [--days 90] [--include-not-set]
 
 Sessions with a "(not set)" landing page are excluded from every figure by
 default. They have no page_view, usually because a visitor came back to an idle

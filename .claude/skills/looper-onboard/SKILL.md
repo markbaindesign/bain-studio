@@ -43,7 +43,9 @@ If `NOT_FOUND`: stop and tell the user to run `/register-project` first (this pr
 
 ## Step 2 — Confirm the Asana block is complete
 
-Read `{path}/CLAUDE.md`. It must have all three of `ASANA_PROJECT_GID`, `ASANA_TASK_PREFIX`,
+Resolve the GID from the registry (`python3 /media/data/dev/bain-studio/studio/registry.py --prefix {PREFIX} --field gid`); a project
+inside the public bain-studio repo carries none in its `CLAUDE.md`. Read `{path}/CLAUDE.md`
+for the rest. Between them there must be all three of the GID, `ASANA_TASK_PREFIX`,
 `ASANA_PROJECT_NAME`. If any are missing, stop and point to `/register-project`'s Step 4.
 
 ## Step 3 — Wire the shared custom fields

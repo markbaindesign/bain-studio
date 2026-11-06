@@ -89,7 +89,7 @@ Use `$ASANA_PAT` in all subsequent curl calls. Never use `$ASANA_TOKEN`.
 
 Check in this order:
 
-1. Read the project's CLAUDE.md for `ASANA_PROJECT_GID: <gid>`.
+1. Resolve the project's Asana GID from the registry first (`python3 /media/data/dev/bain-studio/studio/registry.py --prefix {PREFIX} --field gid`), falling back to the project's own `CLAUDE.md`. A project inside the public bain-studio repo carries no GID in its `CLAUDE.md`; a client project's does, in its own private repo.
 2. Check `asana-ids.json` for a GID.
 3. If none found, ask the user.
 

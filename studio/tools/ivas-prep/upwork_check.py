@@ -7,7 +7,7 @@ Upwork transaction report CSV (Reports > Transaction History > Download CSV) and
 clients paid in the quarter that have no Harvest invoice issued in it.
 
 Earnings are counted by payment date, as the CSV records them. Client names are matched
-loosely ("TECHSTYLE" = "TECHSTYLE Accessories B.V."), so a flag is a prompt to check,
+loosely ("MARLOW" = "Marlow Goods B.V."), so a flag is a prompt to check,
 not proof that an invoice is missing.
 """
 

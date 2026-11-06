@@ -46,7 +46,7 @@ The voice has five tools: `start_task`, `list_tasks`, `get_task_result`, `follow
 
 - **Tasks** run as `claude -p --permission-mode auto --output-format json`, at most 3 at once.
   A task given a project prefix (e.g. `BD`) runs in that project's repo, resolved from
-  `docs/projects/`; otherwise it runs in bain-studio.
+  the registry; otherwise it runs in bain-studio.
 - **Follow-ups** resume the same Claude session (`--resume`), so Mark can answer a task's
   question or tell it to carry on.
 - **Results** are spoken only when nobody is talking, and trimmed to 1,500 characters. The full

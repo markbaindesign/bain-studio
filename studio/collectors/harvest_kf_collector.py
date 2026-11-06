@@ -1,5 +1,5 @@
 """
-Harvest KF collector — writes a time-budget snapshot for the Khyentse Foundation
+Harvest KF collector — writes a time-budget snapshot for the KF-WEB
 retainer to context/projects/kf/time_snapshot.json.
 
 Run: python3 studio/collectors/harvest_kf_collector.py

@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Refuse a commit whose added lines carry client data. See _client_guard.py."""
+import os
+import re
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _client_guard import (EXCLUDE_PATHS, compile_terms, denylist, no_registry_message,
+                           report, repo_root, skipped)
+
+
+def added_lines(root):
+    """(path, lineno, text) for every line this commit ADDS.
+
+    Added lines only: a whole-diff match would refuse the very commits that
+    remove client data, including the ones that did this migration.
+    """
+    p = subprocess.run(
+        ["git", "diff", "--cached", "-U0", "--no-color", "--diff-filter=ACMR"],
+        capture_output=True, text=True, cwd=root)
+    path, lineno = None, 0
+    for line in p.stdout.splitlines():
+        if line.startswith("+++ b/"):
+            path = line[6:]
+            continue
+        if line.startswith("@@"):
+            m = re.search(r"\+(\d+)", line)
+            lineno = int(m.group(1)) if m else 0
+            continue
+        if line.startswith("+") and not line.startswith("+++"):
+            if path and path not in EXCLUDE_PATHS:
+                yield path, lineno, line[1:]
+            lineno += 1
+
+
+def main():
+    if skipped():
+        return 0
+    root = repo_root()
+    terms = denylist(root)
+    if terms is None:
+        sys.stderr.write(no_registry_message())
+        return 1
+    patterns = compile_terms(terms)
+    hits = []
+    for path, lineno, text in added_lines(root):
+        for term, rx in patterns:
+            if rx.search(text):
+                hits.append((f"{path}:{lineno}", term, text))
+                break
+    if hits:
+        report(hits, "this commit")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

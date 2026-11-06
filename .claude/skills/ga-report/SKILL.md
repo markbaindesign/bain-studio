@@ -12,14 +12,14 @@ Pull GA4 data and compile a client-ready benchmark report.
 
 ```
 /ga-report NORE
-/ga-report NORE --property 542141660
+/ga-report NORE --property {GA4_PROPERTY_ID}
 /ga-report NORE --days 30
-/ga-report NORE --property 542141660 --days 90
+/ga-report NORE --property {GA4_PROPERTY_ID} --days 90
 ```
 
 Arguments:
 - `PROJECT` — project prefix (required). Used to look up client name and output path.
-- `--property ID` — GA4 property ID (numeric). If omitted, reads `ga4_property:` from the project file or prompts.
+- `--property ID` — GA4 property ID (numeric). If omitted, read it from the registry (below) or prompt.
 - `--days N` — reporting period in days (default: 90).
 
 ---
@@ -48,12 +48,20 @@ Extract `PROJECT`, `--property`, and `--days` from the invocation. Uppercase the
 
 ### 2. Look up project details
 
-Read the project file from `docs/projects/{slug}.md` (match by prefix). Extract:
-- `name:` — client/project name for the report title
-- `ga4_property:` — GA4 property ID
-- `client_docs:` — the client's Dropbox docs folder (where the report is saved, see step 7)
+Read them from the registry, which lives outside this public repo
+(`/media/data/dev/bain-studio/docs/utilities/registry.md`):
 
-If `--property` was not supplied and no property ID is found in the project file, ask for it.
+```bash
+python3 /media/data/dev/bain-studio/studio/registry.py --prefix {PREFIX}
+```
+
+From that entry take:
+- `name` — client/project name for the report title
+- `ga4_property` — GA4 property ID
+- `client_docs` — the client's Dropbox docs folder (where the report is saved, see step 7)
+
+If `--property` was not supplied and the entry has no `ga4_property`, ask for it.
+**Do not write the value back into this repo** — put it in the registry.
 
 ### 3. Check credentials
 
@@ -139,11 +147,12 @@ REPORT_PATH="$REPORT_DIR/ga-benchmark-$(date +%Y-%m-%d).md"
 ```
 
 If `client_docs:` is missing, do not guess it from `client:`: the Dropbox folder
-names don't reliably match (NORE's client is "Suze", but its folder is `NORE/`).
+names don't reliably match: a client's folder is often named for the project or an
+abbreviation rather than the client. Take `client_docs` from the registry entry.
 Look in `/media/data/Dropbox/Work/clients/` for the client's folder and
 read its `CLAUDE.md`, which says where docs belong. The standard layout from
 `/onboard-client` is `{Client}/{Project}/Docs/` (KF already follows it:
-`Khyentse Foundation/Projects/New KF Website/Docs/`), but older single-project clients are
+`{Client}/Projects/{Project}/Docs/`), but older single-project clients are
 flat at `{Client}/Docs/`. Confirm the folder with Mark, then add
 `client_docs:` to the project file so the next run doesn't need to ask.
 

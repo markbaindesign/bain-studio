@@ -101,7 +101,7 @@ future run reads from.
    where Mark actually monitors work. Skip any item pre-checked in step 2 —
    it's already in hand and does not need chasing.
 
-   Find the project GID from the project's own `CLAUDE.md` (`ASANA_PROJECT_GID`)
+   Resolve the project GID from the registry first (`python3 /media/data/dev/bain-studio/studio/registry.py --prefix {PREFIX} --field gid`), falling back to the project's own `CLAUDE.md`. A project inside the public bain-studio repo carries no GID in its `CLAUDE.md`; a client project's does, in its own private repo.
    if `--project-gid` wasn't passed. If neither is available, say so and skip
    this step rather than creating tasks on the wrong board.
 

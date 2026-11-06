@@ -20,7 +20,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 STUDIO_ROOT = Path("/media/data/dev/bain-studio")
-PROJECT_DOCS = STUDIO_ROOT / "docs" / "projects"
 STATE_PATH = Path.home() / ".claude" / "voice-agent" / "tasks.json"
 
 MAX_CONCURRENT = 3
@@ -75,18 +74,20 @@ class Task:
 
 
 def resolve_project(prefix: str | None) -> Path:
-    """Map a studio prefix (e.g. "BD") to its repo path; default to bain-studio."""
+    """Map a studio prefix (e.g. "BD") to its repo path; default to bain-studio.
+
+    Resolves through studio/registry.py, which reads the registry outside this
+    public repo. See ADR 021 and docs/utilities/registry.md.
+    """
     if not prefix:
         return STUDIO_ROOT
-    wanted = prefix.strip().upper()
-    for doc in PROJECT_DOCS.glob("*.md"):
-        text = doc.read_text()
-        head = text.split("---", 2)[1] if text.startswith("---") else ""
-        p = re.search(r"^prefix:\s*(\S+)", head, re.M)
-        path = re.search(r"^path:\s*(.+)$", head, re.M)
-        if p and path and p.group(1).upper() == wanted:
-            return Path(path.group(1).strip())
-    raise ValueError(f"No studio project with prefix {prefix}")
+    import sys
+    sys.path.insert(0, str(STUDIO_ROOT / "studio"))
+    import registry as _registry
+    path = _registry.path_for(prefix)
+    if path is None:
+        raise ValueError(f"No studio project with prefix {prefix}")
+    return path
 
 
 class TaskRunner:

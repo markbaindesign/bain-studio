@@ -25,8 +25,8 @@ Read `studio/projects.json`. For each entry print:
 ```
 PREFIX  STATUS    name (path)
 ------  --------  -----------
-MCF     active    Mhairi McFarlane (/home/bain/code/...)
-NORE    paused    The Nature of Real Estate (...)
+MCF     active    {name} (/home/bain/code/...)
+NORE    paused    {name} (...)
 ```
 
 Derive prefix and name from each project's `CLAUDE.md` (`ASANA_TASK_PREFIX` and `ASANA_PROJECT_NAME`).
@@ -51,7 +51,7 @@ Sort order: featured → active → paused → archived.
 - Print: "NORE paused — will be skipped in cron sync. Run `python3 studio/sync.py --project NORE` to sync manually."
 
 **→ archived**
-- Confirm: "Archive NORE (The Nature of Real Estate)? This hides it from all reports. (y/n)"
+- Confirm: "Archive NORE ({name})? This hides it from all reports. (y/n)"
 - On confirm: set status, add `archived_at` date
 - Print: "NORE archived."
 

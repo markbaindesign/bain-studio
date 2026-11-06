@@ -105,7 +105,7 @@ AskUserQuestion:
   header: "Focus"
   multiSelect: false
   options:
-    - one option per active project (prefix + name, e.g. "MCF — Mhairi McFarlane")
+    - one option per active project (prefix + name, from the registry)
     - label: "Skip"
       description: "End startup here"
 ```
