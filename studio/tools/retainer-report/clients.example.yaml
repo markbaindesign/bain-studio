@@ -14,7 +14,7 @@
 #                price list.
 #
 # Terms source: the signed agreement in
-#   Dropbox/Work/Projects/Client/<Client>/Admin/Contracts/
+#   Dropbox/Work/clients/<Client>/Admin/Contracts/
 
 EXAMPLE:
   client_name:   Example Client

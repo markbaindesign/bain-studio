@@ -32,4 +32,4 @@ hosting are still to be filled in.
 ## Notes
 
 - Local dev directory: `/media/data/dev/ddev/tis` (DDEV, not yet scaffolded)
-- No client Dropbox folder found under `Work/Projects/Client/` at registration
+- No client Dropbox folder found under `Work/clients/` at registration

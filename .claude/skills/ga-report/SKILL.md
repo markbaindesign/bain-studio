@@ -140,10 +140,11 @@ REPORT_PATH="$REPORT_DIR/ga-benchmark-$(date +%Y-%m-%d).md"
 
 If `client_docs:` is missing, do not guess it from `client:`: the Dropbox folder
 names don't reliably match (NORE's client is "Suze", but its folder is `NORE/`).
-Look in `/media/data/Dropbox/Work/Projects/Client/` for the client's folder and
+Look in `/media/data/Dropbox/Work/clients/` for the client's folder and
 read its `CLAUDE.md`, which says where docs belong. The standard layout from
-`/onboard-client` is `{Client}/Docs/`, but some clients keep docs deeper (KF uses
-`Khyentse Foundation/New KF Website/Docs/`). Confirm the folder with Mark, then add
+`/onboard-client` is `{Client}/{Project}/Docs/` (KF already follows it:
+`Khyentse Foundation/Projects/New KF Website/Docs/`), but older single-project clients are
+flat at `{Client}/Docs/`. Confirm the folder with Mark, then add
 `client_docs:` to the project file so the next run doesn't need to ask.
 
 Draw the charts into a folder next to the report:

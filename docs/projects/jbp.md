@@ -12,7 +12,7 @@ stack: WordPress · Divi child theme · Estatik · WPML · FluentBooking · VVV 
 path: /media/data/dev/vvv/clients/www/beato-properties
 asana: "yes"
 qa: "yes"
-client_docs: "/media/data/Dropbox/Work/Projects/Client/JBP Beato Properties"
+client_docs: "/media/data/Dropbox/Work/clients/JBP Beato Properties"
 inbox: "no"
 open_tasks: 0
 current_focus: "Listing location not saving in CA/ES; install-app prompt fix awaiting deploy"
