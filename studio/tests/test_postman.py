@@ -19,6 +19,11 @@ def _setup(tmp_path, monkeypatch, result=True):
     monkeypatch.setattr(postman, "SCAN_ROOTS", [])
     monkeypatch.setattr(postman, "LOG_FILE", tmp_path / "postman.log")
     monkeypatch.setenv("POSTMAN_NO_PING", "1")
+    # Identity now resolves through studio/registry.py, which reads a registry
+    # outside this repo. Point it away so these tests exercise the fallback
+    # against tmp_path rather than being answered from the real registry.
+    monkeypatch.setenv("BAIN_REGISTRY", str(tmp_path / "no-registry.json"))
+    monkeypatch.setenv("BAIN_PROJECTS_JSON", str(tmp_path / "no-projects.json"))
     calls = []
     import types
     fake = types.ModuleType("notifier")

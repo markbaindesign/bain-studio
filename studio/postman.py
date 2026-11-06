@@ -52,12 +52,24 @@ def _studio_inbox() -> Path:
 
 
 def _registry_path(project: str):
-    """Project path for a registered prefix (e.g. ASP), from docs/projects/*.md frontmatter."""
-    for doc in (STUDIO_ROOT / 'docs' / 'projects').glob('*.md'):
-        meta, _ = _parse_message(doc)
-        if meta.get('prefix', '').upper() == project.upper() and meta.get('path'):
-            return Path(meta['path'])
-    return None
+    """Project path for a registered prefix (e.g. ASP).
+
+    Asks studio/registry.py, which reads the registry outside this repo and
+    falls back to docs/projects/*.md while that migration is in progress.
+    See ADR 021 and BSTD-875.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import registry as _registry
+        return _registry.path_for(project, repo_root=STUDIO_ROOT)
+    except Exception:
+        # Never let identity resolution take postman down: fall back to the
+        # frontmatter scan this function used to do.
+        for doc in (STUDIO_ROOT / 'docs' / 'projects').glob('*.md'):
+            meta, _ = _parse_message(doc)
+            if meta.get('prefix', '').upper() == project.upper() and meta.get('path'):
+                return Path(meta['path'])
+        return None
 
 
 def _project_inbox(project: str):
