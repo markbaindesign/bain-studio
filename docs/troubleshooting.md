@@ -22,7 +22,7 @@ entirely): the **server itself** was returning HTML with stale inline
 `<style data-vite-dev-id="...">` content that didn't match the source
 file on disk. The long-running `astro dev` process's Vite file watcher
 had stopped picking up changes for that file — happened on a dev server
-that had been running continuously for ~1 hour across many edits (kf-tara-web,
+that had been running continuously for ~1 hour across many edits (two projects,
 2026-07-22).
 
 **Fix:** Restart the dev server (`Ctrl+C`, then `npm run dev` again).

@@ -2,7 +2,7 @@
 
 The standard directory layout and ignore rules for every WordPress client
 project, VVV and DDEV alike. Written up 2026-09-09 after two DDEV projects
-(ebiz-global, techstyle) drifted off it.
+(EBIZG, TSTY) drifted off it.
 
 ## Layout
 
@@ -54,7 +54,7 @@ The pattern is three tiers, and the second is the one that gets missed:
 3. **Deny the contents of each of those, then re-allow only our named custom
    plugin, theme or mu-plugin.**
 
-Skip tier 3 and the entire vendor tree gets committed - on ebiz-global that was
+Skip tier 3 and the entire vendor tree gets committed - on one project that was
 16,133 files and 357MB, against 1 file of actual custom code.
 
 ```gitignore
@@ -93,7 +93,7 @@ Also never tracked:
 - Database dumps, archives and logs - `*.sql`, `*.zip`, `*.wpress`, `*.log`.
 
 Working reference implementations: `vvv/clients/www/nore`,
-`vvv/clients/www/khyentsefoundation`, `ddev/ebiz-global`.
+`vvv/clients/www/{project}`, `ddev/{project}`.
 
 ## Replacing what ignoring vendor code loses
 
@@ -112,14 +112,14 @@ Regenerate it at each release.
 On a rescue there is a second thing to preserve: some vendor code is genuinely
 not reconstructable from upstream - unlicensed copies, or plugins the previous
 developer edited in place. Keep the untouched as-found pull outside the repo
-(ebiz-global's is `../ebiz-global-pull/htdocs`) and record its location in the
+(one project's is `../{project}-pull/htdocs`) and record its location in the
 project's `CLAUDE.md`. That, not git, is the forensic baseline: hacked parent
 themes are found by diffing against a clean upstream download, which needs no
 version control at all.
 
 ## Known drift
 
-- `ddev/techstyle` still uses `docroot: .` and the generic four-line
+- one DDEV project still uses `docroot: .` and the generic four-line
   `.gitignore`. Not yet corrected.
 - `scaffold-dir` writes a generic `.gitignore` (`.env`, `node_modules/`,
   `__pycache__/`, `.DS_Store`) with no WordPress awareness, which is the root

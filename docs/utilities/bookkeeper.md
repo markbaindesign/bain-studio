@@ -121,7 +121,7 @@ is personal spending data and this repo is public.
 rules:
   - match: "cloudways"                       # substring, case-insensitive
     account: "Expenses:Online Services:Hosting"
-  - match: "khyentse foundation"
+  - match: "example client"
     account: "Income:Client Income"
     direction: in                            # only when money comes in
   - match: "trader joe"                      # date- and currency-scoped

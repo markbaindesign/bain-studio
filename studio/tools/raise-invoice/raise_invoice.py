@@ -177,7 +177,7 @@ def build_notes(kind, payment, vat=None, from_date=None, to_date=None, reverse_c
 
 def pick_currency(client, history, kind, override=None):
     """(currency, warning). The client record's currency is not reliable on its
-    own: Techstyle's record says USD, but direct invoices to them are in EUR.
+    own: a client's record may say USD while direct invoices to them are in EUR.
     So prefer the currency of the client's last invoice of the same kind
     (Upwork or direct), and say so when it disagrees with the record."""
     if override:

@@ -138,9 +138,9 @@ graph TD
 See [[projects.base]] for the live project index, now in the content vault. Individual project notes live in `$STUDIO_CONTENT_DIR/projects/` (Dropbox, not this repo — ADR 021); identity comes from `python3 /media/data/dev/bain-studio/studio/registry.py --list`:
 
 - [[projects/bstd]] — Bain Studio (internal tooling)
-- [[projects/mcf]] — Mhairi McFarlane (Astro.js author site)
+- [[projects/mcf]] — MCF (Astro.js author site)
 - [[projects/uap]] — Upwork Pipeline (internal BizDev)
-- [[projects/nore]] — The Nature of Real Estate (WordPress/MemberPress)
+- [[projects/nore]] — NORE (WordPress/MemberPress)
 
 Financial Review and Iris capabilities are **studio-wide** — not per-project enrollments.
 

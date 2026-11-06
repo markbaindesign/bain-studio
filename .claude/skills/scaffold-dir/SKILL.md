@@ -216,7 +216,7 @@ Studio WordPress project layout standard: `/media/data/dev/bain-studio/docs/util
 
 Example projects:
 - VVV: `/media/data/dev/vvv/clients/www/nore`
-- DDEV: `/media/data/dev/ddev/ebiz-global`
+- DDEV: `/media/data/dev/ddev/{project}`
 
 ## Execution
 

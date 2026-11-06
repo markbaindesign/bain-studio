@@ -147,11 +147,12 @@ REPORT_PATH="$REPORT_DIR/ga-benchmark-$(date +%Y-%m-%d).md"
 ```
 
 If `client_docs:` is missing, do not guess it from `client:`: the Dropbox folder
-names don't reliably match (NORE's client is "Suze", but its folder is `NORE/`).
+names don't reliably match: a client's folder is often named for the project or an
+abbreviation rather than the client. Take `client_docs` from the registry entry.
 Look in `/media/data/Dropbox/Work/clients/` for the client's folder and
 read its `CLAUDE.md`, which says where docs belong. The standard layout from
 `/onboard-client` is `{Client}/{Project}/Docs/` (KF already follows it:
-`Khyentse Foundation/Projects/New KF Website/Docs/`), but older single-project clients are
+`{Client}/Projects/{Project}/Docs/`), but older single-project clients are
 flat at `{Client}/Docs/`. Confirm the folder with Mark, then add
 `client_docs:` to the project file so the next run doesn't need to ask.
 

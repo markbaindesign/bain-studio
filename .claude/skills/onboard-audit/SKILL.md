@@ -42,7 +42,7 @@ Produce a compact table per project, then a summary of the worst offenders.
 ```
 ## Onboard Audit — YYYY-MM-DD
 
-### MCF — Mhairi McFarlane
+### MCF
 ✓ path  ✓ CLAUDE.md  ✓ Asana GID  ✓ prefix  ✓ mirror  ~ mirror stale (8d)  ✓ settings
 ✓ open-questions  ✓ inbox  ✗ ADR
 ✗ Mnemosyne entry

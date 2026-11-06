@@ -51,7 +51,7 @@ Examples:
 
 **Always use full file paths** when referencing files in progress notes and task descriptions. Examples:
 - Full: `/media/data/dev/bain-studio/docs/looper/sl-120-proposal-examples-research.md`
-- Full: `/media/data/dev/vvv/clients/www/kf-21/includes/custom-fields.php`
+- Full: `{project}/includes/custom-fields.php`
 - **Not** relative paths like `studio/looper/file.md` or `../docs/file.md`
 
 This makes it unambiguous where the file is located and easier for Mark (and future looper runs) to find it.

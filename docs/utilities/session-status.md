@@ -19,12 +19,12 @@ a session mid-turn is asking for nothing, while an idle one may be waiting to be
 12 sessions   1 waiting · 1 shell · 9 idle · 1 working   bain 10 · kf 2     1s ago
 bain 5h 42% →22:20 · wk 64% →Tue   kf 5h 4% →23:40 · wk 11% →Sun
   status   acct  where         project                  model   ctx ctx%   last  title
-● waiting  bain  mwe:1.1       middlewayeducation        o5.5  118k  12%    12m  Passiko project setup
+● waiting  bain  lan:1.1       lanternaschools        o5.5  118k  12%    12m  Lanterna project setup
 ◑ shell    bain  studio:1.0    Work                      o5.5  282k  28%    54m  Invoices bookkeeping
 ○ idle     bain  infra:0.1     bain-studio (bg)          s5.5   31k   3%     7m  -
-○ idle     kf    kf:0.0        kf-21                       o5   82k   8%    49m  Ticket reply directly
-○ idle     kf    KF:1.0        kf-21                     o5.5  168k  17%    49m  Budget update
-○ idle     bain  ebiz:0.0      ebiz-global               s5.5  103k  10%    53m  EBiz Japan email migration
+○ idle     kf    tbt:0.0        thornbury-21                       o5   82k   8%    49m  Ticket reply directly
+○ idle     kf    TBT:1.0        thornbury-21                     o5.5  168k  17%    49m  Budget update
+○ idle     bain  hrw:0.0      harrow-digital               s5.5  103k  10%    53m  EBiz Japan email migration
 ◴ working  bain  infra:0.0     bain-studio                 o5  159k  16%     3s  Session dashboard rebuild
 ```
 
@@ -164,9 +164,9 @@ CLAUDE                              5 sessions
 bain 5h 42% →22:20 · wk 64% →Tue
 kf 5h 4% →23:40 · wk 11% →Sun
 
-┃ ● waiting      mwe:1.1                  12m
-┃ middlewayeducation       o5.5 · 118k · 12%
-┃ Passiko project setup
+┃ ● waiting      lan:1.1                  12m
+┃ lanternaschools       o5.5 · 118k · 12%
+┃ Lanterna project setup
 
 ┃ ◑ shell        studio:1.0               54m
 ┃ bain-studio              o5.5 · 282k · 28%
@@ -336,7 +336,8 @@ per account, so a KF session's transcript is looked for under `~/.claude-kf`, no
 The account name comes from `oauthAccount.emailAddress` in that account's `.claude.json` -
 inside the config directory for a second account, but `~/.claude.json` for the default one,
 which is where Claude Code itself keeps it. The domain is mapped to the short label
-(`bain.design` -> `bain`, `khyentsefoundation.org` -> `kf`), unmapped domains falling back to
+(`bain.design` -> `bain`, and client domains from
+`$XDG_CONFIG_HOME/bain-studio/account-labels.json` — never listed here), unmapped domains falling back to
 their first label. The map is a copy of the one in `~/.claude/hooks/statusline.py`: that file
 is outside this repo, and the app runs from the ops worktree, so it cannot be imported. A read
 is cached once it succeeds, because Claude Code rewrites `.claude.json` often enough that a
