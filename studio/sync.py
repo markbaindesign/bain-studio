@@ -356,12 +356,16 @@ def _normalise_comment(text: str) -> str:
 def _comment_matches(story_text: str, want_plain: str) -> bool:
     """Is `story_text` the comment that `want_plain` would produce?
 
-    Asana renders the embedded mention in a story's plain `text` as a bare
-    profile URL, not as the display name, so
-    a posted comment never again equals the mirror text that produced it. The
-    mention is only ever a prefix, and trying to strip it by pattern ate real
-    words after the name, so compare by suffix instead: no name parsing, and a
-    note posted without a mention still matches exactly.
+    Asana renders the embedded mention in a story's plain `text` as a bare URL -
+    the anchor's href - never as the display name, so a posted comment never
+    again equals the mirror text that produced it. The href is a link to the
+    user's task list on the API path and to their profile on the web-UI path;
+    either way `text` holds a URL, while the display name survives only as the
+    anchor's inner text in `html_text`. Verified both ways 2026-11-07.
+
+    The mention is only ever a prefix, and trying to strip it by pattern ate
+    real words after the name, so compare by suffix instead: no name parsing,
+    and a note posted without a mention still matches exactly.
     """
     want = _normalise_comment(want_plain)
     if not want:
