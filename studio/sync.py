@@ -1297,10 +1297,16 @@ def priorities_table(tasks: list) -> str:
 # rather than left as a loaded gun. See ~/.claude/rules/asana-comments.md.
 
 
-# DO NOT REMOVE THIS. It is the only reason a @mark note reaches Mark at all.
+# DO NOT REMOVE THIS. It is the only reason a @mark note reaches Mark at all,
+# and it is Asana's own documented procedure — not a workaround for a defect.
 #
-# An html_text mention on its own reaches the thread and nothing else: no
-# notification, nothing logged, nothing failed. Adding him as a collaborator
+# John_Vu, from Asana, in forum thread 3326 on 2024-01-05: a rich-text mention
+# "does not automatically add the @mentioned user to the resource", and the
+# prescribed step is a follow-up call to addFollowersForTask. That is this.
+# https://forum.asana.com/t/any-way-to-create-user-mentions-using-api/3326
+#
+# An html_text mention on its own therefore reaches the thread and nothing else:
+# no notification, nothing logged, nothing failed. Adding him as a collaborator
 # first turns the story into "comment on a task you follow", which is a
 # normal-inbox entry and a browser notification. POST /tasks/{gid}/addFollowers
 # then a short pause before creating the story
@@ -1308,12 +1314,15 @@ def priorities_table(tasks: list) -> str:
 # enough — BD-204 was posted to an assigned-but-unfollowed task on 2026-11-05
 # and arrived nowhere.
 #
-# What this does NOT buy is a filtered-inbox mention. Tested six ways on
-# 2026-11-06: with and without this pre-add, three markup variants, and the
-# same comment from the web UI as the bot. Only the web UI reaches an inbox
-# filtered to "Mentioned". Removing this pre-add on the theory that it
-# suppresses a real mention delivers nothing at all — it was measured. See
-# BSTD-878.
+# What this does NOT buy is a filtered-inbox mention, and that is the one part
+# Asana has never answered. Their prescribed route delivers the note as activity
+# on a followed task, which is exactly what an inbox filtered to "Mentioned"
+# excludes. Tested six ways on 2026-11-06: with and without this pre-add, three
+# markup variants, and the same comment from the web UI as the bot. Only the web
+# UI reaches an inbox filtered to "Mentioned". Removing this pre-add on the
+# theory that it suppresses a real mention delivers nothing at all — it was
+# measured. The new Notifications API cannot distinguish the two cases either:
+# both return story_resource_subtype=comment_added. See BSTD-878.
 MENTION_FOLLOW_WAIT = 3.0   # seconds, between addFollowers and the story
 
 
