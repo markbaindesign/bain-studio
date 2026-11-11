@@ -460,6 +460,10 @@ use `google-chrome --headless=new --screenshot=...` when scripting captures.
 
 ## See also
 
+- `bain-theme-factory/tools/scaffold.py` - creates a theme from the factory
+  boilerplate, in product mode (a wordpress.org theme in its own repo) or client
+  mode (`<slug>-theme` inside an existing project). Never copy the boilerplate by
+  hand; the `wp-block-theme` skill has the invocations
 - `/media/data/dev/wp-themes/broadsheet/README.md` - reference implementation,
   with the same traps written against that theme's specifics
 - `bain-theme-factory/css-foundation-spec.md` - the studio CSS foundation this
