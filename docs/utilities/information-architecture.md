@@ -57,6 +57,23 @@ site-inventory.py --wp . --wp-cmd "wp ssh --host=prod"
 The same reasoning drives `/prod-reconcile`: production is the source of truth for content,
 and local is the source of truth for code.
 
+Read the navigation at the same time, as a **separate** fact:
+
+```bash
+site-inventory.py --url https://{production}/ --menus
+```
+
+A menu is not the page tree. Menu items carry their own parent, so a menu can nest two pages
+that have no parent-child relationship and can leave out pages that do. Read the **front end**
+for this, not the database: plenty of sites do not use `wp_nav_menu` at all, and a mega-menu
+plugin, a page builder or hand written markup produce navigation with no WordPress menu markup
+on it. The front end is also the structure the client and their visitors actually experience,
+which is the thing an IA review is about.
+
+**Where the front end and the database disagree, that disagreement is the finding.** A menu
+nesting four top-level pages under About Us tells you what the client believes the structure
+is, whatever `post_parent` says. Record both and reconcile them in stage 3.
+
 ### 2. Evidence
 
 Join to each row: GA4 sessions and entrances over twelve months, Search Console impressions
