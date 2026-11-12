@@ -34,7 +34,18 @@ is guesswork wearing a chart.
 
 ### 1. Inventory
 
-Every page, with true parentage rather than hierarchy guessed from URL depth.
+**The inventory is a flat list of destinations.** Structure and navigation are two views over
+it, not the thing itself. Make either one the spine and it becomes the truth by default, with
+the other recorded as a set of exceptions to it, which is exactly the bias this stage exists
+to avoid.
+
+**A destination is anything the site goes to**, not only a WordPress page. A taxonomy archive
+is not a page to WordPress and is entirely a page to the client, who put it in the menu.
+Inventory it, classified by what renders there, rather than reporting it as an anomaly.
+
+One row per destination, carrying its place in the page tree *and* its place in each menu.
+A row at tree depth 0 and menu depth 1 is a top-level page the navigation presents as a
+child. That is not an error in either place. It is the finding.
 
 **Take it from production.** Only the live site has an accurate structure. A local DDEV or
 VVV copy is a snapshot of whenever it was pulled, and clients add, rename and delete pages
