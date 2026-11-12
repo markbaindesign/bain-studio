@@ -34,15 +34,28 @@ is guesswork wearing a chart.
 
 ### 1. Inventory
 
-Every page, with true parentage rather than hierarchy guessed from URL depth. Against a local
-DDEV or VVV copy of a WordPress site:
+Every page, with true parentage rather than hierarchy guessed from URL depth.
+
+**Take it from production.** Only the live site has an accurate structure. A local DDEV or
+VVV copy is a snapshot of whenever it was pulled, and clients add, rename and delete pages
+without telling anyone, so a local copy will quietly disagree with the site the client is
+looking at. An IA review built on a stale tree is worse than none, because it looks
+authoritative.
 
 ```bash
-wp post list --post_type=page --fields=ID,post_title,post_name,post_parent --format=csv
+site-inventory.py --url https://{production}/ --title "{Client}"
 ```
 
-With only a live URL, fall back to `/sitemap.xml` or `/wp-json/wp/v2/pages`, and note in the
-write-up that parentage was inferred.
+That reads `/wp-json/wp/v2/pages`, which carries real `post_parent` values. If the REST API
+is closed, the tool falls back to the XML sitemap, hierarchy becomes inferred from path depth
+and the output says so. Where that matters, run WP-CLI against production over SSH instead:
+
+```bash
+site-inventory.py --wp . --wp-cmd "wp ssh --host=prod"
+```
+
+The same reasoning drives `/prod-reconcile`: production is the source of truth for content,
+and local is the source of truth for code.
 
 ### 2. Evidence
 
@@ -118,6 +131,7 @@ discover inside a fixed-price build quote.
 
 ## See also
 
+- `/prod-reconcile` — the same production-first principle, applied to content before a deploy
 - `docs/utilities/seo-audit.md` — technical audit, overlaps stage 2 but does not replace it
 - `docs/gods/aura/aura.md` — SEO strategy, reads audit data
 - `/harmonia` — layout architecture, which is the next question after this one
