@@ -23,14 +23,15 @@ moving boxes.
 |---|---|---|---|
 | 1 | Inventory | Every URL, its parent, its template | Local, scripted |
 | 2 | Evidence | One row per page: traffic, queries, last modified | Local, scripted |
-| 3 | Disposition | keep / merge / drop per page, with a reason | Local, written up |
-| 4 | Restructure | The grouping, naming and depth, as a chart | claude.ai IA project |
-| 5 | Navigation | Main, footer and any other menus | claude.ai IA project |
-| 6 | Sign-off | Client's yes on the chart | Client's Dropbox `Docs/` |
+| 3 | Content audit | What each destination is worth, and what is missing | Local, part scripted |
+| 4 | Disposition | keep / merge / drop / new per destination, with a reason | Local, written up |
+| 5 | Restructure | The grouping, naming and depth, as a chart | claude.ai IA project |
+| 6 | Navigation | Main, footer and any other menus | claude.ai IA project |
+| 7 | Sign-off | Client's yes on the chart | Client's Dropbox `Docs/` |
 
-Stages 1 to 3 are deterministic and belong in scripts. Stages 4 and 5 are judgement and
-belong in conversation. Do not let them blur: a restructure started before the evidence is in
-is guesswork wearing a chart.
+Stages 1 and 2 are deterministic and belong in scripts. Stage 3 is half each. Stages 4 to 6
+are judgement. Do not let them blur: a restructure started before the audit is in is
+guesswork wearing a chart.
 
 ### 1. Inventory
 
@@ -96,21 +97,47 @@ Vitals; `/ga-report` pulls GA4 into a client PDF. Neither produces the per-page 
 with traffic joined to it, which is the artefact the whole workflow rests on. Until it
 exists, the join is done by hand.
 
-### 3. Disposition
+### 3. Content audit
 
-One of four statuses per page, each traceable to its row:
+Traffic says what gets visited. It does not say whether what is there is any good, and it
+says nothing at all about what is absent. Audit the content before rebuilding the tree, or
+the new structure is a tidier arrangement of the same problems.
+
+**What is there.** Per destination, and largely scriptable: word count, last modified, the
+H1, the meta description, images and how many lack alt text, internal links in and out,
+broken links, and whether two destinations say the same thing in different words. Thin,
+stale and duplicated content is found here, not in the traffic.
+
+**What is missing.** This cannot be found by looking at the site, which is the trap. A site
+audit can only tell you what is weak, never what is absent. Gaps come from outside it:
+
+| Source of a gap | What it shows |
+|---|---|
+| The client's goals and audiences | Who the site must serve, and for whom there is no content |
+| The journeys the site must support | A step with no page: no pricing, no proof, no next action |
+| Search Console queries | Demand with impressions and no page that answers it |
+| Competitor sites | What the sector treats as table stakes |
+| The client's own list | What they have been meaning to write for two years |
+
+Every gap becomes a `new` destination in the disposition, and `new` pages are the reason an
+IA review is worth paying for. A review that only prunes produces a smaller version of the
+site the client already had.
+
+### 4. Disposition
+
+One of four statuses per destination, each traceable to its row and its audit:
 
 | Status | Means | Obligation |
 |---|---|---|
 | `keep` | Earns its place, unchanged | — |
-| `new` | To be written | — |
+| `new` | A gap found in stage 3. To be written | A brief, and someone to write it |
 | `merge` | Absorbs one or more old pages | A redirect from every absorbed path |
 | `drop` | Removed | A redirect to a sensible parent |
 
 Every `merge` and every `drop` creates a redirect. Collect them as you go; a redirect map
 assembled after launch is a redirect map with holes in it.
 
-### 4 and 5. Restructure and navigate
+### 5 and 6. Restructure and navigate
 
 Done in the claude.ai Information Architecture project. Its instructions and the chart
 template live in `$STUDIO_CONTENT_DIR/internal/information-architecture/`.
