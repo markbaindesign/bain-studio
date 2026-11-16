@@ -2,7 +2,7 @@
 tags: [utility, reference]
 god: hermes
 command: python3 studio/sync.py --project {PREFIX}
-description: How Claude comments on an Asana task from any project — the note template, the @mark mention signal, and the one-task-one-comment rule
+description: How Claude comments on an Asana task from any project — the note template, the @mark signal and what it really does, and the one-task-one-comment rule
 ---
 
 # Asana comments
@@ -55,21 +55,70 @@ reasoning goes in the looper commit message, reachable by `git log looper/{sessi
 Mark wants it and invisible when he does not. Usage is already in
 `~/logs/task-looper.log`.
 
-## The @mark mention is the signal
+## The @mark token is the signal
 
-Mark's Asana inbox is filtered to **Mentioned**. A plain-text comment cannot mention anyone —
-Asana needs rich text (`html_text`) carrying `<a data-asana-gid="…"/>`. So:
+A note opening `@mark` reaches Mark's Asana inbox. A note without it is posted and recorded,
+but stays silent. That is the whole signalling mechanism.
 
-- A note opening `@mark` is posted with a real mention.
-- A note without the token is posted and recorded, but he never sees it.
+### What it actually does, and what it does not
 
-**A mention alone does not notify.** Asana raises no notification for an `html_text` mention
-unless the person already **follows** the task — being the assignee is not enough. The mention
-lands in the thread and nowhere else, which is silent: nothing fails, nothing logs. Every
-`@mark` note posted before 2026-11-05 was invisible in a filtered inbox for this reason
-(found on BD-204). `leave_progress_comment` now calls `POST /tasks/{gid}/addFollowers` for
-`ASANA_USER_GID` before a mentioned note, waits `MENTION_FOLLOW_WAIT` seconds, then posts. If
-adding the follower fails it warns and posts anyway: an unsignalled note still beats no note.
+`sync.py` sends the documented rich-text mention — `html_text` carrying
+`<a data-asana-gid="…"/>` — and Asana annotates it `data-asana-type="user"`,
+`data-asana-accessible="true"`. **It is nevertheless not an Asana "mention".** A comment
+posted through the API never appears in an inbox filtered to **Mentioned**, and Asana does not
+auto-add the person as a collaborator the way it does for a mention typed in the web UI.
+
+What makes the note arrive is the **collaborator add**. `leave_progress_comment` calls
+`POST /tasks/{gid}/addFollowers` for `ASANA_USER_GID` before a `@mark` note, waits
+`MENTION_FOLLOW_WAIT` seconds, then posts. Asana then raises "comment on a task you follow",
+which is a normal-inbox entry and a browser notification.
+
+| Posted via | "Mentioned" filter | Normal inbox | Browser |
+|---|---|---|---|
+| `sync.py` with `@mark` | no | **yes** | yes |
+| `sync.py` without it | no | no | no |
+| the web UI, as the bot | **yes** | yes | yes |
+
+Established on 2026-11-06 over six tests in the SLT sandbox: with and without the collaborator
+pre-add, three different markup variants (self-closing, with inner display text, empty paired
+tags — all identical in what Asana stored), and the same comment typed in the web UI as the
+bot, which does reach the filter. Recorded in BSTD-878.
+
+**Two things follow, and both matter more than they look.**
+
+**Do not remove the collaborator add or `MENTION_FOLLOW_WAIT`.** They are the only reason a
+note arrives. The earlier version of this page described them as making "the mention notify",
+which is wrong, and reading it that way nearly led to deleting them — which would deliver
+nothing at all.
+
+**Do not try to fix the markup.** It is already the documented form, three variants make no
+difference, and the limitation is Asana's API, not this code.
+
+### Slack carries the signal instead
+
+Because Asana cannot deliver a `@mark` note where Mark looks, a fresh `@mark`
+post also pings Slack, via `_ping_slack` in `sync.py`. Three rules:
+
+- **The comment is posted first** and its GID returned regardless. A Slack
+  outage never costs the note.
+- **Fresh posts only.** An edited note does not re-notify in Asana either, and
+  pinging on every re-sync would flood the channel it exists to keep usable.
+- **It never raises.** `notifier.notify()` returns `False` rather than throwing,
+  the import is guarded, and a failure logs a warning naming the task — so a
+  lost signal leaves a trace instead of vanishing, which is what made the
+  original diagnosis possible at all.
+
+The message carries the local ID and task name as its subject, the note's first
+block and a task URL as the body, and the remaining blocks as details. It goes
+to `SLACK_WEBHOOK_URL`; a dedicated `review` channel would be one entry in
+`notifier.CHANNEL_WEBHOOKS`.
+
+Clicking the link opens the task in the Asana Chrome instance rather than the
+main browser, via `~/bin/url-dispatch.sh` registered as the system https
+handler. Without it a Slack link lands in a browser that is not signed in.
+
+The 2026-11-05 work (found on BD-204) was right that `@mark` notes had been invisible and right
+about the fix. It was wrong only in believing the result was a filtered-inbox mention.
 
 Only a **fresh post** can notify. Re-mentioning someone on an edited story raises nothing, so
 a comment that already missed the inbox cannot be rescued by editing it. **Posting it again
@@ -78,8 +127,7 @@ adds the follower and posts a new story, identical text and all, which notifies.
 two identical comments on the thread: worth it for a comment Mark never saw, not for anything
 he has already replied to. Read the thread before reposting from a list.
 
-This is the whole signalling mechanism, and it is why `sync.py` must never add the mention
-unconditionally. Use the token for **review** and **blocked** notes — the two cases where
+This is why `sync.py` must never add the token unconditionally. Use the token for **review** and **blocked** notes — the two cases where
 Mark must act. Never for routine status changes. A low-risk fix stays off his radar without
 anything being hidden: it is on the task, it just does not interrupt him.
 
@@ -136,8 +184,9 @@ bainbot PAT).
 | A task's `**Progress:**` line in `asana-mirror.md` | Any project session; the scheduled sync posts it | One mirror line, `\|\|`-separated |
 | `sync.py --comment --task-gid {GID} --comment-text "…"` | `blocked-sweep`, one-off posts | Same renderer, same template |
 
-`--comment` used to post raw text, so a `@mark` token in it was literal and never reached a
-filtered inbox. It now runs through `leave_progress_comment` like any Progress note.
+`--comment` used to post raw text, so a `@mark` token in it was literal: no collaborator was
+added and the note never reached Mark. It now runs through `leave_progress_comment` like any
+Progress note.
 
 **`--comment` cannot correct a note by itself.** A bare task GID carries no project state, so
 it cannot find the story it posted last time and posts afresh — leaving the old note above the
@@ -191,4 +240,4 @@ started, which is the whole problem.
 - **The other three skills with their own note formats** — `studio-delivery-gate`, `feature`,
   `end-session` — inherit the plumbing (mention support, edit-in-place) but still write
   free-form notes, because "finished a build, needs review" is not their shape. They post
-  without a mention, so they are silent in a filtered inbox until given the token.
+  without the token, so they stay silent until given it.

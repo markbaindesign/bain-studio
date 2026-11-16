@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-16
+
+### Added
+- **`sync.py` signals `@mark` notes to Slack.** Asana cannot deliver an API-posted note to an inbox filtered to "Mentioned", so a fresh `@mark` post now also pings Slack. The Asana comment stays the record. The comment posts first, edits never re-notify, and a Slack failure logs a warning instead of raising (BSTD-878).
+- **Site-refresh information architecture workflow** documented under `docs/`: take the inventory from production, record the navigation separately, audit the content before rebuilding the tree.
+
+### Changed
+- **The copywriter no longer strips softeners from client mail.** Her "do not soften a finding" rule called apology a voice violation, contradicting `brand-voice.md`, which was rebuilt from Mark's pre-AI sent mail and now treats removing "sorry", "I'm afraid" and "I think" as the error.
+- **Asana comment docs corrected:** the `@mark` token adds Mark as a collaborator, which is Asana's documented procedure, and does not create an inbox mention.
+
+### Removed
+- **The unused plain-text comment poster in `sync.py`.** A plain-text story cannot carry a mention, so anything posted through it would never have reached Mark's inbox. Nothing called it.
+
 ## [2.0.0] - 2026-11-06
 
 ### Removed

@@ -238,10 +238,18 @@ FIELD_RE       = re.compile(r"^- \*\*(.+?):\*\* (.+)", re.M)
 # is misparsed as another field. Multi-line review notes are therefore encoded
 # on that single line with BLOCK_SEP and expanded here at post time.
 BLOCK_SEP      = "||"
-# A leading @mark (or @me) asks for an Asana @-mention of ASANA_USER_GID, which
-# is the only thing that reaches an inbox filtered to "Mentioned". Notes without
-# the token post plain and stay silent — that is the whole signalling mechanism,
-# so do not add the mention unconditionally.
+# A leading @mark (or @me) marks a note as one Mark must act on. It does two
+# things: embeds the documented rich-text mention of ASANA_USER_GID, and makes
+# the caller add him as a collaborator before posting (see _ensure_follower).
+#
+# The collaborator add is what actually delivers the note. The embedded mention
+# does NOT reach an inbox filtered to "Mentioned": a comment posted through the
+# API never does, whatever markup it carries, though the same comment typed in
+# the web UI does. Established over six tests on 2026-11-06; see BSTD-878 and
+# docs/utilities/asana-comments.md.
+#
+# Notes without the token post plain and stay silent — that is the whole
+# signalling mechanism, so do not add the token unconditionally.
 MENTION_RE     = re.compile(r"^\s*@(?:mark|me)\b[:,]?\s*", re.IGNORECASE)
 # Longest plausible rendered mention prefix ("@Mark Bain Design " and the like).
 MENTION_PREFIX_MAX = 64
@@ -348,11 +356,16 @@ def _normalise_comment(text: str) -> str:
 def _comment_matches(story_text: str, want_plain: str) -> bool:
     """Is `story_text` the comment that `want_plain` would produce?
 
-    Asana renders an @-mention as the user's display name ("@Mark Bain ..."), so
-    a posted comment never again equals the mirror text that produced it. The
-    mention is only ever a prefix, and trying to strip it by pattern ate real
-    words after the name, so compare by suffix instead: no name parsing, and a
-    note posted without a mention still matches exactly.
+    Asana renders the embedded mention in a story's plain `text` as a bare URL -
+    the anchor's href - never as the display name, so a posted comment never
+    again equals the mirror text that produced it. The href is a link to the
+    user's task list on the API path and to their profile on the web-UI path;
+    either way `text` holds a URL, while the display name survives only as the
+    anchor's inner text in `html_text`. Verified both ways 2026-11-07.
+
+    The mention is only ever a prefix, and trying to strip it by pattern ate
+    real words after the name, so compare by suffix instead: no name parsing,
+    and a note posted without a mention still matches exactly.
     """
     want = _normalise_comment(want_plain)
     if not want:
@@ -1276,23 +1289,40 @@ def priorities_table(tasks: list) -> str:
 # Comments
 # ---------------------------------------------------------------------------
 
-def leave_comment(task_gid: str, text: str, dry_run=False):
-    """Post a plain-text comment. Returns the new story GID (None on dry run)."""
-    if dry_run:
-        log.info(f"    [DRY-RUN] Would comment on {task_gid}: {text[:80]}...")
-        return None
-    resp = _post(f"/tasks/{task_gid}/stories", {"data": {"text": text}})
-    return (resp.get("data") or {}).get("gid")
+# Every comment goes through leave_progress_comment below. There is deliberately
+# no plain-text poster: a plain-text story cannot carry an @-mention, so it
+# reaches the thread and never an inbox filtered to "Mentioned", while looking
+# perfectly correct on the task. A `leave_comment` that posted
+# {"data": {"text": ...}} sat here unused until 2026-11-06 and was removed
+# rather than left as a loaded gun. See ~/.claude/rules/asana-comments.md.
 
 
-# Asana does not notify a mentioned user unless they already follow the task:
-# an html_text @-mention on its own reaches the thread and nothing else. The
-# fix Asana prescribes is POST /tasks/{gid}/addFollowers, then a short pause
-# before creating the story (https://developers.asana.com/docs/rich-text).
-# Being the assignee is not enough in practice — BD-204 was posted to an
-# assigned-but-unfollowed task on 2026-11-05 and never reached the inbox.
-# Mark's inbox is filtered to "Mentioned", so without this every review and
-# blocked note sync.py has ever posted was invisible to him.
+# DO NOT REMOVE THIS. It is the only reason a @mark note reaches Mark at all,
+# and it is Asana's own documented procedure — not a workaround for a defect.
+#
+# John_Vu, from Asana, in forum thread 3326 on 2024-01-05: a rich-text mention
+# "does not automatically add the @mentioned user to the resource", and the
+# prescribed step is a follow-up call to addFollowersForTask. That is this.
+# https://forum.asana.com/t/any-way-to-create-user-mentions-using-api/3326
+#
+# An html_text mention on its own therefore reaches the thread and nothing else:
+# no notification, nothing logged, nothing failed. Adding him as a collaborator
+# first turns the story into "comment on a task you follow", which is a
+# normal-inbox entry and a browser notification. POST /tasks/{gid}/addFollowers
+# then a short pause before creating the story
+# (https://developers.asana.com/docs/rich-text). Being the assignee is not
+# enough — BD-204 was posted to an assigned-but-unfollowed task on 2026-11-05
+# and arrived nowhere.
+#
+# What this does NOT buy is a filtered-inbox mention, and that is the one part
+# Asana has never answered. Their prescribed route delivers the note as activity
+# on a followed task, which is exactly what an inbox filtered to "Mentioned"
+# excludes. Tested six ways on 2026-11-06: with and without this pre-add, three
+# markup variants, and the same comment from the web UI as the bot. Only the web
+# UI reaches an inbox filtered to "Mentioned". Removing this pre-add on the
+# theory that it suppresses a real mention delivers nothing at all — it was
+# measured. The new Notifications API cannot distinguish the two cases either:
+# both return story_resource_subtype=comment_added. See BSTD-878.
 MENTION_FOLLOW_WAIT = 3.0   # seconds, between addFollowers and the story
 
 
@@ -1318,6 +1348,41 @@ def _ensure_follower(task_gid: str, user_gid: str):
         log.warning(f"    Could not add {user_gid} as a follower of {task_gid} ({e}) — "
                     f"posting the note anyway, but the mention may not reach the inbox")
         return False, ""
+
+
+# A @mark note is the "Mark must act" signal, and Asana cannot deliver it to a
+# Mentioned-filtered inbox (BSTD-878). Slack can, so a fresh @mark note also
+# pings Slack. The Asana comment stays the record; Slack is only the signal.
+#
+# Three rules, each guarding a way this would go wrong:
+#   - The comment is posted FIRST and its GID returned regardless. A Slack
+#     outage must never cost the note.
+#   - Fresh posts only. An edited note does not re-notify in Asana either, and
+#     pinging on every re-sync would flood the channel it exists to keep usable.
+#   - Never raises. notifier.notify() already returns False rather than
+#     throwing, and the import is guarded for a checkout without it.
+def _ping_slack(task_gid: str, mirror_text: str, task: dict = None):
+    """Signal a review/blocked note to Slack. Best-effort, never raises."""
+    try:
+        import notifier
+    except Exception:
+        return False
+    try:
+        blocks = [b.strip() for b in (mirror_text or "").split(BLOCK_SEP)]
+        blocks = [b for b in blocks if b]
+        headline = MENTION_RE.sub("", blocks[0], count=1) if blocks else "(no text)"
+        lid = (task or {}).get("_local_id", "")
+        name = (task or {}).get("name", "")
+        url = f"https://app.asana.com/0/0/{task_gid}/f"
+        subject = f"{lid}: {name}".strip(": ") or f"Asana task {task_gid}"
+        body = f"{headline}\n{url}"
+        details = BLOCK_SEP.join(blocks[1:]).replace(BLOCK_SEP, "\n") if len(blocks) > 1 else ""
+        return notifier.notify(body, subject=subject, priority="high",
+                               sender="asana", details=details)
+    except Exception as e:
+        log.warning(f"    Could not ping Slack for {task_gid} ({e}) — "
+                    f"the comment is posted, only the signal was lost")
+        return False
 
 
 def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
@@ -1370,7 +1435,14 @@ def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
                 if not any((f or {}).get("gid") == USER_GID for f in fols):
                     fols.append({"gid": USER_GID, "name": uname})
     resp = _post(f"/tasks/{task_gid}/stories", {"data": {"html_text": html}})
-    return (resp.get("data") or {}).get("gid")
+    new_story = (resp.get("data") or {}).get("gid")
+    if wants_mention:
+        if _ping_slack(task_gid, mirror_text, task):
+            log.info(f"    Signalled {task_gid} to Slack")
+        else:
+            log.warning(f"    Slack signal for {task_gid} did not send — the "
+                        f"comment is on the task, but it may not reach Mark")
+    return new_story
 
 
 # ---------------------------------------------------------------------------
