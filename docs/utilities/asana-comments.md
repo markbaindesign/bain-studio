@@ -63,41 +63,41 @@ but stays silent. That is the whole signalling mechanism.
 ### What it actually does, and what it does not
 
 `sync.py` sends the documented rich-text mention — `html_text` carrying
-`<a data-asana-gid="…"/>` — and Asana annotates it `data-asana-type="user"`,
-`data-asana-accessible="true"`. **It is nevertheless not an Asana "mention".** A comment
-posted through the API never appears in an inbox filtered to **Mentioned**, and Asana does not
-auto-add the person as a collaborator the way it does for a mention typed in the web UI.
+`<a data-asana-gid="…"/>`. On its own it reaches the thread and nothing else: Asana does not
+auto-add the person as a collaborator for an API comment the way it does for one typed in the
+web UI.
 
-What makes the note arrive is the **collaborator add**. `leave_progress_comment` calls
-`POST /tasks/{gid}/addFollowers` for `ASANA_USER_GID` before a `@mark` note, waits
-`MENTION_FOLLOW_WAIT` seconds, then posts. Asana then raises "comment on a task you follow",
-which is a normal-inbox entry and a browser notification.
+So `leave_progress_comment` first calls `POST /tasks/{gid}/addFollowers` for `ASANA_USER_GID`,
+**waits `MENTION_FOLLOW_WAIT` (35) seconds**, then posts. The note then arrives as a real
+mention: in the inbox filtered to **Mentioned**, in the normal inbox, and as a browser
+notification. If Mark already follows the task there is nothing to add and no wait.
+
+**The wait has to be 30 seconds or more.** Asana does not count a comment as a mention if it
+is posted less than 30 seconds after the user was made a collaborator. Asana's staff confirmed
+this as a bug on the Asana forum on 2026-11-17 and gave the 30-second wait as the workaround.
 
 | Posted via | "Mentioned" filter | Normal inbox | Browser |
 |---|---|---|---|
-| `sync.py` with `@mark` | no | **yes** | yes |
+| `sync.py` with `@mark` | **yes** | yes | yes |
 | `sync.py` without it | no | no | no |
-| the web UI, as the bot | **yes** | yes | yes |
 
-Established on 2026-11-06 over six tests in the SLT sandbox: with and without the collaborator
-pre-add, three different markup variants (self-closing, with inner display text, empty paired
-tags — all identical in what Asana stored), and the same comment typed in the web UI as the
-bot, which does reach the filter. Recorded in BSTD-878.
+History, so nobody repeats it: from 2026-11-05 the wait was 3 seconds, and six tests on
+2026-11-06 (with and without the pre-add, three markup variants) all missed the filter, which
+was read as "the API cannot mention". The probe on SLT-013 on 2026-11-17, at 37 seconds,
+reached it. Recorded in BSTD-878.
 
-**Two things follow, and both matter more than they look.**
+**Do not remove the collaborator add, and do not shorten `MENTION_FOLLOW_WAIT` below 30
+seconds** until Asana fixes the bug. Without the add the note arrives nowhere; with a shorter
+wait it arrives, but not under Mentioned.
 
-**Do not remove the collaborator add or `MENTION_FOLLOW_WAIT`.** They are the only reason a
-note arrives. The earlier version of this page described them as making "the mention notify",
-which is wrong, and reading it that way nearly led to deleting them — which would deliver
-nothing at all.
+**Do not try to fix the markup.** It is the documented form and was never the problem.
 
-**Do not try to fix the markup.** It is already the documented form, three variants make no
-difference, and the limitation is Asana's API, not this code.
+The cost is up to 35 seconds per fresh `@mark` note on a task Mark does not yet follow, paid
+once per task.
 
 ### Slack carries the signal instead
 
-Because Asana cannot deliver a `@mark` note where Mark looks, a fresh `@mark`
-post also pings Slack, via `_ping_slack` in `sync.py`. Three rules:
+A fresh `@mark` post also pings Slack, via `_ping_slack` in `sync.py`. Three rules:
 
 - **The comment is posted first** and its GID returned regardless. A Slack
   outage never costs the note.
@@ -118,7 +118,7 @@ main browser, via `~/bin/url-dispatch.sh` registered as the system https
 handler. Without it a Slack link lands in a browser that is not signed in.
 
 The 2026-11-05 work (found on BD-204) was right that `@mark` notes had been invisible and right
-about the fix. It was wrong only in believing the result was a filtered-inbox mention.
+about the fix.
 
 Only a **fresh post** can notify. Re-mentioning someone on an edited story raises nothing, so
 a comment that already missed the inbox cannot be rescued by editing it. **Posting it again

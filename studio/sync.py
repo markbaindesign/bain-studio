@@ -242,11 +242,10 @@ BLOCK_SEP      = "||"
 # things: embeds the documented rich-text mention of ASANA_USER_GID, and makes
 # the caller add him as a collaborator before posting (see _ensure_follower).
 #
-# The collaborator add is what actually delivers the note. The embedded mention
-# does NOT reach an inbox filtered to "Mentioned": a comment posted through the
-# API never does, whatever markup it carries, though the same comment typed in
-# the web UI does. Established over six tests on 2026-11-06; see BSTD-878 and
-# docs/utilities/asana-comments.md.
+# The collaborator add, followed by MENTION_FOLLOW_WAIT, is what makes the
+# embedded mention count: posted sooner than 30 seconds after the add, Asana
+# treats it as plain activity and it misses an inbox filtered to "Mentioned".
+# See BSTD-878 and docs/utilities/asana-comments.md.
 #
 # Notes without the token post plain and stay silent — that is the whole
 # signalling mechanism, so do not add the token unconditionally.
@@ -1314,16 +1313,19 @@ def priorities_table(tasks: list) -> str:
 # enough — BD-204 was posted to an assigned-but-unfollowed task on 2026-11-05
 # and arrived nowhere.
 #
-# What this does NOT buy is a filtered-inbox mention, and that is the one part
-# Asana has never answered. Their prescribed route delivers the note as activity
-# on a followed task, which is exactly what an inbox filtered to "Mentioned"
-# excludes. Tested six ways on 2026-11-06: with and without this pre-add, three
-# markup variants, and the same comment from the web UI as the bot. Only the web
-# UI reaches an inbox filtered to "Mentioned". Removing this pre-add on the
-# theory that it suppresses a real mention delivers nothing at all — it was
-# measured. The new Notifications API cannot distinguish the two cases either:
-# both return story_resource_subtype=comment_added. See BSTD-878.
-MENTION_FOLLOW_WAIT = 3.0   # seconds, between addFollowers and the story
+# The wait matters as much as the add. Asana does not count a comment as a real
+# mention if it is posted less than 30 seconds after the mentioned user was made
+# a collaborator: it lands as activity on a followed task, which an inbox
+# filtered to "Mentioned" excludes. Asana's staff confirmed this as a bug on the
+# Asana forum on 2026-11-17 and gave 30+ seconds as the workaround. With the old
+# 3-second wait every API note missed the filter, which is why the 2026-11-06
+# tests concluded no API comment could reach it. A probe on SLT-013 on
+# 2026-11-17, posted 37 seconds after the add, reached the filter. See BSTD-878.
+#
+# The wait runs only when the follower was just added; a task Mark already
+# follows posts at once and still counts as a mention. Do not shorten it below
+# 30 seconds until Asana fixes the bug.
+MENTION_FOLLOW_WAIT = 35.0  # seconds, between addFollowers and the story; Asana needs 30+
 
 
 def _ensure_follower(task_gid: str, user_gid: str):
@@ -1350,9 +1352,9 @@ def _ensure_follower(task_gid: str, user_gid: str):
         return False, ""
 
 
-# A @mark note is the "Mark must act" signal, and Asana cannot deliver it to a
-# Mentioned-filtered inbox (BSTD-878). Slack can, so a fresh @mark note also
-# pings Slack. The Asana comment stays the record; Slack is only the signal.
+# A @mark note is the "Mark must act" signal. It reaches the Mentioned-filtered
+# inbox once MENTION_FOLLOW_WAIT is honoured (BSTD-878), and a fresh @mark note
+# also pings Slack as a second channel. The Asana comment stays the record; Slack is only the signal.
 #
 # Three rules, each guarding a way this would go wrong:
 #   - The comment is posted FIRST and its GID returned regardless. A Slack
