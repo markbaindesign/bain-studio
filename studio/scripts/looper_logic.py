@@ -366,3 +366,17 @@ if __name__ == "__main__":
     else:
         print(f"unknown command: {cmd}", file=sys.stderr)
         sys.exit(2)
+
+
+# load_dotenv(studio/.env) puts the Hermes collectors' API key into this process.
+# Inherited by `claude`, an API key outranks the claude.ai login, so every looper
+# session was billed to API credits instead of Mark's Max plan. Found 2026-11-17
+# when the webhook listener's first live run warned about it.
+API_AUTH_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
+
+def max_plan_env(environ, **extra) -> dict:
+    """Environment for a `claude` session that must run on the Max login."""
+    env = {k: v for k, v in environ.items() if k not in API_AUTH_VARS}
+    env.update(extra)
+    return env
