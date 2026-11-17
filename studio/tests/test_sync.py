@@ -1283,7 +1283,7 @@ REAL_WALL = (
 
 
 def test_validate_rejects_the_wall_of_text_that_prompted_this():
-    assert "200-char limit" in sync.validate_progress_note(REAL_WALL)
+    assert "150-char limit" in sync.validate_progress_note(REAL_WALL)
 
 
 def test_validate_passes_a_templated_review_note():
@@ -1300,14 +1300,14 @@ def test_validate_passes_heartbeats_and_short_free_form_notes():
 
 
 def test_validate_rejects_too_many_blocks():
-    note = "@mark Review 2026-11-05: x || " + " || ".join(
-        f"{i}. do a thing" for i in range(1, 10))
+    note = "@mark Review: x || " + " || ".join(
+        f"{i}. do a thing" for i in range(1, 7))
     assert "block limit" in sync.validate_progress_note(note)
 
 
 def test_validate_rejects_an_overlong_note_under_the_block_limit():
-    note = " || ".join(["x" * 150] * 7)   # each block legal, total is not
-    assert "exceeds the 900-char limit" in sync.validate_progress_note(note)
+    note = " || ".join(["x" * 140] * 5)   # each block legal, total is not
+    assert "exceeds the 500-char limit" in sync.validate_progress_note(note)
 
 
 # ---------------------------------------------------------------------------
@@ -1799,7 +1799,7 @@ def test_render_progress_leaves_unknown_ids_branches_and_urls_alone():
 
 
 def test_link_markup_does_not_count_against_the_note_limits():
-    note = "Review: " + " ".join(["ACME-012"] * 20)
+    note = "Review: " + " ".join(["ACME-012"] * 15)
     with patch.object(sync, "_LINK_MAPS", LINKS):
         assert sync.validate_progress_note(note) == ""
 
@@ -1811,3 +1811,59 @@ def test_comment_matches_a_note_whose_ids_came_back_as_urls():
     with patch.object(sync, "_LINK_MAPS", LINKS):
         assert sync._comment_matches(story, plain)
         assert not sync._comment_matches(story, "Review: done\nFollow-up: ACME-013")
+
+
+# ---------------------------------------------------------------------------
+# The summary carries no location; Where: is its own silent comment
+# ---------------------------------------------------------------------------
+
+def test_split_location_moves_where_into_its_own_silent_note():
+    summary, where = sync.split_location(REVIEW_NOTE)
+    assert summary.startswith("@mark Review: header & nav fix || Check:")
+    assert "Where" not in summary and "looper/" not in summary
+    assert where == "Where: looper/a3f2c1 · 2252ad1"
+    assert not sync.MENTION_RE.match(where)
+
+
+def test_split_location_without_where_leaves_the_note_alone():
+    assert sync.split_location("Checked 2026-11-05.") == ("Checked 2026-11-05.", "")
+
+
+def test_validate_rejects_a_location_in_the_mark_summary():
+    for loc in ("feature/x-fix", "2252ad1", "/media/data/dev/site/", "https://ex.test/a",
+                "studio/sync.py"):
+        note = f"@mark Review: done || Check: || 1. Look at {loc}"
+        assert "names a location" in sync.validate_progress_note(note), loc
+
+
+def test_validate_allows_a_location_in_where_and_in_silent_notes():
+    assert sync.validate_progress_note(REVIEW_NOTE) == ""
+    assert sync.validate_progress_note("Did the thing on feature/x-fix") == ""
+
+
+def test_post_note_posts_summary_then_where_silently():
+    with patch.object(sync, "USER_GID", ""), \
+         patch.object(sync, "_post", side_effect=[{"data": {"gid": "S1"}},
+                                                  {"data": {"gid": "W1"}}]) as post:
+        got = sync.post_note("TASK1", REVIEW_NOTE)
+    assert got == ("S1", "W1")
+    bodies = [c[0][1]["data"]["html_text"] for c in post.call_args_list]
+    assert "looper/" not in bodies[0] and bodies[1] == "<body>Where: looper/a3f2c1 · 2252ad1</body>"
+
+
+def test_post_note_skips_a_where_already_on_the_task():
+    bot = [{"gid": "W0", "text": "Where: looper/a3f2c1 · 2252ad1"}]
+    with patch.object(sync, "USER_GID", ""), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "S1"}}) as post:
+        got = sync.post_note("TASK1", REVIEW_NOTE, bot_stories=bot)
+    assert got == ("S1", "W0") and post.call_count == 1
+
+
+def test_done_with_open_subtasks_needs_a_subtasks_block():
+    bad = sync.validate_done_subtasks("@mark Done, Mark complete", ["Add .gitattributes"])
+    assert "Add .gitattributes" in bad
+    ok = ("@mark Done, Mark complete || Subtasks: first three done, tick them; "
+          ".gitattributes not required")
+    assert sync.validate_done_subtasks(ok, ["Add .gitattributes"]) == ""
+    assert sync.validate_done_subtasks("@mark Done, Mark complete", []) == ""
+    assert sync.validate_done_subtasks("@mark Review: x", ["open"]) == ""

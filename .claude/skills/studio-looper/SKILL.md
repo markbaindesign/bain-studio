@@ -572,7 +572,7 @@ mirror never writes one" means "never write it twice", not "skip it".
 
 Progress note only — do NOT change Section, Assignee, or Looper Status:
 ```
-**Progress:** @mark Review: {what changed, one line} || Where: {branch} · {commits} · {URL or file path} || Check: || 1. {imperative check} || 2. {imperative check} || Gaps: {known, not fixed}
+**Progress:** @mark Review: {what changed, one line} || Check: || 1. {imperative check} || 2. {imperative check} || Gaps: {known, not fixed} || Where: {branch} · {commits} · {URL or file path}
 ```
 
 **The `@mark` token is what reaches Mark.** His Asana inbox is filtered to
@@ -589,7 +589,8 @@ one mirror line, and a literal newline truncates it.
 | Rule | Why |
 |---|---|
 | `Review:` line says what changed in **one** line | Asana's inbox truncates at "See more". If the action is not in line one, it is invisible. |
-| **Max 5** `Check:` items, one line each, imperative | A check is something Mark *does* ("Resize 375px → 1400px, no sideways scroll"), not something he reads. More than 5 means the task should have been split. |
+| **Max 3** `Check:` items, one short line each, imperative | A check is something Mark *does* ("Resize 375px → 1400px, no sideways scroll"), not something he reads. More than 3 means the task should have been split. |
+| **No location in the summary** | Branch, commits, paths and URLs go only in `Where:`, which `sync.py` posts as its own silent comment under the summary. It refuses an `@mark` summary that names one. |
 | **No reasoning, no narrative, no diagnosis** | Why the header was the cause, which property changed, what was ruled out — all of it goes in the commit message, reachable by `git log looper/{SESSION_ID_SHORT}` when he wants it and invisible when he does not. |
 | **No date in the note** | Asana stamps every comment. The duplicate-work guard in 4b reads that stamp via `--get-task`. |
 | **No `Session: {pct}%` line** | Already recorded by the usage-end entry in `~/logs/task-looper.log`. |
@@ -604,7 +605,7 @@ contradiction. A "Correction …, replacing my earlier note" comment is a defect
 
 Worked example:
 ```
-**Progress:** @mark Review: header responsive fix — [menu] toggle now at 1000px || Where: looper/a3f2c1 · 2252ad1, 38cf615 · https://bain-design.ddev.site || Check: || 1. Resize any page 375px → 1400px: no sideways scroll, header stays on one line || 2. [menu] toggle appears below 1000px (was 640px) || 3. Contact hero, case-study cards, home grid, testimonial pullquote: no overflow || Gaps: 320px only — contact hero overflows 7px, cat sprite can sit past right edge
+**Progress:** @mark Review: header [menu] toggle now at 1000px || Check: || 1. Resize 375px → 1400px: no sideways scroll || 2. Toggle appears below 1000px || Gaps: 320px, contact hero overflows 7px || Where: looper/a3f2c1 · 2252ad1, 38cf615 · https://bain-design.ddev.site
 ```
 
 **3. Sync both:**
