@@ -348,11 +348,12 @@ LOCATION_RE = re.compile(
 # A "Done" handover with open subtasks must say why each is not needed.
 DONE_RE     = re.compile(r"^done\b", re.IGNORECASE)
 SUBTASKS_RE = re.compile(r"^subtasks\s*:", re.IGNORECASE)
-# Review, Blocked and Done notes are addressed to Mark by definition, so they
-# carry the mention whether or not their author remembered the @mark token.
-# Forgetting it posted PSK-022 and PSK-030 silently (2026-11-17): a finished
-# decision task he never heard about. Every other note still posts silently.
-HANDOVER_RE = re.compile(r"^(?:review|blocked|done)\b", re.IGNORECASE)
+# Review, Blocked, Done and Answer notes are addressed to Mark by definition,
+# so they carry the mention whether or not their author remembered the @mark
+# token. Forgetting it posted PSK-022 and PSK-030 silently (2026-11-17): a
+# finished decision task he never heard about. Answer is a bot's reply to a
+# question he asked, which he is waiting for. Every other note posts silently.
+HANDOVER_RE = re.compile(r"^(?:review|blocked|done|answer)\b", re.IGNORECASE)
 # Review and Done hand the task back: it leaves the bot's queue for Mark's.
 HAND_BACK_RE = re.compile(r"^(?:review|done)\b", re.IGNORECASE)
 

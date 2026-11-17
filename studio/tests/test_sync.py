@@ -1877,7 +1877,8 @@ def test_handover_notes_carry_the_mention_without_the_token():
     # PSK-030 (2026-11-17): "Done: ..." with no @mark posted silently.
     for note in ("Done: decision recorded || Where: docs/adr/005.md",
                  "Review: header fix || Check: || 1. Resize",
-                 "blocked: need the logo files"):
+                 "blocked: need the logo files",
+                 "Answer: yes, the header uses the theme's tokens"):
         summary, _ = sync.split_location(note)
         assert summary.startswith("@mark "), note
         html, wants = sync._render_progress(summary)
