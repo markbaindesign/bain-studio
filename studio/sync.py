@@ -2207,13 +2207,18 @@ def create_subtasks(parent_gid: str, names: list, dry_run: bool = False) -> list
 
 def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT UP",
                      notes: str = "", due: str = "", assignee: str = "",
-                     depends_on: str = "", dry_run: bool = False) -> str:
+                     depends_on: str = "", follow_up_of: tuple = None,
+                     dry_run: bool = False) -> str:
     """
     Create a task in Asana, assign a local ID, place it in the correct section,
     and append it to the local mirror. Returns the local ID (e.g. NORE-042).
 
     assignee defaults to BainBot. depends_on is the GID of a task the new one
     blocks; if linking it fails, the task exists but this raises.
+
+    follow_up_of is (gid, label) of the task this one follows up. The new
+    task's description then opens "Follow-up to {label}." with the label linked
+    to that task, as Asana's own "Create follow-up task" does.
     """
     from datetime import datetime
 
@@ -2239,7 +2244,16 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
             "assignee": assignee_gid,
         }
     }
-    if notes:
+    if follow_up_of:
+        # html_notes, not notes: only rich text can carry a task link. The link
+        # markup matches _link_task_ids, so the label stays visible as the ID.
+        fu_gid, fu_label = follow_up_of
+        lead = (f'Follow-up to <a data-asana-gid="{fu_gid}" data-asana-dynamic="false">'
+                f'{html_escape(fu_label, quote=False)}</a>.')
+        body = lead + (f"\n\n{html_escape(notes, quote=False)}" if notes else "")
+        payload["data"]["html_notes"] = f"<body>{body}</body>"
+        notes = f"Follow-up to {fu_label}." + (f" {notes}" if notes else "")
+    elif notes:
         payload["data"]["notes"] = notes
     if due:
         payload["data"]["due_on"] = due
@@ -2247,7 +2261,8 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
     if dry_run:
         log.info(f"  [DRY-RUN] Would create task: {name!r} in {proj.prefix}/{section_name_upper}, "
                  f"assigned to {assignee_gid}"
-                 + (f", blocking {depends_on}" if depends_on else ""))
+                 + (f", blocking {depends_on}" if depends_on else "")
+                 + (f", following up {follow_up_of[1]}" if follow_up_of else ""))
         return f"{proj.prefix}-DRY"
 
     resp = _post("/tasks", payload)
@@ -2281,6 +2296,18 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
             raise RuntimeError(f"Created {lid} ({new_gid}) but could not make it block "
                                f"{depends_on}: {e}") from e
 
+    # 6. Point the original task at its follow-up. A link in a description
+    # leaves no trace on the task it names (checked 2026-11-17), so without
+    # this the original has no way to reach the follow-up. Silent: no @mark.
+    if follow_up_of:
+        try:
+            _post(f"/tasks/{follow_up_of[0]}/stories", {"data": {"html_text":
+                  f'<body>Follow-up: <a data-asana-gid="{new_gid}" '
+                  f'data-asana-dynamic="false">{lid}</a></body>'}})
+            log.info(f"  Linked from {follow_up_of[1]}")
+        except Exception as e:
+            log.warning(f"  Created {lid} but could not comment on {follow_up_of[1]}: {e}")
+
     if assignee_gid == BAINBOT_GID:
         assignee_name = ASSIGNEE_NAME
     else:
@@ -2289,7 +2316,7 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
         except Exception:
             assignee_name = assignee_gid
 
-    # 6. Append to mirror
+    # 7. Append to mirror
     today = date.today().isoformat()
     now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     permalink = f"https://app.asana.com/1/{WORKSPACE_GID}/project/{proj.gid}/task/{new_gid}"
@@ -2630,6 +2657,10 @@ def main():
                              "Use 'me' for ASANA_USER_GID")
     parser.add_argument("--task-depends-on", metavar="GID", default="",
                         help="GID of the task this new task unblocks (optional)")
+    parser.add_argument("--follow-up-of", metavar="TASK", default="",
+                        help="With --create-task: the task this one follows up (local ID, "
+                             "GID or URL). Its description opens with a link to that task, "
+                             "and --project defaults to that task's project")
     parser.add_argument("--update-task", action="store_true",
                         help="Update an existing task's name and/or notes "
                              "(requires --task-gid; notes cannot be pushed "
@@ -2737,6 +2768,16 @@ def main():
     if args.create_task:
         if not args.task_name:
             parser.error("--create-task requires --task-name")
+        follow_up_of = None
+        if args.follow_up_of:
+            gid_to_lid, lid_to_gid = _local_id_maps()
+            fu_gid = resolve_task_ref(args.follow_up_of, lid_to_gid)
+            if not fu_gid:
+                parser.error(f"--follow-up-of: cannot resolve {args.follow_up_of!r} to a task")
+            fu_lid = gid_to_lid.get(fu_gid)
+            follow_up_of = (fu_gid, fu_lid or fu_gid)
+            if not args.project and fu_lid:
+                args.project = re.sub(r"-\d+$", "", fu_lid)
         if not args.project:
             parser.error("--create-task requires --project (the task prefix, e.g. BD)")
         projects = discover_projects(filter_prefix=args.project)
@@ -2758,6 +2799,7 @@ def main():
                 due=args.task_due,
                 assignee=assignee,
                 depends_on=args.task_depends_on,
+                follow_up_of=follow_up_of,
                 dry_run=args.dry_run,
             )
         except ValueError as e:

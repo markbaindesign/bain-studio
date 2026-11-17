@@ -594,7 +594,7 @@ one mirror line, and a literal newline truncates it.
 | **No date in the note** | Asana stamps every comment. The duplicate-work guard in 4b reads that stamp via `--get-task`. |
 | **No `Session: {pct}%` line** | Already recorded by the usage-end entry in `~/logs/task-looper.log`. |
 | `Gaps:` only for work knowingly left undone | Omit the block entirely when there is none. Never use it to hedge. |
-| **Follow-ups are tasks** | Anything meant to be done later is created with `sync.py --create-task` first and cited by local ID, which `sync.py` links. Never name further work only in prose. |
+| **Follow-ups are tasks** | Anything meant to be done later is created with `sync.py --create-task --follow-up-of {this task}` first and cited by local ID, which `sync.py` links. Never name further work only in prose. |
 | **No interpretation note** | If scope was ambiguous, block and ask (4f) *before* building. Explaining a guess after the fact is not a substitute for asking. |
 
 **Corrections: rewrite the same Progress line. Never add a second note.** `sync.py`

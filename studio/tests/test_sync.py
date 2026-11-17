@@ -1086,6 +1086,26 @@ def test_create_task_full_dependency_failure_is_loud(proj, fake_asana, monkeypat
         sync.create_task_full(proj, "Do it", depends_on="blocked_gid")
 
 
+def test_create_task_full_follow_up_links_the_original(proj, fake_asana):
+    lid = sync.create_task_full(proj, "Sea limerick", notes="Add it & check",
+                                follow_up_of=("orig_gid", "ACME-002"))
+    data = fake_asana[0][1]["data"]
+    assert "notes" not in data
+    assert data["html_notes"] == (
+        '<body>Follow-up to <a data-asana-gid="orig_gid" data-asana-dynamic="false">'
+        'ACME-002</a>.\n\nAdd it &amp; check</body>')
+    block = proj.mirror_file.read_text().split(f"### {lid} ")[1]
+    assert "- **Notes:** Follow-up to ACME-002. Add it & check" in block
+    assert ("/tasks/orig_gid/stories", {"data": {"html_text":
+            f'<body>Follow-up: <a data-asana-gid="new_gid" data-asana-dynamic="false">{lid}</a></body>'}}
+            ) in fake_asana
+
+
+def test_create_task_full_follow_up_without_notes(proj, fake_asana):
+    sync.create_task_full(proj, "Sea limerick", follow_up_of=("orig_gid", "ACME-002"))
+    assert fake_asana[0][1]["data"]["html_notes"].endswith("ACME-002</a>.</body>")
+
+
 # ---------------------------------------------------------------------------
 # assign_ids - tasks carrying another project's ID
 # ---------------------------------------------------------------------------
