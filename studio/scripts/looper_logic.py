@@ -18,6 +18,7 @@ See studio/tests/test_looper_logic.py for unit tests.
 from __future__ import annotations
 
 import datetime
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -110,6 +111,64 @@ def classify_single_file(path: str, text: str, mtime: datetime.datetime, now: da
 
 
 # ---------------------------------------------------------------------------
+# Window summary (looper_runner.py)
+# ---------------------------------------------------------------------------
+
+WINDOW_EXIT_NO_PROGRESS = "no-progress"
+WINDOW_EXIT_DEADLINE = "deadline"
+WINDOW_EXIT_MAX_ITERATIONS = "max-iterations"
+
+
+def window_summary(label: str, tasks_done: int, remaining: list[str],
+                   exit_reason: str) -> tuple[str, str, str]:
+    """Describe how a runner window ended. Returns (log_line, notify_msg, priority).
+
+    The runner infers progress from task-looper.log growing, so a session that
+    declines to start is indistinguishable from a drained queue at that level —
+    which is how the 2026-11-05 window came to end after 1 of 6 tasks with no
+    signal. Only `no-progress` with work still queued is anomalous; hitting the
+    window deadline or the iteration cap with work left is ordinary, and must not
+    be reported as a refusal.
+    """
+    left = ", ".join(remaining[:6]) + (" …" if len(remaining) > 6 else "")
+    n = len(remaining)
+    base = f"looper window '{label}'"
+
+    if not remaining:
+        return (
+            f"window {label}: done — {tasks_done} productive iteration(s), queue drained",
+            f"{base} finished: {tasks_done} productive iteration(s), queue drained. "
+            f"Details in ~/logs/studio-looper.log",
+            "normal" if tasks_done else "high",
+        )
+
+    if exit_reason == WINDOW_EXIT_NO_PROGRESS:
+        return (
+            f"window {label}: ENDED EARLY — {n} task(s) still queued: {left}",
+            f"{base} ended early: {tasks_done} productive iteration(s), {n} task(s) still "
+            f"queued ({left}). The last iteration made no progress while work remained — "
+            f"check the final studio-looper-run-*.log for whether the session refused to "
+            f"start.",
+            "high",
+        )
+
+    if exit_reason == WINDOW_EXIT_DEADLINE:
+        return (
+            f"window {label}: deadline reached — {n} task(s) still queued: {left}",
+            f"{base} hit its quota deadline after {tasks_done} productive iteration(s); "
+            f"{n} task(s) still queued ({left}). They carry over to the next window.",
+            "normal",
+        )
+
+    return (
+        f"window {label}: iteration cap reached — {n} task(s) still queued: {left}",
+        f"{base} hit its iteration cap after {tasks_done} productive iteration(s); "
+        f"{n} task(s) still queued ({left}). They carry over to the next window.",
+        "normal",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Mirror parsing / queue building
 # ---------------------------------------------------------------------------
 
@@ -199,8 +258,7 @@ def compute_deadline(
 # CLI
 # ---------------------------------------------------------------------------
 
-def _cli_concurrency(target_prefix: str, state_dir: str = "/tmp/studio-looper") -> None:
-    now = datetime.datetime.now()
+def _read_state_files(state_dir: str) -> list:
     state_files = []
     for p in sorted(Path(state_dir).glob("studio-looper.*.local.md")):
         try:
@@ -209,12 +267,28 @@ def _cli_concurrency(target_prefix: str, state_dir: str = "/tmp/studio-looper") 
             state_files.append((str(p), text, mtime))
         except OSError:
             continue
+    return state_files
 
-    for r in classify_concurrency(state_files, target_prefix, now):
+
+def _cli_concurrency(target_prefix: str, state_dir: str = "/tmp/studio-looper") -> None:
+    now = datetime.datetime.now()
+    state_files = _read_state_files(state_dir)
+    results = classify_concurrency(state_files, target_prefix, now)
+    for r in results:
         if r.status == "STALE":
             print(f"STALE:{r.path}:{r.deadline}:{r.session}:{r.current_task}:{r.reason}")
         else:
             print(f"LIVE:{r.path}:{r.deadline}:{r.session}:{r.current_task}")
+
+    # A positive all-clear, not silence. Silence is a weak signal: a session that
+    # sees no output has three louder cues pointing the other way (the runner's
+    # own lock file, its own `claude -p` process, and its own unterminated
+    # "Session started" line in task-looper.log) and has in practice gone process
+    # -hunting and refused to start against an empty queue. Say it outright.
+    if not results:
+        run_id = os.getenv("LOOPER_RUN_ID")
+        suffix = f" — launched by runner {run_id}" if run_id else ""
+        print(f"CLEAR:no other session targets {target_prefix}{suffix}")
 
 
 def _cli_check_path(path: str) -> None:
@@ -238,6 +312,21 @@ def _cli_queue(mirror_path: str) -> None:
         print(f"{t.local_id}\t{t.priority}\t{t.title}")
 
 
+def _cli_live_tasks(target_prefix: str, state_dir: str = "/tmp/studio-looper") -> None:
+    """Local IDs claimed as current_task by a LIVE session, one per line.
+
+    Exists so callers never field-split the `concurrency` lines. SKILL.md Step 2
+    used to do `concurrency | grep '^LIVE:' | cut -d: -f5`, but the deadline is an
+    ISO timestamp whose own colons shift every later field — f5 landed on "00"
+    instead of the task ID, so orphan recovery's live set was always wrong and
+    could reset a genuinely in-flight task back to Queue.
+    """
+    now = datetime.datetime.now()
+    for r in classify_concurrency(_read_state_files(state_dir), target_prefix, now):
+        if r.status == "LIVE" and r.current_task:
+            print(r.current_task)
+
+
 def _cli_orphans(mirror_path: str, live_tasks: str) -> None:
     text = Path(mirror_path).read_text()
     tasks = parse_mirror_tasks(text)
@@ -257,12 +346,15 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 2:
-        print("usage: looper_logic.py {concurrency|queue|orphans|deadline|check-path} ...", file=sys.stderr)
+        print("usage: looper_logic.py {concurrency|live-tasks|queue|orphans|deadline|check-path} ...",
+              file=sys.stderr)
         sys.exit(2)
 
     cmd, args = sys.argv[1], sys.argv[2:]
     if cmd == "concurrency":
         _cli_concurrency(*args)
+    elif cmd == "live-tasks":
+        _cli_live_tasks(*args)
     elif cmd == "queue":
         _cli_queue(*args)
     elif cmd == "orphans":

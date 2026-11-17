@@ -1,6 +1,6 @@
 ---
 name: bookkeeper
-description: Catch the GnuCash books up from bank feeds — pulls Wise via API, imports CSV exports from BBVA/Upwork, dedupes against the book, restores netted-out fees, and writes balanced transactions. Use when the books need updating, before a quarterly tax filing, or when asked to reconcile an account.
+description: "Catch the GnuCash books up from bank feeds: Wise API, BBVA/Upwork CSV, dedupe, restore netted fees. Use to reconcile an account."
 allowed-tools: [Bash, Read, Edit]
 ---
 

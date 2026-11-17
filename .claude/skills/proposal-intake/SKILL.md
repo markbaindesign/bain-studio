@@ -1,6 +1,6 @@
 ---
 name: proposal-intake
-description: Turn raw client input (RFP, emails, call notes, brief) into a proposal skeleton mapped to the studio's proposal structure, then elicit answers to every gap one at a time from Mark before saving. Feeds proposal-writer. Does not touch the pipeline, Mnemosyne, or snippet libraries — always scans the invoking folder for source material, plus whatever's supplied with the invocation.
+description: "Turn raw client input (RFP, emails, call notes) into a proposal skeleton, then elicit every gap from Mark one at a time. Feeds /proposal-writer."
 allowed-tools: [Read, Write, Glob]
 ---
 

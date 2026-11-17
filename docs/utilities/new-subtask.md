@@ -10,12 +10,15 @@ description: Create one or more subtasks under an existing Asana task from the C
 Adds subtasks under an existing Asana task via bainbot. Sibling of [new-task](new-task.md), which creates
 top-level tasks.
 
+Use subtasks only for the steps of a task that fits in one sitting. Anything bigger, and any
+feedback item, is a top-level task. See [ADR 022](../adr/022-asana-tasks-carry-their-own-context.md).
+
 ## Usage
 
 ```bash
 python3 /media/data/dev/bain-studio/studio/sync.py \
   --create-subtask \
-  --task-gid 1217094791482756 \
+  --task-gid {GID} \
   --subtask-name "Audit redirects" \
   --subtask-name "Fix the ones that 404" \
   --subtask-name "Re-crawl and confirm"

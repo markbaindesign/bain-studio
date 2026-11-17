@@ -1,6 +1,7 @@
 ---
 name: bb-pr
-description: Create a Bitbucket pull request from the current branch. Wraps ~/code/bain-studio/studio/scripts/bb-pr. Usage: /bb-pr or /bb-pr --base develop --title "My PR"
+description: "Create a Bitbucket pull request from the current branch."
+argument-hint: "[--base develop] [--title TITLE]"
 allowed-tools: [Bash]
 ---
 

@@ -1,6 +1,7 @@
 ---
 name: nurture
-description: Spec nursery manager. No args = triage pass over all drafts (pursue/defer/discard). Named arg = full grill-me interview to flesh out a specific stub into a complete spec.
+description: "Spec nursery manager. No args triages all drafts (pursue/defer/discard); a named arg runs a grill-me interview to flesh out one stub."
+argument-hint: "[spec name]"
 ---
 
 ## Mode A — Triage (no args)

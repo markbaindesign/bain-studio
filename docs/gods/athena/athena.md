@@ -66,7 +66,7 @@ An Athena report saved to `{CONTENT_DIR}/pipeline/athena/{slug}-{date}.md` conta
 
 1. **Qualification verdict** — Pursue / Conditional / Pass, with reasoning
 2. **Open scoping questions** — questions Mark should resolve before estimating finalises
-3. **Estimate** — low/mid/high hour ranges, price per scenario (calls Mnemosyne for comps from `project-database.csv`)
+3. **Estimate** — low/mid/high hour ranges, price per scenario (calls Mnemosyne for comps from `context/portfolio/projects/`)
 4. **Proposal draft** — full proposal text ready for Mark to review and send
 
 ## Law of Margin
@@ -75,7 +75,7 @@ Before a proposal leaves, financial review must run a margin check. Athena flags
 
 ## Notes
 
-- Athena calls Mnemosyne for estimation comps — similar projects from `project-database.csv` by tech stack, sector, and hours
+- Athena calls Mnemosyne for estimation comps — similar projects from `context/portfolio/projects/` by tech stack, sector, and hours
 - If budget is unknown, Athena still estimates scope and flags the budget gap explicitly
 - Open scoping questions are tracked until resolved; unresolved ones appear as assumptions in the estimate
 

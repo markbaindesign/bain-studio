@@ -1,6 +1,6 @@
 ---
 name: bb-repo-create
-description: DEPRECATED alias - use /repo-create. Creates a Bitbucket repo and wires the local git repo. Forwards to studio/scripts/repo-create --bb.
+description: "DEPRECATED alias, use /repo-create. Creates a Bitbucket repo and wires the local git repo."
 model: haiku
 allowed-tools: [Bash]
 ---

@@ -1,6 +1,6 @@
 ---
 name: periphetes
-description: DevOps setup or audit — Cloudways provisioning, DNS, SSL, redirects, DDEV local dev, deployment pipelines. Invoke at project start for infrastructure setup, or anytime something infrastructure-related needs fixing.
+description: "DevOps setup or audit: Cloudways, DNS, SSL, redirects, DDEV, deployment pipelines."
 allowed-tools: [Read, Write, Bash]
 ---
 

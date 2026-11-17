@@ -99,3 +99,32 @@ job as the only thing still executing whatever branch was checked out.
 - Cron's `PATH` is set explicitly in the crontab, since its default (`/usr/bin:/bin`) contains
   neither `claude` nor `node`. This is independent of the worktree but was the other half of the
   same class of silent scheduled-job failure.
+
+## Amendment — 2026-10-30: releasing and deploying are one step
+
+The original decision made deploying "a **separate step from releasing**". That gate is
+removed. **Cutting a tag now deploys it**, as the last step of the release.
+
+The reasoning for the gate does not survive contact with how releases actually get cut: there
+is no case for tagging a release that the studio should not then be running. A tag *is* the
+statement that this version is ready. Holding it back from cron afterwards protects against
+nothing, while the failure mode it creates is real and silent - the original ADR already listed
+it as a consequence ("a cut release is not a live release... with no error to signal it"), and
+on 2026-10-30 that is exactly what happened: 1.16.0 was tagged and pushed while every scheduled
+job carried on running 1.15.1.
+
+What does not change:
+
+- **The ops worktree stays on a detached HEAD at a tag, not on `main`.** This is no longer about
+  gating, and it is not about risk either: under git flow only release and hotfix branches reach
+  `main`, and both are tagged as they land, so `main` and the newest tag are always the same
+  commit. The choice is about legibility - a detached HEAD at `1.16.0` states what is live in a
+  way a branch name cannot, and rolls back by name (`ops-deploy.sh 1.15.1`).
+- **The dev checkout is still never what cron runs.** That was the actual problem ADR 014 was
+  written to solve - a feature branch silently deciding production behaviour at 08:00 - and it
+  is untouched by this amendment.
+- `ops-deploy.sh` is unchanged. It stops being a decision point and becomes the mechanism, plus
+  the rollback path.
+
+Recorded in `/changelog` as step 10, and in the Rules section of
+`docs/utilities/ops-worktree.md`.

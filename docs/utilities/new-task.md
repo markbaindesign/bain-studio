@@ -34,10 +34,25 @@ python3 /media/data/dev/bain-studio/studio/sync.py \
   --task-notes "Blocking SEO crawl of staging site"
 ```
 
+## Follow-up tasks
+
+Work left for later is created as a follow-up of the task it came from:
+
+```bash
+python3 /media/data/dev/bain-studio/studio/sync.py --create-task \
+  --follow-up-of NORE-041 --task-name "Add hreflang tags to staging" \
+  --task-notes "Done when every staging page carries hreflang."
+```
+
+This is the API's version of Asana's "Create follow-up task" menu item, which has no endpoint
+of its own. A link in a description leaves nothing on the task it names, hence the comment on
+the original. Verified on SLT, 2026-11-17.
+
 ## Full options
 
 ```
---project PREFIX       Project prefix (required): NORE, BSTD, MCF, etc.
+--project PREFIX       Project prefix: NORE, BSTD, MCF, etc. Required unless
+                       --follow-up-of names a task with a local ID
 --task-name NAME       Task title (required)
 --task-section NAME    Section to place in (default: NEXT UP)
                        Must match an existing Asana section name exactly
@@ -46,6 +61,10 @@ python3 /media/data/dev/bain-studio/studio/sync.py \
 --task-assignee GID    Assignee (default: BainBot). 'me' uses ASANA_USER_GID
 --task-depends-on GID  A task the new one blocks. If linking fails, the task
                        is still created but the command exits 1 and says so
+--follow-up-of TASK    The task this one follows up (local ID, GID or URL).
+                       The description opens "Follow-up to {ID}." linking that
+                       task, and the original gets a silent "Follow-up: {new ID}"
+                       comment linking back
 --dry-run              Preview without creating anything
 ```
 
@@ -64,7 +83,48 @@ The task is live in Asana and visible in the mirror immediately - no sync run ne
 
 Sections vary by project. Common ones: `DOING`, `NEXT UP`, `TO DO`, `STALLED`, `SOMEDAY/MAYBE`.
 
+A task created for work Claude is doing in the current session goes in `DOING`; a follow-up
+or anything for later keeps the default, `NEXT UP`.
+
 To see sections for a project, check its mirror or Asana board. The `--task-section` value must match exactly (case-insensitive).
+
+## Description length is enforced
+
+`--task-notes` is the task's **description**. On `--create-task` it is refused over **1,200
+characters** and nothing is sent to Asana:
+
+```
+ERROR Not creating task: description is 3510 chars, over the 1200-char limit. State what the
+task is, what done looks like and where the work is. The history, the alternatives and the
+session narrative belong in a commit message or a comment.
+```
+
+A description says three things: what the task is, what done looks like, and where the work
+is (paths, URLs, GIDs). Per [ADR 022](../adr/022-asana-tasks-carry-their-own-context.md) it
+carries its own context, so repeat the client, page or section rather than leaning on the
+section or a parent task.
+
+**Never in a description:** how the problem arose, what was ruled out, alternatives weighed,
+a session narrative, or dates of past sessions. That belongs in the commit message, where
+`git log` reaches it, or in a comment. The limit is loose on purpose — the studio median is
+about 500 characters, and the walls of text that prompted it ran 2,000–3,500.
+
+Only descriptions written through `sync.py` are checked. A task that arrives by Asana's own
+email intake (a forwarded alert, a vendor email) never passes through here and is unaffected
+however long it is.
+
+On `--update-task` the limit is softer, so that it cannot trap a correction: an over-limit
+description is refused only when it is **no shorter** than the one it replaces. A 1,400-char
+rewrite of a 3,500-char description goes through, and is logged as a correction.
+
+The description is read-only in the mirror. To correct one, use `--update-task`, which
+replaces it wholesale — read the current text first:
+
+```bash
+python3 studio/sync.py --get-task BSTD-856
+python3 studio/sync.py --update-task --task-gid {GID} \
+  --task-notes "Corrected description."
+```
 
 ## Notes
 

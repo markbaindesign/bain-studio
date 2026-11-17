@@ -14,6 +14,10 @@ HERE = Path(__file__).resolve().parent
 load_dotenv(HERE.parent / '.env')  # studio/.env — single source, no local override file
 
 sys.path.insert(0, str(HERE))
+# claude_pace lives a level up, with the studio's other shared logic: the
+# session dash uses it too, and the budget rules must not exist twice.
+sys.path.insert(0, str(HERE.parent))
+import claude_pace
 import gnucash_parser
 import income_forecast
 import ops_status
@@ -96,11 +100,16 @@ def api_claude():
         return jsonify({'error': 'No rate-limit data at ~/.claude/ratelimit-current.json'}), 404
     import json
     d = json.loads(f.read_text())
+    # Pace is computed here rather than in the page, so the dashboard and the
+    # session dash cannot disagree about what counts as burning too fast.
     return jsonify({
         'pct': d.get('current_pct'),
         'reset_ts': d.get('reset_ts'),
         'weekly_pct': d.get('weekly_pct'),
         'weekly_reset_ts': d.get('weekly_reset_ts'),
+        'five_pace': claude_pace.pace_for(d.get('current_pct'), d.get('reset_ts')),
+        'weekly_pace': claude_pace.pace_for(d.get('weekly_pct'),
+                                            d.get('weekly_reset_ts'), weekly=True),
         'read_at': datetime.fromtimestamp(f.stat().st_mtime, timezone.utc).isoformat(),
     })
 

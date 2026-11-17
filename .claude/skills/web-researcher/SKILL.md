@@ -1,6 +1,6 @@
 ---
 name: web-researcher
-description: Search and summarise external information on demand. Any god can invoke this when they need current information from outside the project. Does not hallucinate — if it cannot find something, it says so.
+description: "Search and summarise external information on demand. Says so when it cannot find something."
 allowed-tools: [WebSearch, WebFetch, Read]
 ---
 

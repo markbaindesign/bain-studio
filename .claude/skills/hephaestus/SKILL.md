@@ -1,7 +1,6 @@
 ---
 name: hephaestus
-description: Technical build planning and architecture. Translates an approved Athena scope doc into a concrete technical implementation plan. Invoke at the start of the Build station (lifecycle step 9) once the project is won and the brief is signed off.
-argument-hint: plan | review
+description: "Technical build planning: turn an approved Athena scope doc into a concrete implementation plan. Invoke at the Build station."
 allowed-tools: [Read, Write, Bash]
 ---
 

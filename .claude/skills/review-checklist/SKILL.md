@@ -57,7 +57,7 @@ For each item, write a brief "verify:" note — the one thing to check to confir
 
 **Primary path — Asana task:**
 
-Check if the project has an Asana GID in `CLAUDE.md` (`ASANA_PROJECT_GID`).
+Check whether the project has an Asana GID, resolving from the registry first (`python3 /media/data/dev/bain-studio/studio/registry.py --prefix {PREFIX} --field gid`), falling back to the project's own `CLAUDE.md`. A project inside the public bain-studio repo carries no GID in its `CLAUDE.md`; a client project's does, in its own private repo.
 
 If yes:
 1. Write the checklist to `.claude/asana-mirror/review-checklist-v{version}.md` (temporary mirror file)

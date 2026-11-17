@@ -1,6 +1,6 @@
 ---
 name: cashflow-projection
-description: Cashflow projection for the next 90 days. Reads GnuCash snapshot and active project pipeline, models income against outgoings, flags break-even risk. Run monthly or when planning new work.
+description: "90-day cashflow projection from GnuCash and the active pipeline, flagging break-even risk. Run monthly or when planning new work."
 allowed-tools: [Read, Write, Bash]
 ---
 
@@ -29,7 +29,7 @@ Key fields:
 
 ### 2. Read the pipeline
 
-Read `/media/data/dev/misc/upwork-proposals/context/portfolio/project-database.csv`. Identify active projects (no End Date or End Date in the future). For each, note expected invoice amount and approximate timing.
+Load the project ledger from `/media/data/dev/misc/upwork-proposals/context/portfolio/projects/` (via `pipeline/project_db.load_all()`). Identify active projects (no End Date or End Date in the future). For each, note expected invoice amount and approximate timing.
 
 Read `accounts.json`'s `harvest.invoices` field for outstanding (unpaid) invoices (sourced live from Harvest, not a local log). If `harvest.configured` is false or the field is missing, note that Harvest isn't wired up rather than silently treating it as zero outstanding invoices.
 

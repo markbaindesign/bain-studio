@@ -1,6 +1,7 @@
 ---
 name: scaffold-dir
-description: Create a new project directory and initialise it as a git repo on main with a develop branch. Supports WordPress-aware structure with DDEV configuration. Args: path [name] [--wordpress] [--ddev] [--php VERSION] [--db TYPE:VERSION] [--wp-version X.Y.Z] [--admin-user NAME] [--plugin NAME] [--theme NAME] [--mu-plugin NAME]
+description: "Create a new project directory and initialise it as a git repo on main with a develop branch. Optional WordPress and DDEV structure."
+argument-hint: "<path> [name] [--wordpress] [--ddev] [--php V] [--db TYPE:V] [--wp-version X.Y.Z] [--plugin N] [--theme N] [--mu-plugin N]"
 allowed-tools: [Bash, Write]
 ---
 
@@ -215,7 +216,7 @@ Studio WordPress project layout standard: `/media/data/dev/bain-studio/docs/util
 
 Example projects:
 - VVV: `/media/data/dev/vvv/clients/www/nore`
-- DDEV: `/media/data/dev/ddev/ebiz-global`
+- DDEV: `/media/data/dev/ddev/{project}`
 
 ## Execution
 

@@ -1,6 +1,6 @@
 ---
 name: arke
-description: Event spotting — scan project artefacts, recent work, or session context for moments worth broadcasting on social. Returns a list of candidates with broadcast/hold verdict and a reason for each.
+description: "Event spotting: scan project work or session context for moments worth broadcasting on social. Broadcast/hold verdict each."
 allowed-tools: [Read, Bash]
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: eirene
-description: Performance check only — Core Web Vitals, load time, image optimisation, caching. Returns a performance audit with Pass / Fail per metric. Use when you need a performance audit without the full Themis QA suite.
+description: "Performance check only: Core Web Vitals, load time, images, caching. Pass/Fail per metric, without the full Themis QA suite."
 allowed-tools: [Read, Write, Bash]
 ---
 

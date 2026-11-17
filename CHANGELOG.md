@@ -7,12 +7,240 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-17
+
 ### Added
+- **`critical_path.py` computes a project's critical path** from its dates and "blocked by" links and writes it to a shared Critical Path field, so the Gantt can be coloured by it. Dependency cycles are refused with the loop named.
+- **`sync.py --create-task --follow-up-of {ID}`** creates a follow-up task linked to the task it came from.
+- **Task IDs in comments become links.** A local ID such as `BSTD-856` that resolves in a registered project is linked to that task; IDs inside branches, paths and URLs are left alone.
+
+### Changed
+- **A note's `Where:` block posts as its own silent comment** under the `@mark` summary. The summary may not name a path, branch, commit or URL, and is capped at 500 characters, 150 per block and 3 checks.
+- **A `Done` note on a task with open subtasks is refused** unless a `Subtasks:` block accounts for each one.
+- **Follow-ups are tasks, and notes carry no date.** The comment rules now say so; Asana stamps every comment.
+
+### Fixed
+- **`@mark` notes reach the "Mentioned" inbox.** `sync.py` now waits 35 seconds after adding Mark as a collaborator before posting, working around an Asana bug that ignored mentions posted sooner (BSTD-878).
+
+## [2.1.0] - 2026-11-16
+
+### Added
+- **`sync.py` signals `@mark` notes to Slack.** Asana cannot deliver an API-posted note to an inbox filtered to "Mentioned", so a fresh `@mark` post now also pings Slack. The Asana comment stays the record. The comment posts first, edits never re-notify, and a Slack failure logs a warning instead of raising (BSTD-878).
+- **Site-refresh information architecture workflow** documented under `docs/`: take the inventory from production, record the navigation separately, audit the content before rebuilding the tree.
+
+### Changed
+- **The copywriter no longer strips softeners from client mail.** Her "do not soften a finding" rule called apology a voice violation, contradicting `brand-voice.md`, which was rebuilt from Mark's pre-AI sent mail and now treats removing "sorry", "I'm afraid" and "I think" as the error.
+- **Asana comment docs corrected:** the `@mark` token adds Mark as a collaborator, which is Asana's documented procedure, and does not create an inbox mention.
+
+### Removed
+- **The unused plain-text comment poster in `sync.py`.** A plain-text story cannot carry a mention, so anything posted through it would never have reached Mark's inbox. Nothing called it.
+
+## [2.0.0] - 2026-11-06
+
+### Removed
+- **`docs/projects/` and `docs/projects.base` are no longer in this repo.** This repo is public, and twenty tracked project files carried client names, contact names, client email addresses, live domains, provider install names, local paths, repository URLs, Asana GIDs and analytics property IDs — the file *names* were client identifiers too. The notes are now `$STUDIO_CONTENT_DIR/projects/*.md` with the index beside them; the index filters on the `studio-project` tag rather than a path, so the Obsidian table works unchanged in a directory that was already a vault. This answers ADR 021's open question 1 as "moved out of the public repo", seven weeks after that question was written down. **Breaking:** anything reading `docs/projects/` must go through `studio/registry.py`.
+- **`studio/templates.json` is deleted.** It was tracked, held a live Asana template GID, and nothing read it — `sync.py` takes `ASANA_TEMPLATE_PROJECT_GID` from untracked `.env`. A dead file publishing a real identifier.
+- **`docs/utilities/security-audit-2026-06.md` moves to `$STUDIO_CONTENT_DIR/research/`.** `CLAUDE.md` already said audits go to `research/`; this one had been in `docs/utilities/` since June carrying real GIDs.
+
+### Added
+- **`studio/registry.py` — one reader for project identity.** Resolves a prefix to its path, GID, name, status, domains and analytics property from `$XDG_DATA_HOME/bain-studio/registry.json`, outside this repo. `sync.py`, `postman.py`, the voice agent, `/focus`, `/open`, `abderus` and `harvest` all go through it; `/focus` and `/open` each had their own embedded lookup, written two different ways. Keeps `/open KF` resolving `KF-WEB` by stem, and refuses an ambiguous stem rather than guessing. 22 tests.
+- **`studio/scripts/gen-denylist.py`** builds the client-data term list at run time from that registry. The script is versioned; its subject is not, because a committed list of client names would be the data it exists to exclude. Refuses — exit 2, empty stdout — when the registry is missing, unreadable or holds no client entries, since an empty denylist passes everything while appearing to work.
+- **`studio/hooks/pre-commit` and `commit-msg`** refuse a commit whose added lines or message carry client data. Added lines only, or the hook would refuse the very commits that remove client data. The message is checked separately because `pre-commit` never sees it and studio rules deliberately send reasoning there. `studio/scripts/setup-machine.sh` sets `core.hooksPath` and reports a missing registry; `BAIN_SKIP_CLIENT_GUARD=1` is the documented one-off, since `--no-verify` bypasses any pre-commit hook anyway.
+- **`$STUDIO_CONTENT_DIR/internal/studio-infrastructure-identifiers.md`** now holds the uptime monitor URLs, hosting application IDs and provider install names that existed nowhere but ADRs 018 and 019.
+
+### Changed
+- **No identifier is hardcoded in this repo.** `CLAUDE.md` had been reprinting the two workspace custom-field GIDs as documentation, with no consumer — `sync.py` already read them from untracked `.env`. The three `CLAUDE.md` files inside this repo no longer carry `ASANA_PROJECT_GID`; `sync.py` prefers the registry for gid, prefix and name on every project, which also removes the every-project-`CLAUDE.md` scan ADR 021 names as a defect. A client project's own `CLAUDE.md` is in that client's private repo and keeps its GID. `.env.example` was missing four of the nine Asana variables the code reads and now documents all nine. Discovery verified identical before and after: 21 active, 23 including inactive.
+- **ADRs 016, 017, 018, 019, 023 and 024 are redacted.** Project prefixes stay — a prefix is a code, and the mapping lives outside this repo — while client names, domains, provider hostnames and application IDs go. The decisions and reasoning are untouched. Each one says it was altered, with the date and where the detail went: silently editing six dated decision records would be worse than the disclosure.
+- **`ga-report` reads name, `ga4_property` and `client_docs` from the registry.** Its docs note had a table mapping prefixes to GA4 property IDs.
+- **Test fixtures use a fictional cast** instead of real client names, bank counterparty strings and categorisation patterns. A real name in a fixture is worse than in prose: it is indistinguishable from configuration, so the next rule added beside it copies the shape and the name.
+- **`CLAUDE.md`'s "What belongs in this repo" opens with "No client data. Ever."** — a table of what goes where, and explicit permission to use prefixes. That section previously listed `docs/projects/` among the things that belong here, three lines below "It is public", which is why 56 files did.
+- **`/register-project` writes the registry and a Dropbox note** rather than `projects.json` and `docs/projects/`. It now insists on `domains` and `kind`, because the commit guard reads both: a wrong `kind` either leaks a client or refuses every commit naming an internal project.
+
+### Fixed
+- **The voice agent resolved a prefix from the deleted directory.** `studio/voice/tasks.py` assembled its path from components, so neither the client-name scan nor a grep for `docs/projects` ever saw it, and the feature worktree has no `projects.json` so its test took a different path and passed there. Found by searching for code that joins a path component instead of writing the path literally — worth repeating after any file move.
+
+
+## [1.26.2] - 2026-11-06
+
+### Fixed
+- **Every stored path into the Dropbox client tree pointed at a directory that no longer exists.** `Work/Projects/Client/` became `Work/clients/` and `Work/Projects/internal/` became `Work/internal/` on 2026-11-06, and KF, SINI and BFF gained a `Projects/` level, so `Khyentse Foundation/New KF Website` is now `Khyentse Foundation/Projects/New KF Website`. Repointed across the four skills that resolve a client folder (`ga-report`, `aura`, `studio-looper`, `tech-access-request`), their docs notes, the `client_docs:` frontmatter in seven project files, and the retainer clients example. Released ahead of the `/onboard-project` work it came from, because the ops worktree runs `ga-report`, `retainer-report`, `aura` and the looper off a release tag and every one of them reads these paths. ADR 016, `studio/inbox/processed/` and generated `asana-mirror.md` files are deliberately untouched — they record what was true when written.
+
+## [1.26.1] - 2026-11-05
+
+### Changed
+- **`docs/utilities/asana-comments.md` said a comment that missed the inbox "cannot be rescued" and to tell Mark another way.** That conflated reposting with editing. Only the edit path is hopeless: re-mentioning on an edited story raises nothing. A *fresh* post notifies, and `leave_progress_comment` does no text-based dedupe, so without a story GID it adds the follower and posts a new story with identical text. The page now says so, names the cost - two identical comments on the thread - and says to read the thread before reposting from a list, since a comment Mark has already replied to is worth leaving alone. Used in anger the same day to recover BD-201, BD-203 and BD-204, the three bain.design review comments that 1.26.0 arrived too late to signal; BD-202 was skipped because he had already answered it.
+
+## [1.26.0] - 2026-11-05
+
+### Fixed
+- **An `@mark` comment never reached Mark's inbox, and nothing said so.** Asana raises no notification for an `html_text` @-mention unless the person already **follows** the task - being the assignee is not enough, and the "creating an @-mention link will not automatically generate a notification" note in Asana's rich-text guide is the only place it is written down. Every review and blocked comment `sync.py` has posted with a mention since mention support shipped landed in the task thread and nowhere else, which, with an inbox filtered to Mentioned, means Mark never saw one. `leave_progress_comment` now adds `ASANA_USER_GID` as a follower before a mentioned comment, skipping the call when they already follow, waits `MENTION_FOLLOW_WAIT` (3s), then posts; a failure warns and posts anyway, because an unsignalled comment still beats a lost one. Only the fresh-post path does this - editing a story notifies nobody, so comments already posted cannot be rescued by rewriting them. Found by the bain.design session on BD-204 and verified live on SLT-005, a task Mark did not follow: the comment appeared under Mentioned.
+- **The follower that mention adds is recorded on the task being synced**, so the mirror written later in the same run holds it. A commented task is re-stamped at `now+60s` so its own writes do not trip the "Asana is newer" gate, which puts the *next* run on the push branch - where a mirror still showing the pre-mention follower set would have called `removeFollowers` on the very follower the mention depends on, an add/remove story per reviewed task per hour.
+- **`sync.py --comment` can now correct a comment instead of contradicting one.** From a bare task GID it has no project state to look the previous story up in, so it always posted afresh, leaving the old comment above the new one - the comment-plus-contradiction `docs/utilities/asana-comments.md` forbids. It now takes `--story-gid` to edit in place, and prints the story GID to pass next time. From a project mirror nothing changes: the scheduled sync tracks the story GID in `asana-ids.json` and already edits in place.
+
+### Changed
+- `docs/utilities/asana-comments.md` said a comment opening `@mark` "reaches his inbox" and that `--comment` behaves "like any Progress note". Both were wrong - the first about notification, the second true of rendering but not of editing. The follower precondition, the one case where a `--comment` follower is later removed, and the `--story-gid` form are now documented.
+
+## [1.25.0] - 2026-11-05
+
+### Added
+- **Every custom field on a task is mirrored, and pushes back from a mirror edit.** Only `Looper Status` had a push path, so an edit to `- **Priority:**` was silently discarded and overwritten on the next pull, and `Features`, `Review Status`, `Env` and `Milestone` were not mirrored at all. Each custom field now renders by its Asana name - `none` when unset, because that line is how you discover the field and how you set it - and text, number, date, enum and multi-enum push from the mirror. Handling is generic: a field added to a project in Asana is mirrored and pushable with no change to `sync.py`. Anything Asana computes or holds in a shape one mirror line cannot express (people, formula, reference/milestone) is rendered from its own `display_value` and left read-only. Verified live: `Priority` and `Env` on `SLT-001`, then `Priority` on `BSTD-866` to `-868` through a mirror edit and a sync.
+- **A task description over 1,200 characters is refused, not written.** Agent-created descriptions had reached 2,000-3,500 characters against a studio median of about 500, `BSTD-856` among them carrying a "Why it matters now" section recounting how the problem arose - the same failure `validate_progress_note` already refuses in a comment. `--create-task` and `--update-task` now send nothing when a description is over the limit. The check is on length only, with no required block format, so `qa-capture` and anything else with its own template keeps working. Tasks arriving by Asana's own email intake never pass through `sync.py`, so a forwarded alert or vendor email is unaffected however long it is. What belongs in a description is a rule rather than a parser: `~/.claude/rules/asana-tasks.md`, loaded in every session and shared with the KF account.
+
+### Changed
+- **The task description is read-only in the mirror, on purpose** (ADR 025). It is the brief a task was created with, and Asana logs no story for a description edit, so a rewritten one silently loses what was originally asked for. Amendments go in a comment; a genuinely wrong or misleading description is rewritten with `--update-task`, which logs the change. A mirror-side edit is now reported in the log naming that command, instead of being dropped in silence. On `--update-task` the limit is deliberately softer - an over-limit description is refused only when it is no shorter than the one it replaces - because 21 existing descriptions are already over it and refusing a shorter correction would leave the wrong text in place.
+
+### Fixed
+- **A task description could overwrite real field values, and have them pushed to Asana.** `parse_existing_mirror` collects every `- **X:**` match into one dict where the last match for a key wins, and `FIELD_RE` was not anchored to the start of a line. A description containing `- **Priority:** none` or `- **Section:** DONE` - the bold-bullet style the long agent-written descriptions use - therefore replaced the real value, which was then pushed to Asana on the next mirror-newer run. Descriptions also arrive by Asana's email intake, which `CLAUDE.md` treats as untrusted, so this was a write path from untrusted text into task state. The description's region is now cut out before fields are collected, ending at the *last* `- **Blockers:**` line so a description quoting it cannot truncate the real one, and only its first line is kept.
+- **A project whose own "Priority" field has a different GID is no longer cleared.** The built-in `Priority` line renders from `PRIORITY_FIELD_GID` alone, so such a project showed `none` in the mirror while Asana held a value, and a push by field *name* would have cleared it on every task, every run. The exemption is now matched by GID, and a custom field colliding with a built-in mirror key warns once per run instead.
+- **A value the field cannot hold is never sent.** It is skipped and named in the log: all of a task's custom fields go in one `PUT`, so a single bad enum value would have had Asana reject the write and lose every other field pushed with it. Enum options are matched case-insensitively, because option labels drift ("In Progress" vs "In progress") and have done before.
+- **A date custom field is written as `{"date": "YYYY-MM-DD"}`**, not the bare string a text field takes. Corroborated on the Asana developer forum, including the "DayAndDateTime should have exactly one of" error; the official custom-fields guide documents the enum shape but not this one, and no studio project has a date field to test it against.
+
+## [1.24.1] - 2026-11-05
+
+### Fixed
+- **`VERSION` tracks the release again.** It still read `1.23.0` after 1.24.0 shipped: that release's `chore(release):` commit, which is where the bump belongs, never existed on its own - a concurrent session's `git add -A` swept the changelog edit into its commit, so there was nothing left for the release commit to carry. `ops-deploy.sh` prints `VERSION`, so a deployed ops worktree reported the wrong release.
+
+## [1.24.0] - 2026-11-05
+
+### Changed
+- **Asana comments are short review instructions, not an audit trail.** A finished task used to collect three or more comments from Claude, each a paragraph of narrative - diagnosis, what was ruled out, every width tested - with the thing to actually do buried in it or missing, and Asana truncates at "See more". Notes now follow a fixed template: `@mark Review {date}: {one line} || Where: {branch} · {commit} · {URL} || Check: || 1. {imperative} || 2. … || Gaps: {known, not fixed}`, max five checks, one line each. Reasoning, diagnosis and alternatives go in the commit message, reachable by `git log` when wanted and invisible when not. The rule applies to **every session in every project**, not just the looper - the comment that prompted it came from an ordinary bain.design session - and lives in `~/.claude/rules/asana-comments.md`, loaded everywhere and shared with the KF account.
+- **`**Progress:**` is written in one mirror only.** It is not an Asana field: it is mirror-local and exists solely to be turned into a comment, so a task multi-homed into a project and a looper queue had *two* independent write channels into one comment thread. The text dedupe only catches identical notes, and the looper wrote deliberately different text to each mirror, defeating it. The note is now written in the home project mirror; the queue mirror carries `Looper Status` and `Assignee` and nothing else. When the queue *is* the home project (an `SLT` task in `studio/looper-test`) it is written once, there.
+- **`--comment` runs through the same renderer.** It posted raw text, so a `@mark` token in a one-off comment from `blocked-sweep` or an ad-hoc call was literal and never reached a filtered inbox.
+
+### Added
+- **Asana @-mentions.** Mark's Asana inbox is filtered to *Mentioned*, and a plain-text comment cannot mention anyone - Asana needs rich text. Every bot comment was therefore about to become invisible to him. `sync.py` now posts `html_text` and converts a leading `@mark` into a real mention. The mention is the signal: review and blocked notes carry it, routine status changes do not, so low-risk work stays off his radar without being hidden. Verified live against `SLT-001` - the mention resolves (`data-asana-type="user"`, accessible, GID matches), newlines render, and a `PUT /stories` edit applies in place.
+- **A wall of text is refused, not posted.** `validate_progress_note` runs on both write paths before anything reaches Asana: over 900 characters, any block over 200, or more than 8 blocks and the note is not posted at all. An error naming the task goes to `sync.log`, the note stays in the mirror to be rewritten, and the task's own state still syncs so the work still appears in Mark's list; `--comment` exits 1. The limits are loose on purpose, so skills with their own short formats keep working and a `Checked {date}.` heartbeat is exempt. Tested against the real comment that prompted the change, which it rejects.
+- **Corrections edit the comment in place.** `PUT /stories` replaces bainbot's existing note rather than posting a contradiction, unless a human comment landed since - that means Mark responded, so the next note is a new round of work and needs its own notification. A "Correction …, replacing my earlier note" comment is now a defect.
+- **`retainer-report`** - monthly hour-bank report from Harvest, with its hermes doc (separate work, integrated on `develop` before this release).
+
+### Fixed
+- **Quotes are no longer escaped into Asana comments.** Asana rejects a bare `&`, `<` or `>` in `html_text` with a 400, but it does not decode the numeric entity Python emits for an apostrophe, so `html_escape`'s default put a literal `&#x27;` in the comment. Caught by the live `SLT-001` check, not by the unit tests.
+- **The hourly cron no longer double-posts.** Scheduled syncs run an older `sync.py` from the ops worktree (ADR 014) against the same `asana-ids.json`, where `posted_progress[gid]` is a plain string. Storing the new story GID there made its "has this changed" test true on every run, so it posted each note a second time as raw text - literal `@mark` and `||` - and overwrote the GID. Story GIDs now live in a separate `progress_stories` map the old code ignores.
+- **The duplicate-work guard can see completion again.** The new template dropped the `Ready for review {date}` phrase the guard reads to tell a finished task from a re-queued one, which silently broke it and the reject path with it. Line one now carries the ISO date and the guard reads that, falling back to the old phrase for notes written earlier.
+- **Comment matching survives a rendered mention.** Asana flattens a mention to a URL in a story's plain text, so a posted comment never again equals the mirror text that produced it. Matching is by suffix with a 64-character prefix cap - stripping the display name by pattern ate real words after it, and suffix matching alone would have read a short note as a duplicate of any longer comment it happened to end.
+
+## [1.23.0] - 2026-11-05
+
+### Changed
+- **Skill and agent descriptions carry triggers, not tutorials.** 75 skill descriptions and all four agent descriptions lost their worked `<example>` blocks, restated trigger-phrase lists and `Args:`/`Usage:` strings: 25,059 to 12,080 characters across this repo and `bain-skills`, and 5,263 to 1,588 for the agents. The argument strings moved to `argument-hint`, a field eight skills already used, so `/scaffold-dir`'s flag list survives where a description would have swallowed it. Firing guards were kept deliberately, because they decide whether a skill fires rather than describing it: `wp-plugin-expert`'s "only when called by name", the `task-looper` and `bb-repo-create` deprecation redirects, `studio-pm`'s "never touches Asana directly", `copywriter`'s "do not re-review or soften her edits", and the clause separating `prod-reconcile` from `fse-sync`.
+- **`CLAUDE.md` stopped restating itself.** The Active projects table printed twenty prefix/path rows immediately beneath the line "Single source of truth: `docs/projects/` - do not duplicate project state here", and the Skills section listed nine skills with reasons plus a "global-only" list that had drifted wrong - `web-researcher` and `copywriter` are in this repo, and `grill-me`, `wp-css-override`, `wp-plugin-expert` and `notify` are in `bain-skills`. Both are now pointers. All twenty paths were verified present in `docs/projects/*.md` frontmatter first; `KF-WEB` lives in `kf.md` and `SLT`'s path in `sl.md`, which is why neither has a file of its own. This answers open question 2 of ADR 021, recorded in its addendum.
+- **`register-project` no longer appends a `CLAUDE.md` row.** Its Step 3 is gone and the skill renumbered; `abderus` and `harvest` read project paths from `docs/projects/*.md` frontmatter instead of the deleted table, and the hermes docs for `register-project` and `commission` were corrected to match.
+
+### Added
+- **`hermes`, `mnemosyne` and `studio-pm` are versioned.** They were plain files in `~/.claude/agents/`, recoverable from nothing if the machine went; they now live in `.claude/agents/` and are symlinked out, the way `copywriter` already worked. The `qa` and `portfolio` skills were adopted from `~/.claude/skills/` for the same reason, along with `notify`, `prod-reconcile`, `skills` and `process-scan-folder` into `bain-skills`.
+
+### Fixed
+- **Frontmatter that only Claude Code's own parser would accept.** Eleven files carried an unquoted plain YAML scalar containing `": "`, which is a `mapping values are not allowed here` error to anything stricter: `bb-pr`, `blooper-check`, `commission`, `looper-onboard`, `register-project`, `repo-create`, `scaffold-dir`, `seed-tasks`, `voice-agent`, `project-status`, and the `copywriter` agent, whose description ran unquoted across 28 lines with `user:` and `assistant:` keys inside it. Every description is now a quoted single-line scalar and every file passes `yaml.safe_load`.
+- **`process-scan-folder` can advertise itself.** It had no frontmatter at all, so it was invocable only by typing its exact name despite having a working `process_scan.py`.
+
+### Notes for the next person
+- **37 skills were rendering as bare names in the model's skill listing**, descriptions dropped against a budget the long ones exceeded - `themis`, `aphrodite`, `whiteroom-web-design`, `wp-block-theme`, `triage` and 32 others. They were effectively undiscoverable: invocable by exact slash command, but never chosen by inference. Trimming brought the whole set back under the budget. Measure this against the rendered listing in a fresh session, not against the frontmatter character count, because the listing is fixed at session start.
+- **Strict-YAML validity is not what decides whether a description renders.** Thirty-four of the bare skills parsed fine and seven of the parse failures rendered in full, so the two problems are unrelated. Fix both; do not use one as a proxy for the other.
+- **A release was cut from another session in this checkout mid-work.** 1.22.0 appeared while these changes sat uncommitted, moving HEAD through four branch switches and leaving `feature/skill-description-trim` pointing at the old develop. The uncommitted work rode along intact and 1.22.0 was not contaminated, but `git worktree list` showed six checkouts and twelve Claude processes were running. Check before assuming you are alone in the repo.
+
+## [1.22.0] - 2026-11-05
+
+### Added
+- **The Claude sessions dash is a pinned panel, not a terminal window.** `session-status --conky` prints the sessions once as conky markup and exits, feeding `~/.config/conky/studio-claude.conf` on the third monitor. The app used to run in a second Terminator window there, and getting back to the one holding the tmux sessions meant cycling *within* the app - `switch-windows` is disabled and `switch-applications` is `<Super>Tab`, which groups both windows under Terminator, and the launcher icon raised whichever it felt like. A dash is read, not typed into, so it stopped being a window: a dock with `SKIP_TASKBAR` and `SKIP_PAGER` that nothing can hand focus to.
+- **The panel reserves the right quarter of that monitor.** A dock publishes `_NET_WM_STRUT_PARTIAL`, so a window maximized there fills the left 1440px and the panel is never covered. Measured with a probe window on each monitor: fullscreen is unaffected - struts constrain maximize, not fullscreen - and the other two monitors are untouched.
+- **One card a session**, three lines each, on a rounded Tokyo Night surface with the status colour as a bar down the left edge. 480px is about 51 characters, which a table does not fit. Three lines rather than four because the card's height decides how many sessions the column holds - 13 against 10, where 12 sessions have been seen running at once. Anything past the thirteenth is counted on a `+N more` line, never dropped.
+- **Account usage as bars.** Under each account's quota line, one bar for the five-hour window and one for the week, each filled to its percentage with a marker where the budget says it should be by now. Ported from the studio dashboard's usage card, which is where the pace idea comes from. A window whose reset has already passed gets no bar, for the same reason the text says `reset` rather than quoting a figure from a window that is gone.
+- **`studio/claude_pace.py`**, holding the quota budget rules in one place: 20% a work day for the week with weekends budgeting nothing, 20% an hour for the five-hour window, amber 5 points over the budgeted figure and red 15. They were JavaScript in `dashboard.html`; `server.py` now serves `five_pace` and `weekly_pace` from the module, the page renders what it is sent, and its two functions are gone. The port was differential-tested against the JavaScript on 40 randomised cases before that code was deleted - no disagreement in `expected` or `state`.
+- **A level floor the dashboard did not have.** `colour_state` reports red at 90% of a window however well paced it is. Pace alone shows green at 95% on a Friday afternoon, because spending the last of the week on the last day is exactly on budget - which is the moment the warning is most wanted.
+
+### Changed
+- **The dashboard's Claude usage card reads its pace from the server** rather than computing it in the page, so the dashboard and the session dash cannot drift apart on what counts as burning too fast.
+
+### Fixed
+- **The dash no longer blocks maximizing the whole third monitor by accident.** It briefly ran as a `normal` window after "it prevents apps going fullscreen" was taken at face value, which turned out to be the wrong diagnosis: struts constrain maximize, and the reservation is wanted. The numbers are in `docs/utilities/session-status.md` rather than anyone's memory.
+
+### Notes for the next person
+Four dead ends are recorded in `docs/utilities/session-status.md`, all of which present as "nothing is drawing":
+- conky draws Imlib2 `${image}` **after** the text, so a background PNG covers every row. `lua_draw_hook_pre` is the only layer behind it, and it needs `conky-all`, not `conky-std` - both have Lua, only `conky-all` ships the cairo binding.
+- `CAIRO_OPERATOR_SOURCE` is **unbounded**: it paints the whole clip region rather than the path, so rounded corners come out square. The default `OVER` is bounded and keeps the source alpha anyway.
+- `${goto}` measures from the **window** edge, not the text area, so a card's body lines slide under its status bar unless they repeat the inner margin.
+- Check any of it with `gnome-screenshot`, never `import -window root`: under mutter the root window does not reliably hold what is on screen for a translucent window, and it produced two wrong diagnoses.
+
+## [1.21.0] - 2026-11-05
+
+### Added
+- **Studio looper's concurrency guard states the all-clear** instead of saying nothing. `looper_logic.py concurrency` now prints `CLEAR:no other session targets {PREFIX}` when nothing competes, and names the runner (`- launched by runner {id}`) when `LOOPER_RUN_ID` is set. Silence was too weak a signal: on the night of 5 November a headless iteration read empty output as "the guard is broken", went looking at processes, found `looper_runner.py` holding `/tmp/studio-looper/runner.lock` along with its own `claude -p` child, concluded a rival run held the queue, and refused to start. Nothing was wrong - the runner holds that lock for the whole window by design and had launched the very session that then read it as a competitor. The window ended after 1 of 6 tasks. Step 1a is now explicit that this script's output is the only concurrency signal, with one scoped exception for an interactive run, where a live lock pid genuinely does mean a nightly window is in progress and the session should ask Mark rather than decide alone.
+- **`looper_logic.py live-tasks {PREFIX}`**, printing each live session's `current_task` one per line, for Step 2's orphan recovery.
+- **The looper runner tells an early stop from a drained queue.** It infers progress from `~/logs/task-looper.log` growing, so a session that declines to start looked exactly like an empty queue. It now records why the loop exited and counts tasks still at Looper Status `Queue`: a no-progress exit with work remaining logs `ENDED EARLY` and notifies at high priority, while the quota-deadline and iteration-cap exits report work carried over, at normal priority. Last night's early stop would have paged rather than passing unnoticed until the morning.
+
+### Fixed
+- **Orphan recovery read the wrong field and could reset a live task.** Step 2 built its set of in-flight tasks with `concurrency | grep '^LIVE:' | cut -d: -f5`, but the deadline on that line is an ISO timestamp whose own colons shift every later field - on a state file holding `current_task: SL-042`, `-f5` returns `00`. The live set was therefore always wrong, so `find_orphans` could class a genuinely in-flight task as unclaimed and reset it to `Queue`. Latent while Step 2 only runs after Step 1a finds no live file, but one interactive run alongside the nightly window reaches it. Step 2 calls `live-tasks` instead, and the skill now says why those lines must never be field-split.
+- **The looper runner no longer risks dying silently on import.** It loads `looper_logic` relative to its own directory rather than to `STUDIO`, which resolves to the dev checkout even under the ops deploy - a `STUDIO`-relative import would pull the module from whichever branch dev happened to have checked out, and on one lacking `window_summary` that is an `ImportError` at module scope, before `notify()` exists. The window would be lost in silence, which is the failure this release was written to end. `looper_runner.py` also gains `from __future__ import annotations`, without which the new helper's `list[str]` annotation is a `TypeError` on this box's Python 3.8.
+- **The studio-looper behavioural eval no longer fails on correct refusals.** `test_concurrency_live_blocks_second_run` accepted only the phrases "already running" and "not starting a second", and failed on refusals worded "The run did not start. Another session already holds the SLT queue" and "Not starting the run. The concurrency guard reports a live SLT run". It failed the same way against unmodified skill text, so this was long-standing flakiness rather than a regression, and it cost real debugging time deciding which. `reports_refusal()` matches any of the usual wordings; breadth is safe because the structural assertions in the same eval - the live file still present, no second state file created - are what prove the run never started.
+
+## [1.20.0] - 2026-11-04
+
+### Added
+- **Session status** gains a column legend above the rows, naming each column. It is laid out by the same code as the rows, so it names only the columns that fit and breaks where they break at any width.
+
+### Changed
+- **Session status** calls the CLI's `busy` status `working`, in a muted green. The rename happens at display time: the CLI still emits `busy`, so the `shell` detection that depends on its word is untouched.
+- **Session status** sorts waiting, shell, idle, working. Working moved to the bottom because a session mid-turn is asking for nothing, while a parked one may be waiting to be picked up - which is also why idle is now orange, and no longer dimmed, since dim turned the orange brown. Within every group the most recently active session is at the top rather than the longest-standing one.
+- **Copywriter** is an agent (`.claude/agents/copywriter.md`) rather than a skill holding an abbreviated copy of the voice rules; the skill becomes a convenience trigger pointing at it. One definition of the voice instead of a skill-sized summary drifting from the master document.
+- **Four PM skills load again.** `pm-asana-sync`, `pm-onboard`, `pm-retro` and `pm-todos` existed only in the stale `skills/` directory, which was shadowed by `.claude/skills/`, and were therefore unloadable. Two of them want review against current practice: `pm-asana-sync` runs `sync.py` after mirror edits, and `pm-todos` writes task state to `TODO.md` alongside the Asana mirror.
+
+### Fixed
+- **Studio docs and skills point at the project ledger.** ADR-007 retired `context/portfolio/project-database.csv` on 2026-07-15 in favour of one Markdown file per project under `context/portfolio/projects/`, read through `pipeline/project_db.py`. Fifteen files still named the CSV, so `/harvest` and others were reading a path that no longer exists. The references are rewritten rather than repointed, since the data model changed too: rows became project files, columns became frontmatter fields, and the skills that load the ledger now go through `project_db.load_all()`.
+
+### Removed
+- The stale `skills/` directory, a June copy of the skill set shadowed by the actively maintained `.claude/skills/`. Eight of its thirteen entries were duplicates, `interview-brief` now lives in `bain-skills`, and `skills/athena` was a symlink.
+
+## [1.19.0] - 2026-10-30
+
+### Added
+- **Repo status** (`studio/scripts/repo-status`, tmux window `repos`): one screen showing every registered project's repo and what is unfinished in it - uncommitted changes, commits that exist only on this machine, branches not merged into the integration branch, extra worktrees - sorted so whatever is holding unfinished work sits at the top. The companion to session status: that one answers which session needs attention, this one answers where work was left. Nothing is fetched, so "behind" is not shown at all; without a fetch it would be a stale number dressed as a fact. See `docs/utilities/repo-status.md`.
+- **Repo status** counts three kinds of change apart: files Mark edited, the `asana-mirror.md` and `asana-ids.json` that `sync.py` rewrites on a schedule, and untracked `.claude/` and `.ddev/` directories that will never be committed. Counted together, ten of nineteen repos sat permanently at the top of the list, which is the same as sorting by nothing. A repo with nothing modified but its mirror gets its own state below "ahead".
+- **Repo status** reports ops drift on its second line: which tag the ops worktree holds, whether a newer one exists, and whether it has local changes that would stop `ops-deploy.sh`. A tagged release is not done until ops is running it (ADR 014).
+- **Session status** gains a quota header: each Claude account's five-hour and weekly rate limit, with the time each resets. Dim until 70%, amber there, red at 90%, taking whichever window of whichever account is worst. A window whose reset has already passed reports "reset" rather than quoting a percentage from a window that has gone.
+- **Session status** gains a model column and a context percentage per session, joined to each row by session id. Model choice is the largest lever on quota, so it earns a column. Both come from the files the status line already writes, so there are still no hooks and no database.
+
+## [1.18.0] - 2026-10-30
+
+### Added
+- **Session status** reads each session's transcript, in the same pass that gives it a timestamp, and shows two new columns: the context the session is holding (the figure Claude Code prints in its own footer) and the session's AI title, so a row says what the session is working on and not only that it is working.
+- **Session status:** a `shell` status. The CLI reports `busy` for as long as a background shell lives on, which hid finished turns among live ones. A session whose newest transcript entry is an assistant message that ended its turn with nothing outstanding is reported as `shell` - neither working nor parked, because the shell may yet wake it.
+
+### Changed
+- **Session status** sorts waiting, shell, busy, idle. A session sitting on a permission prompt or holding a finished turn is asking for something, so it comes above live work; idle sits last, since a session parked for two days is asking for nothing.
+- **Session status** moves to say what it is doing without being read: busy spins, the statuses that want a human pulse, idle is greyed out, and the cursor stays hidden until a key is pressed.
+- **Session status** names accounts after the signed-in email domain, so the column reads `bain` and `kf` - the same names the status line shows - instead of naming the config directory `main`.
+
+### Fixed
+- **Sync:** a registry entry whose directory no longer exists said "no CLAUDE.md found", which reads as a repo that is present but unconfigured. It now reports the missing path, so the fix (drop the entry from `projects.json`) is obvious.
+
+## [1.17.0] - 2026-10-30
+
+### Changed
+- **Session status** now covers every Claude account on the machine. `claude agents --json` reports only the config directory it is invoked with, so sessions running under a second account (KF, under `CLAUDE_CONFIG_DIR=~/.claude-kf`) were missing from the list with nothing to say so - 10 shown against 12 running. Every `~/.claude*` directory holding a `projects/` folder is now queried. An account column appears once more than one account has sessions.
+- **Session status** setup points the always-on `sessions` tmux window at the ops worktree rather than the development checkout, matching the `monitor` window. The pane must be respawned after a deploy to pick up a new version.
+
+### Removed
+- **Session status:** jump-to-pane on `enter`. `tmux switch-client` moves whichever client the app is running in, which with several clients attached is not reliably the one in front of you. The tmux target is displayed instead and the session is found by hand.
+
+## [1.16.0] - 2026-10-30
+
+### Added
+- **Raise invoice** (`studio/tools/raise-invoice/raise_invoice.py`): reports projects with unbilled Harvest hours and creates Harvest draft invoices, either from a project's uninvoiced time or as a fixed milestone line. Drafts only - it never sends - and it refuses to create one without an explicit client type, so IVA and IRPF treatment is always deliberate. See `docs/utilities/raise-invoice.md`.
+- **LinkedIn posting** (`studio/linkedin_post.py`, `/linkedin-post`): publishes an approved post to Mark's LinkedIn profile. Dry run by default, with a lint pass for m-dashes, length and hashtag count. Kairos hands off to it once Mark approves. See `docs/utilities/linkedin-post.md`.
+- **Session status** (`studio/scripts/session-status`): a dense list of every Claude Code session on the machine, which tmux pane it is in, and whether it needs attention, sorted needs-me-first. Reads `claude agents --json`, with no hooks and no database. See `docs/utilities/session-status.md`.
 - **Postman ping:** `send()` now alerts the live Claude session(s) working in the receiving project: tmux bell, a 📬 prefix on the window name, a message flashed on attached tmux clients, and a desktop notification. New `postman.py unmark` clears the marker. See `docs/gods/hermes/postman.md`.
 - **`inbox-alert.py` hook:** lists unread postman mail in Claude's context on each prompt and at session start, and clears the 📬 marker once the inbox is empty.
+- **ADR 022** - Asana tasks carry their own context: subtasks are only for the steps of a task that fits in one sitting; anything larger, and any feedback item, is a top-level task.
+- **ADR 023** - contact form bot protection via Cloudflare Turnstile, with the Hephaestus checklist for wiring it into Contact Form 7.
+- **ADR 024** - cutover hostname sweep.
+- Registered four projects: ASP (Algolia Search Plugin), JBP (Beato Properties), LRET (Lead Retriever) and TIS.
+
+### Changed
+- **`/raise-invoice` now drives Harvest** instead of producing an invoice document by hand. Harvest owns the numbering, the PDF, sending and payment tracking; the skill is a thin trigger for the script.
 
 ### Fixed
 - **Postman:** `--project` now resolves a registered prefix (e.g. `ASP`) through `docs/projects/*.md`. Before, only folder names matched, so KF's `ASP` messages fell back to `studio/inbox/` and sat unread.
+- **Bitbucket SSH:** remotes use `ssh.bitbucket.org` (BSTD-834), and TARA is correctly recorded as a GitHub repo rather than Bitbucket.
 
 ## [1.15.1] - 2026-10-20
 
@@ -429,7 +657,14 @@ this version:
   commission → build → QA → delivery → harvest, plus studio ops (onboarding, invoicing,
   tax prep, brand voice, portfolio, etc).
 
-[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.14.0...develop
+[Unreleased]: https://github.com/markbaindesign/bain-studio/compare/1.20.0...develop
+[1.20.0]: https://github.com/markbaindesign/bain-studio/compare/1.19.0...1.20.0
+[1.19.0]: https://github.com/markbaindesign/bain-studio/compare/1.18.0...1.19.0
+[1.18.0]: https://github.com/markbaindesign/bain-studio/compare/1.17.0...1.18.0
+[1.17.0]: https://github.com/markbaindesign/bain-studio/compare/1.16.0...1.17.0
+[1.16.0]: https://github.com/markbaindesign/bain-studio/compare/1.15.1...1.16.0
+[1.15.1]: https://github.com/markbaindesign/bain-studio/compare/1.15.0...1.15.1
+[1.15.0]: https://github.com/markbaindesign/bain-studio/compare/1.14.0...1.15.0
 [1.14.0]: https://github.com/markbaindesign/bain-studio/compare/1.13.1...1.14.0
 [1.13.1]: https://github.com/markbaindesign/bain-studio/compare/1.13.0...1.13.1
 [1.13.0]: https://github.com/markbaindesign/bain-studio/compare/1.12.0...1.13.0

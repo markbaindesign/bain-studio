@@ -9,7 +9,8 @@ Tasks in this queue should describe trivial, harmless work confined to this dire
 
 ## Asana
 
-ASANA_PROJECT_GID: 1216618878942979
+# ASANA_PROJECT_GID is not recorded here: this repo is public.
+# Resolve it with: python3 studio/registry.py --prefix SLT --field gid
 ASANA_TASK_PREFIX: SLT
 ASANA_PROJECT_NAME: Studio Looper (Test)
 

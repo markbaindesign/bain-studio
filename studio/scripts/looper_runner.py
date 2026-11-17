@@ -21,6 +21,8 @@ nothing further is scheduled, so "stop when limit reached" is inherent — a run
 that exhausts quota simply ends, and the runner moves on or exits.
 """
 
+from __future__ import annotations
+
 import argparse
 import datetime
 import json
@@ -175,6 +177,46 @@ def notify(msg: str, priority: str = "normal") -> None:
         log(f"notify failed: {e}")
 
 
+# Deliberately __file__-relative, not STUDIO-relative. STUDIO is where the DATA
+# lives (mirrors, .env) and resolves to the dev checkout even when cron runs this
+# from the ops worktree — so a STUDIO-relative import would load looper_logic from
+# whatever branch dev happens to have checked out. On a branch without
+# window_summary that is an ImportError at module scope, before notify() exists:
+# the window would die completely silently, which is the exact failure this change
+# was written to prevent. Code comes from the same deploy as the runner.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from looper_logic import (  # noqa: E402  (path set above)
+    WINDOW_EXIT_DEADLINE,
+    WINDOW_EXIT_MAX_ITERATIONS,
+    WINDOW_EXIT_NO_PROGRESS,
+    window_summary,
+)
+
+
+def queued_tasks_remaining() -> list[str]:
+    """Local IDs still at Looper Status 'Queue' in the SL mirror.
+
+    Used to tell an early stop apart from a genuinely drained queue. A
+    no-progress iteration means only that task-looper.log didn't grow — it could
+    be an empty queue, or a session that declined to start. Those look identical
+    in the log, so the 2026-11-05 window that ended after 1 of 6 tasks passed
+    unnoticed until it was read by hand the next morning.
+
+    Best-effort: a parse failure must never derail the window, so it returns an
+    empty list and lets the caller fall back to the old wording.
+    """
+    try:
+        from looper_logic import build_queue, parse_mirror_tasks  # same deploy as above
+
+        mirror = STUDIO / "studio" / "looper" / "asana-mirror.md"
+        if not mirror.is_file():
+            return []
+        return [t.local_id for t in build_queue(parse_mirror_tasks(mirror.read_text()))]
+    except Exception as e:
+        log(f"could not count remaining queue: {e}")
+        return []
+
+
 def window_deadline() -> datetime.datetime:
     """Quota-window end: reset_ts from ratelimit-current.json.
 
@@ -226,9 +268,12 @@ def run_window(label: str) -> None:
     log(f"window {label}: run id {run_id} — iterating until queue empty / no progress / {deadline:%H:%M}")
     tasks_done = 0
 
+    exit_reason = WINDOW_EXIT_MAX_ITERATIONS
+
     for i in range(1, MAX_ITERATIONS + 1):
         if datetime.datetime.now() >= deadline:
             log(f"window {label}: deadline {deadline:%H:%M} reached after {i - 1} iterations")
+            exit_reason = WINDOW_EXIT_DEADLINE
             break
 
         clear_orphan_state()
@@ -255,15 +300,15 @@ def run_window(label: str) -> None:
         else:
             log(f"window {label}: iteration {i} exited {r.returncode} — NO progress "
                 f"(queue empty or failure, see {run_log.name}) — ending window")
+            exit_reason = WINDOW_EXIT_NO_PROGRESS
             break
 
     clear_orphan_state()
-    log(f"window {label}: done — {tasks_done} productive iteration(s)")
-    notify(
-        f"looper window '{label}' finished: {tasks_done} productive iteration(s). "
-        f"Details in ~/logs/studio-looper.log",
-        priority="normal" if tasks_done else "high",
+    log_line, msg, priority = window_summary(
+        label, tasks_done, queued_tasks_remaining(), exit_reason
     )
+    log(log_line)
+    notify(msg, priority=priority)
 
 
 def main() -> None:

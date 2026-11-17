@@ -4,9 +4,15 @@ Date: 2026-09-11
 Status: Proposed
 Related: [ADR 009](009-studio-looper-canonical.md) (studio-looper canonical), [ADR 014](014-ops-worktree-for-scheduled-jobs.md) (ops worktree)
 
+> **Redacted 2026-11-06.** Client names, domains, provider hostnames and application
+> IDs were removed from this ADR; project prefixes are kept. The decisions and the
+> reasoning are unchanged. What was removed is in
+> `$STUDIO_CONTENT_DIR/internal/studio-infrastructure-identifiers.md` or in that
+> project's `Dev Ops/` note in Dropbox. See ADR 021, BSTD-875.
+
 ## Context
 
-Khyentse Foundation is billed on its own Claude account, reached through a separate config
+One client (KF-WEB, KF-TARA) is billed on its own Claude account, reached through a separate config
 directory (`~/.claude-kf`, pinned by an `.envrc` in the project root). The studio account
 covers everything else.
 
@@ -58,7 +64,8 @@ PRESERVE_FOREIGN_IDS: true
 ```
 
 `PRESERVE_FOREIGN_IDS: true` matters for the same reason it does on `SL`: multi-homed tasks keep
-their home ID (`KF-WEB-185`), which is how the skill routes work to `/media/data/dev/vvv/clients/www/kf-21`.
+their home ID (`KF-WEB-185`), which is how the skill routes work to that project's path
+(resolved through `studio/registry.py`).
 
 ### 3. Register the queue
 

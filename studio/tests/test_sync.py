@@ -33,6 +33,13 @@ from sync import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _no_task_links():
+    """Keep the real registry out of every test: no local ID resolves unless a test says so."""
+    with patch.object(sync, "_LINK_MAPS", ({}, {})):
+        yield
+
+
 @pytest.fixture
 def proj(tmp_path):
     p = ProjectConfig(name="Test Project", root=tmp_path, gid="proj_gid_123", prefix="TEST")
@@ -45,7 +52,7 @@ def mirror_text():
     return """\
 # Bot Asana Task Mirror
 Last synced: 2026-05-20
-Workspace GID: 512209774840
+Workspace GID: 1200000000000001
 Assignee GID: 1209202434387214
 
 ## Test Project
@@ -868,7 +875,7 @@ def _registry(tmp_path, monkeypatch, projects):
 
 def test_resolve_task_ref_url_gid_and_local_id(tmp_path, monkeypatch):
     _registry(tmp_path, monkeypatch, {"bd": {"1217094791482756": "BD-152"}})
-    assert sync.resolve_task_ref("https://app.asana.com/1/512209774840/task/1217094791482756?focus=true") == "1217094791482756"
+    assert sync.resolve_task_ref("https://app.asana.com/1/1200000000000001/task/1217094791482756?focus=true") == "1217094791482756"
     assert sync.resolve_task_ref("https://app.asana.com/1/512/project/99/task/42") == "42"
     assert sync.resolve_task_ref(" 1217094791482756 ") == "1217094791482756"
     assert sync.resolve_task_ref("bd-152") == "1217094791482756"
@@ -1079,6 +1086,26 @@ def test_create_task_full_dependency_failure_is_loud(proj, fake_asana, monkeypat
         sync.create_task_full(proj, "Do it", depends_on="blocked_gid")
 
 
+def test_create_task_full_follow_up_links_the_original(proj, fake_asana):
+    lid = sync.create_task_full(proj, "Sea limerick", notes="Add it & check",
+                                follow_up_of=("orig_gid", "ACME-002"))
+    data = fake_asana[0][1]["data"]
+    assert "notes" not in data
+    assert data["html_notes"] == (
+        '<body>Follow-up to <a data-asana-gid="orig_gid" data-asana-dynamic="false">'
+        'ACME-002</a>.\n\nAdd it &amp; check</body>')
+    block = proj.mirror_file.read_text().split(f"### {lid} ")[1]
+    assert "- **Notes:** Follow-up to ACME-002. Add it & check" in block
+    assert ("/tasks/orig_gid/stories", {"data": {"html_text":
+            f'<body>Follow-up: <a data-asana-gid="new_gid" data-asana-dynamic="false">{lid}</a></body>'}}
+            ) in fake_asana
+
+
+def test_create_task_full_follow_up_without_notes(proj, fake_asana):
+    sync.create_task_full(proj, "Sea limerick", follow_up_of=("orig_gid", "ACME-002"))
+    assert fake_asana[0][1]["data"]["html_notes"].endswith("ACME-002</a>.</body>")
+
+
 # ---------------------------------------------------------------------------
 # assign_ids - tasks carrying another project's ID
 # ---------------------------------------------------------------------------
@@ -1126,3 +1153,717 @@ def test_assign_ids_multihomed_pair_stops_flipping(tmp_path):
             assign_ids(p, [t], {"next_seq": 500, "tasks": {}}, "f", dry_run=True,
                        prefix_owners=prefix_gids)
             assert t["_local_id"] == "TARA-134"
+
+
+# ---------------------------------------------------------------------------
+# Review comment rendering (looper review notes)
+# ---------------------------------------------------------------------------
+
+REVIEW_NOTE = (
+    "@mark Review: header & nav fix || "
+    "Where: looper/a3f2c1 · 2252ad1 || "
+    "Check: || 1. Resize 375px -> 1400px || 2. [menu] toggle at <1000px || "
+    "Gaps: 320px only — hero overflows 7px"
+)
+
+
+def test_progress_plain_expands_block_separator_and_strips_mention():
+    plain = sync._progress_plain(REVIEW_NOTE)
+    lines = plain.split("\n")
+    assert lines[0] == "Review: header & nav fix"
+    assert lines[1] == "Where: looper/a3f2c1 · 2252ad1"
+    assert lines[-1] == "Gaps: 320px only — hero overflows 7px"
+    assert "||" not in plain
+    assert "@mark" not in plain
+
+
+def test_render_progress_adds_mention_and_escapes_html():
+    with patch.object(sync, "USER_GID", "507443625075"):
+        html, wants = sync._render_progress(REVIEW_NOTE)
+    assert wants is True
+    assert html.startswith('<body><a data-asana-gid="507443625075"/> ')
+    assert html.endswith("</body>")
+    # Asana rejects bare &, < and > in html_text with a 400.
+    assert "&amp;" in html and "&lt;1000px" in html and "-&gt;" in html
+    assert "<menu>" not in html
+
+
+def test_render_progress_leaves_quotes_and_apostrophes_alone():
+    # Asana does not decode the numeric entity Python emits for an apostrophe:
+    # escaping quotes put a literal "&#x27;" in the comment (verified against
+    # SLT-001, 2026-11-05). Only & < > may be escaped.
+    html, _ = sync._render_progress("""Review: Mark's "quoted" & <tag> test""")
+    assert "&#x27;" not in html and "&quot;" not in html
+    assert "Mark's" in html and '"quoted"' in html
+    assert "&amp;" in html and "&lt;tag&gt;" in html
+
+
+def test_render_progress_without_token_posts_no_mention():
+    # Mark's Asana inbox is filtered to "Mentioned": a note without the token
+    # must still post, but it must NOT mention him.
+    html, wants = sync._render_progress("Checked 2026-11-05.")
+    assert wants is False
+    assert "data-asana-gid" not in html
+    assert html == "<body>Checked 2026-11-05.</body>"
+
+
+def test_render_progress_empty_note_renders_nothing():
+    assert sync._render_progress("") == (None, False)
+    assert sync._render_progress("   ") == (None, False)
+
+
+def test_comment_matches_ignores_asanas_rendered_mention():
+    # Asana returns the mention as a display name, so the posted comment never
+    # equals the mirror text that produced it. Matching is by suffix.
+    plain = sync._progress_plain(REVIEW_NOTE)
+    assert sync._comment_matches("@Mark Bain " + plain, plain)
+    assert sync._comment_matches(plain, plain)
+    assert not sync._comment_matches("@Mark Bain Review: something else", plain)
+    assert not sync._comment_matches(plain, "")
+
+
+def test_leave_progress_comment_edits_existing_story_in_place():
+    with patch.object(sync, "_put") as put, patch.object(sync, "_post") as post:
+        got = sync.leave_progress_comment("TASK1", REVIEW_NOTE, story_gid="STORY9")
+    assert got == "STORY9"
+    put.assert_called_once()
+    assert put.call_args[0][0] == "/stories/STORY9"
+    assert "html_text" in put.call_args[0][1]["data"]
+    post.assert_not_called()
+
+
+def test_leave_progress_comment_falls_back_to_new_post_when_edit_fails():
+    # A deleted or foreign story must not swallow the note.
+    # USER_GID is patched off so the follower lookup cannot reach live Asana:
+    # sync.py runs load_dotenv at import, so the real GID is set under pytest.
+    with patch.object(sync, "USER_GID", None), \
+         patch.object(sync, "_put", side_effect=RuntimeError("404")), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}) as post:
+        got = sync.leave_progress_comment("TASK1", REVIEW_NOTE, story_gid="GONE")
+    assert got == "NEW1"
+    assert post.call_args[0][0] == "/tasks/TASK1/stories"
+
+
+def test_bot_comment_stories_returns_gid_and_timestamp():
+    stories = [
+        {"resource_subtype": "comment_added", "gid": "S1", "text": " hello ",
+         "created_at": "2026-11-05T10:00:00.000Z",
+         "created_by": {"gid": sync.BAINBOT_GID}},
+        {"resource_subtype": "comment_added", "gid": "S2", "text": "from Mark",
+         "created_at": "2026-11-05T11:00:00.000Z", "created_by": {"gid": "999"}},
+        {"resource_subtype": "assigned", "gid": "S3",
+         "created_by": {"gid": sync.BAINBOT_GID}},
+    ]
+    got = sync.bot_comment_stories(stories)
+    assert got == [{"gid": "S1", "text": "hello",
+                    "created_at": "2026-11-05T10:00:00.000Z"}]
+
+
+def test_comment_matches_rejects_a_tail_of_a_longer_comment():
+    # A short note that happens to be the tail of an older, longer comment is
+    # not a duplicate of it — only a rendered mention may precede the body.
+    older = ("Review: header fix\nWhere: looper/a3f2c1\n"
+             + "x" * 200 + "\nGaps: 320px only")
+    assert not sync._comment_matches(older, "Gaps: 320px only")
+
+
+# ---------------------------------------------------------------------------
+# Note validation — a wall of text is not posted at all
+# ---------------------------------------------------------------------------
+
+# The comment that prompted all of this, from a real bain.design session.
+REAL_WALL = (
+    "Correction 2026-11-05, replacing my earlier note, which contradicted itself "
+    "and was based on a scan of three pages. Commits 2252ad1 and 38cf615. The "
+    "clients index itself was already responsive; the sideways scroll came from "
+    "the site header, which only fits on one line from 1000px up. Below that it "
+    "wrapped to two and three lines, and under about 720px the nav ran past the "
+    "page edge, so every template scrolled sideways between 641px and 720px."
+)
+
+
+def test_validate_rejects_the_wall_of_text_that_prompted_this():
+    assert "150-char limit" in sync.validate_progress_note(REAL_WALL)
+
+
+def test_validate_passes_a_templated_review_note():
+    assert sync.validate_progress_note(REVIEW_NOTE) == ""
+
+
+def test_validate_passes_heartbeats_and_short_free_form_notes():
+    # Other skills (studio-delivery-gate, feature, end-session) write their own
+    # short formats. A note under every limit passes whatever its shape.
+    assert sync.validate_progress_note("Checked 2026-11-05.") == ""
+    assert sync.validate_progress_note("") == ""
+    assert sync.validate_progress_note(
+        "Blocked 2026-11-05. Gravity Forms licence key missing.") == ""
+
+
+def test_validate_rejects_too_many_blocks():
+    note = "@mark Review: x || " + " || ".join(
+        f"{i}. do a thing" for i in range(1, 7))
+    assert "block limit" in sync.validate_progress_note(note)
+
+
+def test_validate_rejects_an_overlong_note_under_the_block_limit():
+    note = " || ".join(["x" * 140] * 5)   # each block legal, total is not
+    assert "exceeds the 500-char limit" in sync.validate_progress_note(note)
+
+
+# ---------------------------------------------------------------------------
+# Task descriptions — a wall of text is not written at all (BSTD-864)
+# ---------------------------------------------------------------------------
+
+# Trimmed from BSTD-856's real description: the brief, then a history of how the
+# problem arose, which is what the limit exists to keep out of a task.
+REAL_DESCRIPTION_WALL = (
+    "brand-voice.md is the single source of truth for all writing rules and it is "
+    "not in version control. It lives in Dropbox at Work/Content/Brand Voice/.\n\n"
+    "Why it matters now: on 2026-11-04 it went from 1,618 to ~3,890 words in one "
+    "session - typography.md folded in, the VOICE DNA doc folded in, the "
+    "passive-voice rule rewritten, the paragraph-length rule removed, rules added "
+    "from Wikipedia Signs of AI writing, and seven words taken off the banned "
+    "list. Dropbox has file history but no commit log, no diff and no message "
+    "explaining any of it.\n\n" + "Padding that stands in for the rest of it. " * 20
+)
+
+
+def test_description_limit_rejects_the_wall_of_text_that_prompted_this():
+    assert len(REAL_DESCRIPTION_WALL) > sync.DESCRIPTION_MAX_CHARS
+    assert "over the 1200-char limit" in sync.validate_task_description(REAL_DESCRIPTION_WALL)
+
+
+def test_description_limit_passes_a_normal_description():
+    # The studio median is ~500 chars; the limit must not bite one of those.
+    assert sync.validate_task_description("x" * 500) == ""
+    assert sync.validate_task_description("") == ""
+    assert sync.validate_task_description(None) == ""
+    assert sync.validate_task_description(
+        "Severity: Medium | Area: Contact form\n\n"
+        "The partner enquiry form redirects to the thank-you page for the wrong "
+        "form.\n\nScreenshot: /home/bain/Pictures/shot.png") == ""
+
+
+def test_create_task_full_refuses_an_overlong_description_before_any_write(proj, fake_asana):
+    with pytest.raises(ValueError, match="over the 1200-char limit"):
+        sync.create_task_full(proj, "Do it", notes=REAL_DESCRIPTION_WALL)
+    assert fake_asana == []   # nothing reached Asana
+
+
+def test_create_task_refuses_an_overlong_description(proj, fake_asana):
+    with pytest.raises(ValueError, match="over the 1200-char limit"):
+        sync.create_task("proj_gid_123", "Do it", notes=REAL_DESCRIPTION_WALL)
+    assert fake_asana == []
+
+
+def test_update_task_refuses_a_description_no_shorter_than_the_one_it_replaces(monkeypatch):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    monkeypatch.setattr(sync, "_get", lambda path, params=None: {"data": {"notes": "Short."}})
+    with pytest.raises(ValueError, match="over the 1200-char limit"):
+        sync.update_task("111222333", notes=REAL_DESCRIPTION_WALL)
+    assert puts == []
+
+
+def test_update_task_allows_an_overlong_but_shorter_correction(monkeypatch):
+    # The escape hatch: a wrong 3,500-char description must be correctable to
+    # 1,400 chars, even though 1,400 is over the limit. Refusing that would
+    # leave the misleading text in place, which is the opposite of the point.
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    monkeypatch.setattr(sync, "_get",
+                        lambda path, params=None: {"data": {"notes": "x" * 3500}})
+    sync.update_task("111222333", notes="y" * 1400)
+    assert puts[0][1]["data"]["notes"] == "y" * 1400
+
+
+def test_dry_run_still_refuses_an_overlong_description(proj, fake_asana):
+    # A caller must be able to find out with --dry-run that the description fails.
+    with pytest.raises(ValueError):
+        sync.create_task_full(proj, "Do it", notes=REAL_DESCRIPTION_WALL, dry_run=True)
+
+
+def test_update_task_allows_a_short_description(monkeypatch):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sync.update_task("111222333", notes="Corrected: the form redirects to /thanks.")
+    assert puts[0][1]["data"]["notes"].startswith("Corrected:")
+
+
+# ---------------------------------------------------------------------------
+# Descriptions stay read-only in the mirror, but an edit is not swallowed
+# ---------------------------------------------------------------------------
+
+def test_mirror_description_edit_is_not_pushed_but_is_reported(sample_task, caplog):
+    prev = {"notes": "Rewritten in the mirror.", "due": "2026-05-25", "start": "none",
+            "assignee": "Bot (999888777)", "assignee_status": "today"}
+    with caplog.at_level("WARNING"):
+        pushed = _push_simple_fields(sample_task, prev, dry_run=True, prefix="TEST")
+    assert pushed is False
+    assert "description edited in the mirror" in caplog.text
+    assert "--update-task" in caplog.text
+
+
+def test_unedited_description_is_silent(sample_task, caplog):
+    prev = {"notes": "Some notes here.", "due": "2026-05-25", "start": "none",
+            "assignee": "Bot (999888777)", "assignee_status": "today"}
+    with caplog.at_level("WARNING"):
+        _push_simple_fields(sample_task, prev, dry_run=True, prefix="TEST")
+    assert "description edited" not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Generic custom fields — mirrored and pushed by name
+# ---------------------------------------------------------------------------
+
+def _cf_priority(value=None):
+    return {
+        "gid": "1155368350785978", "name": "Priority", "resource_subtype": "enum",
+        "enum_value": {"gid": "1155368350785979", "name": value} if value else None,
+        "enum_options": [
+            {"gid": "1155368350785979", "name": "High"},
+            {"gid": "1155368350785980", "name": "Medium"},
+            {"gid": "1155368350785981", "name": "Low"},
+        ],
+    }
+
+
+def _cf_features(*values):
+    opts = [
+        {"gid": "1216075949558841", "name": "Greenhouse"},
+        {"gid": "1220254742605531", "name": "Security"},
+        {"gid": "1216075949558848", "name": "Dev Ops"},
+    ]
+    by_name = {o["name"]: o for o in opts}
+    return {
+        "gid": "1215208851588973", "name": "Features", "resource_subtype": "multi_enum",
+        "multi_enum_values": [by_name[v] for v in values],
+        "enum_options": opts,
+    }
+
+
+@pytest.fixture
+def cf_env(monkeypatch):
+    monkeypatch.setattr(sync, "PRIORITY_FIELD_GID", "1155368350785978")
+    monkeypatch.setattr(sync, "LOOPER_STATUS_FIELD_GID", "looper_field")
+    monkeypatch.setattr(sync, "SHARED_FIELD_GID", "local_id_field")
+    monkeypatch.setattr(sync, "LAST_SYNCED_FIELD_GID", "last_synced_field")
+    monkeypatch.setattr(sync, "_ENUM_OPTIONS", {})
+    monkeypatch.setattr(sync, "_FIELD_WARNED", set())
+
+
+def test_cf_mirror_value_covers_every_value_shape():
+    assert sync._cf_mirror_value(_cf_priority("High")) == "High"
+    assert sync._cf_mirror_value(_cf_priority()) == "none"
+    assert sync._cf_mirror_value(_cf_features("Greenhouse", "Security")) == "Greenhouse, Security"
+    assert sync._cf_mirror_value(_cf_features()) == "none"
+    assert sync._cf_mirror_value(
+        {"gid": "n", "name": "Score", "resource_subtype": "number", "number_value": 7.0}) == "7"
+    assert sync._cf_mirror_value(
+        {"gid": "n", "name": "Score", "resource_subtype": "number", "number_value": 7.5}) == "7.5"
+    assert sync._cf_mirror_value(
+        {"gid": "n", "name": "Score", "resource_subtype": "number", "number_value": None}) == "none"
+    assert sync._cf_mirror_value(
+        {"gid": "d", "name": "Shipped", "resource_subtype": "date",
+         "date_value": {"date": "2026-11-05"}}) == "2026-11-05"
+    assert sync._cf_mirror_value(
+        {"gid": "t", "name": "Ref", "resource_subtype": "text", "text_value": " ABC "}) == "ABC"
+    # A type the mirror cannot express is still shown, using Asana's own rendering.
+    assert sync._cf_mirror_value(
+        {"gid": "m", "name": "Milestone", "resource_subtype": "reference",
+         "display_value": "Launch"}) == "Launch"
+
+
+def test_custom_field_lines_skip_managed_and_built_in_fields(cf_env):
+    t = {"custom_fields": [
+        {"gid": "local_id_field", "name": "Local ID", "resource_subtype": "text",
+         "text_value": "TEST-001"},
+        {"gid": "last_synced_field", "name": "Last Synced", "resource_subtype": "text",
+         "text_value": "2026-11-05"},
+        _cf_priority("High"),
+        {"gid": "looper_field", "name": "Looper Status", "resource_subtype": "enum",
+         "enum_value": {"gid": "q", "name": "Queue"}},
+        _cf_features("Security"),
+        {"gid": "rev", "name": "Review Status", "resource_subtype": "enum",
+         "enum_value": {"gid": "r1", "name": "Needs review"}},
+    ]}
+    lines = sync._custom_field_lines(t)
+    # Local ID and Last Synced belong to the sync; Priority and Looper Status
+    # already have their own mirror lines.
+    assert lines == ["- **Features:** Security", "- **Review Status:** Needs review"]
+
+
+def test_task_lines_render_custom_fields_after_looper_status(cf_env, sample_task):
+    sample_task["custom_fields"] = [_cf_features("Security"), _cf_priority("High")]
+    sample_task["_priority"] = "High"
+    lines = _task_lines(sample_task, {}, {})
+    assert "- **Priority:** High" in lines
+    assert "- **Features:** Security" in lines
+    assert lines.index("- **Features:** Security") == lines.index("- **Looper Status:** none") + 1
+
+
+def test_parse_existing_mirror_carries_every_parsed_field(proj, mirror_text):
+    proj.mirror_file.write_text(mirror_text.replace(
+        "- **Section:** DOING", "- **Section:** DOING\n- **Features:** Security"))
+    carried = parse_existing_mirror(proj)
+    assert carried["111222333"]["_raw"]["features"] == "Security"
+
+
+def test_push_custom_fields_sets_a_changed_enum(cf_env, monkeypatch, sample_task):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_priority(None)]
+    prev = {"_raw": {"priority": "High"}}
+    assert sync._push_custom_fields(sample_task, prev, dry_run=False, prefix="TEST") is True
+    assert puts == [("/tasks/111222333",
+                     {"data": {"custom_fields": {"1155368350785978": "1155368350785979"}}})]
+    # Reflected on the task, so the mirror written later this run shows High and
+    # the next run does not push a stale "none" back over it.
+    assert sample_task["_priority"] == "High"
+    assert sync._cf_mirror_value(sample_task["custom_fields"][0]) == "High"
+
+
+def test_push_custom_fields_matches_enum_options_case_insensitively(cf_env, monkeypatch, sample_task):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_priority(None)]
+    sync._push_custom_fields(sample_task, {"_raw": {"priority": "high"}},
+                             dry_run=False, prefix="TEST")
+    assert puts[0][1]["data"]["custom_fields"]["1155368350785978"] == "1155368350785979"
+
+
+def test_push_custom_fields_skips_an_unknown_enum_value_loudly(cf_env, monkeypatch, sample_task, caplog):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_priority("High")]
+    with caplog.at_level("WARNING"):
+        changed = sync._push_custom_fields(sample_task, {"_raw": {"priority": "Urgent"}},
+                                           dry_run=False, prefix="TEST")
+    assert changed is False
+    assert puts == []   # a bad value never goes in a PUT: Asana 400s the whole thing
+    assert "'Urgent' is not an option of 'Priority'" in caplog.text
+
+
+def test_push_custom_fields_writes_a_multi_enum_as_the_whole_set(cf_env, monkeypatch, sample_task):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_features("Greenhouse")]
+    sync._push_custom_fields(sample_task, {"_raw": {"features": "Greenhouse, Security"}},
+                             dry_run=False, prefix="TEST")
+    assert puts[0][1]["data"]["custom_fields"]["1215208851588973"] == [
+        "1216075949558841", "1220254742605531"]
+
+
+def test_push_custom_fields_clears_a_field_set_to_none(cf_env, monkeypatch, sample_task):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_priority("High"), _cf_features("Security")]
+    sync._push_custom_fields(sample_task, {"_raw": {"priority": "none", "features": "none"}},
+                             dry_run=False, prefix="TEST")
+    fields = puts[0][1]["data"]["custom_fields"]
+    assert fields["1155368350785978"] is None
+    assert fields["1215208851588973"] == []
+
+
+def test_push_custom_fields_leaves_looper_status_to_push_simple_fields(cf_env, monkeypatch, sample_task):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [
+        {"gid": "looper_field", "name": "Looper Status", "resource_subtype": "enum",
+         "enum_value": None, "enum_options": [{"gid": "q", "name": "Queue"}]}]
+    assert sync._push_custom_fields(sample_task, {"_raw": {"looper_status": "Queue"}},
+                                    dry_run=False, prefix="TEST") is False
+    assert puts == []
+
+
+def test_push_custom_fields_ignores_a_field_absent_from_the_mirror(cf_env, monkeypatch, sample_task):
+    # A mirror written by an older sync.py has no line for the field. There is
+    # nothing to compare against, so it must not be read as "cleared".
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_priority("High")]
+    assert sync._push_custom_fields(sample_task, {"_raw": {"due": "2026-05-25"}},
+                                    dry_run=False, prefix="TEST") is False
+    assert puts == []
+
+
+def test_push_custom_fields_dry_run_writes_nothing(cf_env, monkeypatch, sample_task, caplog):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [_cf_priority(None)]
+    with caplog.at_level("INFO"):
+        assert sync._push_custom_fields(sample_task, {"_raw": {"priority": "High"}},
+                                        dry_run=True, prefix="TEST") is False
+    assert puts == []
+    assert "Would set custom fields" in caplog.text
+
+
+def test_push_custom_fields_skips_a_read_only_field_type(cf_env, monkeypatch, sample_task):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [
+        {"gid": "m", "name": "Milestone", "resource_subtype": "reference",
+         "display_value": "Launch"}]
+    assert sync._push_custom_fields(sample_task, {"_raw": {"milestone": "Something else"}},
+                                    dry_run=False, prefix="TEST") is False
+    assert puts == []
+
+
+def test_push_custom_fields_rejects_a_non_numeric_number(cf_env, monkeypatch, sample_task, caplog):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [
+        {"gid": "n", "name": "Score", "resource_subtype": "number", "number_value": 7.0}]
+    with caplog.at_level("WARNING"):
+        sync._push_custom_fields(sample_task, {"_raw": {"score": "high-ish"}},
+                                 dry_run=False, prefix="TEST")
+    assert puts == []
+    assert "is not a number" in caplog.text
+
+
+def test_push_custom_fields_rejects_a_non_iso_date(cf_env, monkeypatch, sample_task, caplog):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [
+        {"gid": "d", "name": "Shipped", "resource_subtype": "date",
+         "date_value": {"date": "2026-11-05"}}]
+    with caplog.at_level("WARNING"):
+        sync._push_custom_fields(sample_task, {"_raw": {"shipped": "05/11/2026"}},
+                                 dry_run=False, prefix="TEST")
+    assert puts == []
+    assert "is not an ISO date" in caplog.text
+
+
+def test_custom_field_colliding_with_a_built_in_line_is_warned_once(cf_env, caplog):
+    t = {"custom_fields": [
+        {"gid": "x", "name": "Blockers", "resource_subtype": "text", "text_value": "hi"}]}
+    with caplog.at_level("WARNING"):
+        assert sync._custom_field_lines(t) == []
+        sync._custom_field_lines(t)
+    assert caplog.text.count("collides with the built-in mirror field") == 1
+
+
+def test_a_description_cannot_overwrite_a_real_field(proj, mirror_text):
+    # A description is free text and routinely contains its own bold bullets —
+    # the walls of text that prompted the limit were written in this style, and
+    # an emailed one is untrusted input. Collected into the same field map, the
+    # last match for a key won, so these lines replaced the real values and were
+    # then pushed to Asana on the next mirror-newer run.
+    poisoned = mirror_text.replace(
+        "- **Notes:** Some notes here.",
+        "- **Notes:** Pasted from the vendor email:\n"
+        "- **Priority:** none\n"
+        "- **Section:** DONE\n"
+        "- **Due:** none\n"
+        "- **Features:** none\n"
+        "- **Blockers:** quoted, not the real line\n")
+    proj.mirror_file.write_text(
+        poisoned.replace("- **Section:** DOING",
+                         "- **Section:** DOING\n- **Priority:** High\n- **Features:** Security"))
+    prev = parse_existing_mirror(proj)["111222333"]
+    assert prev["section"] == "DOING"
+    assert prev["due"] == "2026-05-25"
+    assert prev["_raw"]["priority"] == "High"
+    assert prev["_raw"]["features"] == "Security"
+    assert prev["blockers"] == "None identified."
+    # Only the description's first line is kept — enough to notice an edit.
+    assert prev["notes"] == "Pasted from the vendor email:"
+
+
+def test_a_foreign_priority_field_is_never_pushed_by_name(cf_env, monkeypatch, sample_task, caplog):
+    # The built-in Priority line renders from PRIORITY_FIELD_GID only. A project
+    # whose own "Priority" field has a different GID therefore shows `none` in
+    # the mirror while Asana holds a value: pushing by name would clear it on
+    # every task, every run.
+    other = _cf_priority("High")
+    other["gid"] = "9999999999"
+    sample_task["custom_fields"] = [other]
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    with caplog.at_level("WARNING"):
+        assert sync._push_custom_fields(sample_task, {"_raw": {"priority": "none"}},
+                                        dry_run=False, prefix="TEST") is False
+        assert sync._custom_field_lines(sample_task) == []
+    assert puts == []
+    assert "collides with the built-in mirror field" in caplog.text
+
+
+def test_push_custom_fields_sends_a_date_as_an_object(cf_env, monkeypatch, sample_task):
+    # A date custom field takes {"date": "YYYY-MM-DD"}, not the bare string a
+    # text field takes. Every field goes in one PUT, so the wrong shape would
+    # 400 the whole write and lose the other fields with it.
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    sample_task["custom_fields"] = [
+        {"gid": "d", "name": "Shipped", "resource_subtype": "date", "date_value": None}]
+    sync._push_custom_fields(sample_task, {"_raw": {"shipped": "2026-11-05"}},
+                             dry_run=False, prefix="TEST")
+    assert puts[0][1]["data"]["custom_fields"]["d"] == {"date": "2026-11-05"}
+
+
+def test_field_regex_only_matches_a_top_level_bullet():
+    assert sync.FIELD_RE.findall("- **Priority:** High") == [("Priority", "High")]
+    assert sync.FIELD_RE.findall("  - **Priority:** High") == []
+    assert sync.FIELD_RE.findall("see - **Priority:** High inline") == []
+
+
+# ---------------------------------------------------------------------------
+# @-mention notification (follower precondition)
+# ---------------------------------------------------------------------------
+
+def test_mention_adds_follower_before_posting():
+    # Asana notifies on an html_text mention only if the person already follows
+    # the task, so the note must be preceded by addFollowers.
+    calls = []
+
+    def fake_post(path, payload):
+        calls.append(path.split("?")[0])
+        if "addFollowers" in path:
+            return {"data": {"followers": [{"gid": "507443625075", "name": "Mark Bain"}]}}
+        return {"data": {"gid": "NEW1"}}
+
+    task = {"gid": "TASK1", "followers": [{"gid": "bot", "name": "DevBot"}]}
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "MENTION_FOLLOW_WAIT", 0), \
+         patch.object(sync, "_get", return_value={"data": {"followers": []}}), \
+         patch.object(sync, "_post", side_effect=fake_post):
+        got = sync.leave_progress_comment("TASK1", REVIEW_NOTE, task=task)
+    assert got == "NEW1"
+    assert calls == ["/tasks/TASK1/addFollowers", "/tasks/TASK1/stories"]
+    # The mirror is rebuilt from this task later in the run: without the new
+    # follower on it, the next sync would remove him again.
+    assert {f["gid"] for f in task["followers"]} == {"bot", "507443625075"}
+    assert [f["name"] for f in task["followers"] if f["gid"] == "507443625075"] == ["Mark Bain"]
+
+
+def test_mention_skips_add_when_already_following():
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "MENTION_FOLLOW_WAIT", 0), \
+         patch.object(sync, "_get",
+                      return_value={"data": {"followers": [{"gid": "507443625075"}]}}), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}) as post:
+        sync.leave_progress_comment("TASK1", REVIEW_NOTE)
+    assert [c[0][0] for c in post.call_args_list] == ["/tasks/TASK1/stories"]
+
+
+def test_follower_failure_still_posts_the_note():
+    # A note that cannot be signalled is still worth posting.
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "MENTION_FOLLOW_WAIT", 0), \
+         patch.object(sync, "_get", side_effect=RuntimeError("403")), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}) as post:
+        got = sync.leave_progress_comment("TASK1", REVIEW_NOTE)
+    assert got == "NEW1"
+    assert post.call_args[0][0] == "/tasks/TASK1/stories"
+
+
+def test_note_without_mention_adds_no_follower():
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "_get") as get, \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}) as post:
+        sync.leave_progress_comment("TASK1", "Checked 2026-11-05.")
+    get.assert_not_called()
+    assert [c[0][0] for c in post.call_args_list] == ["/tasks/TASK1/stories"]
+
+
+def test_edited_story_adds_no_follower():
+    # Re-mentioning someone on an edited story raises no notification, so there
+    # is nothing to prepare for — and an already-missed note cannot be rescued.
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "_get") as get, patch.object(sync, "_put"), \
+         patch.object(sync, "_post") as post:
+        sync.leave_progress_comment("TASK1", REVIEW_NOTE, story_gid="STORY9")
+    get.assert_not_called()
+    post.assert_not_called()
+
+
+# --- Task IDs in a note become links (fictional IDs and GIDs) ---
+
+LINKS = ({"9001": "ACME-012", "9002": "ACME-013"},
+         {"ACME-012": "9001", "ACME-013": "9002"})
+
+
+def test_render_progress_links_known_task_ids():
+    with patch.object(sync, "_LINK_MAPS", LINKS):
+        html, _ = sync._render_progress("Review: done || Follow-up: ACME-012, and ACME-013.")
+    assert '<a data-asana-gid="9001" data-asana-dynamic="false">ACME-012</a>' in html
+    assert '<a data-asana-gid="9002" data-asana-dynamic="false">ACME-013</a>.' in html
+
+
+def test_render_progress_leaves_unknown_ids_branches_and_urls_alone():
+    note = ("Review: x || Where: feature/ACME-012-fix · https://ex.test/ACME-012 "
+            "· ACME-012-old || See ACME-999")
+    with patch.object(sync, "_LINK_MAPS", LINKS):
+        html, _ = sync._render_progress(note)
+    assert "data-asana-gid" not in html
+
+
+def test_link_markup_does_not_count_against_the_note_limits():
+    note = "Review: " + " ".join(["ACME-012"] * 15)
+    with patch.object(sync, "_LINK_MAPS", LINKS):
+        assert sync.validate_progress_note(note) == ""
+
+
+def test_comment_matches_a_note_whose_ids_came_back_as_urls():
+    # What Asana stores in a story's plain text for a linked ID (verified 2026-11-17).
+    plain = "Review: done\nFollow-up: ACME-012"
+    story = "Review: done\nFollow-up: https://app.asana.com/0/0/9001/f/"
+    with patch.object(sync, "_LINK_MAPS", LINKS):
+        assert sync._comment_matches(story, plain)
+        assert not sync._comment_matches(story, "Review: done\nFollow-up: ACME-013")
+
+
+# ---------------------------------------------------------------------------
+# The summary carries no location; Where: is its own silent comment
+# ---------------------------------------------------------------------------
+
+def test_split_location_moves_where_into_its_own_silent_note():
+    summary, where = sync.split_location(REVIEW_NOTE)
+    assert summary.startswith("@mark Review: header & nav fix || Check:")
+    assert "Where" not in summary and "looper/" not in summary
+    assert where == "Where: looper/a3f2c1 · 2252ad1"
+    assert not sync.MENTION_RE.match(where)
+
+
+def test_split_location_without_where_leaves_the_note_alone():
+    assert sync.split_location("Checked 2026-11-05.") == ("Checked 2026-11-05.", "")
+
+
+def test_validate_rejects_a_location_in_the_mark_summary():
+    for loc in ("feature/x-fix", "2252ad1", "/media/data/dev/site/", "https://ex.test/a",
+                "studio/sync.py"):
+        note = f"@mark Review: done || Check: || 1. Look at {loc}"
+        assert "names a location" in sync.validate_progress_note(note), loc
+
+
+def test_validate_allows_a_location_in_where_and_in_silent_notes():
+    assert sync.validate_progress_note(REVIEW_NOTE) == ""
+    assert sync.validate_progress_note("Did the thing on feature/x-fix") == ""
+
+
+def test_post_note_posts_summary_then_where_silently():
+    with patch.object(sync, "USER_GID", ""), \
+         patch.object(sync, "_post", side_effect=[{"data": {"gid": "S1"}},
+                                                  {"data": {"gid": "W1"}}]) as post:
+        got = sync.post_note("TASK1", REVIEW_NOTE)
+    assert got == ("S1", "W1")
+    bodies = [c[0][1]["data"]["html_text"] for c in post.call_args_list]
+    assert "looper/" not in bodies[0] and bodies[1] == "<body>Where: looper/a3f2c1 · 2252ad1</body>"
+
+
+def test_post_note_skips_a_where_already_on_the_task():
+    bot = [{"gid": "W0", "text": "Where: looper/a3f2c1 · 2252ad1"}]
+    with patch.object(sync, "USER_GID", ""), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "S1"}}) as post:
+        got = sync.post_note("TASK1", REVIEW_NOTE, bot_stories=bot)
+    assert got == ("S1", "W0") and post.call_count == 1
+
+
+def test_done_with_open_subtasks_needs_a_subtasks_block():
+    bad = sync.validate_done_subtasks("@mark Done, Mark complete", ["Add .gitattributes"])
+    assert "Add .gitattributes" in bad
+    ok = ("@mark Done, Mark complete || Subtasks: first three done, tick them; "
+          ".gitattributes not required")
+    assert sync.validate_done_subtasks(ok, ["Add .gitattributes"]) == ""
+    assert sync.validate_done_subtasks("@mark Done, Mark complete", []) == ""
+    assert sync.validate_done_subtasks("@mark Review: x", ["open"]) == ""

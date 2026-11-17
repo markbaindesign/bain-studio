@@ -1,6 +1,6 @@
 ---
 name: harvest-notes
-description: Harvest tagged ideas from Obsidian daily notes. Extracts #project, #skill, #script items as spec stubs and #workflow, #biz-dev etc. into Ideas/ topic files. Records every tagged item (any #tag) as structured data. Archives processed daily notes into a processed/ subfolder. Run manually or check what the scheduled sweep found.
+description: "Harvest tagged ideas from Obsidian daily notes into spec stubs and Ideas/ topic files, then archive the processed notes."
 ---
 
 Run the Obsidian collector against unprocessed daily notes:

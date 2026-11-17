@@ -1,6 +1,6 @@
 ---
 name: anteros
-description: Brand compliance review. Check any output (design, copy, UI, social post) against the client's brand guide or the studio's own brand standards. Returns pass/fail per criterion with specific notes.
+description: "Brand compliance review of any output (design, copy, UI, social) against the client's brand guide or studio standards. Pass/fail per criterion."
 allowed-tools: [Read, Write]
 ---
 

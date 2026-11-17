@@ -1,6 +1,6 @@
 ---
 name: blocked-sweep
-description: Scan all project mirrors for blocked or stalled tasks. For each blocker, reads the latest comments to check if already resolved, then optionally posts a clarification request to Asana via bainbot. Designed to run at the start of a session or on Hermes schedule.
+description: "Scan all project mirrors for blocked or stalled tasks, check comments for resolution, optionally post a clarification to Asana."
 allowed-tools: [Read, Bash]
 ---
 

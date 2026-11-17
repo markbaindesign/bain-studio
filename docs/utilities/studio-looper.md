@@ -35,10 +35,14 @@ Must be invoked from `/media/data/dev/bain-studio`.
    confirmation before starting.
 3. BainBot works each task in the correct project directory (derived from the task's prefix —
    MCF-007 → MCF project path, etc.).
-4. On completion: task moves to **Review** section, reassigned to Mark. Task is NOT marked
-   done in Asana.
-5. On blocker: task moves to **Blocked** section, reassigned to Mark with a note.
+4. On completion: task moves to **Review** section, reassigned to Mark, and gets **one**
+   Asana comment — a templated review note opening `@mark`. Task is NOT marked done in Asana.
+5. On blocker: task moves to **Blocked** section, reassigned to Mark, with a `@mark Blocked:`
+   note carrying the question.
 6. Mark reviews tasks in the Review section, marks them done himself.
+
+The note's template, the `@mark` mention that reaches his filtered inbox, and the
+one-task-one-comment rule are in [asana-comments](asana-comments.md).
 
 ## Permission/access failures never halt the loop
 
@@ -73,7 +77,8 @@ Before blocking a task on a question, the looper must look for the answer in the
 comments, linked tasks), the project's CLAUDE.md and ADRs, the studio/dev-root/global CLAUDE.md
 files, and the studio ADRs. Standing answers such as "where does research output go" (Dropbox,
 never the repo) and "what format" (markdown) are spelled out in the skill. Title-only tasks with
-one clearly most likely reading get worked, with the interpretation stated for Review. A blocker
+one clearly most likely reading get worked, with what was built named plainly in the review
+note's first line so a wrong reading is obvious at a glance. A blocker
 that survives must say what was checked and ask one specific question.
 
 Added 2026-09-17 after a run blocked six tasks on questions CLAUDE.md already answered.
@@ -122,6 +127,43 @@ activity (touched within 15 minutes), it stops and reports rather than proceedin
 (deadline passed, or 15+ minutes inactive, task never advanced past Queue) are auto-cleaned
 without confirmation.
 
+When nothing competes, the guard prints a positive `CLEAR:no other session targets {PREFIX}` line
+rather than staying silent, and names the runner (`— launched by runner {id}`) when
+`LOOPER_RUN_ID` is set in the environment. Silence turned out to be too weak a signal: on
+2026-11-05 a headless iteration read empty output as "the guard is broken", went looking at
+processes, found `looper_runner.py` holding `/tmp/studio-looper/runner.lock` along with its own
+`claude -p /studio-looper` child, concluded a rival run was already working the queue, and refused
+to start. The nightly window ended after 1 of 6 tasks. Nothing was actually wrong — the runner
+holds that lock for the whole window by design and had launched the very session that then read it
+as a competitor.
+
+Step 1a is therefore explicit that `looper_logic.py concurrency` is the **only** concurrency
+signal. A session must not weigh `ps`, `pgrep`, `runner.lock`, or `Session started` lines in
+`~/logs/task-looper.log`, because under the runner every one of those shows the session its own
+run. The model was left on `haiku` — chosen deliberately on cost in commit `7aef8e1` ("looper runs on
+cheapest model with advisor escalation ladder"), and recorded in ADR-009's invocation. Note that
+haiku had in fact been told the right thing: Step 1a already said "no output — no conflict, proceed
+normally", and it did the opposite. This is being treated as a signal problem first because a
+positive `CLEAR` line is cheaper than a nightly model upgrade and the same iteration completed its
+code task correctly. If it misjudges again after this change, move the runner to sonnet.
+
+Note where each piece runs from. Cron invokes `looper_runner.py` out of the ops worktree
+(`/home/bain/ops/bain-studio`), but `_resolve_studio()` resolves `STUDIO` to the **dev** checkout,
+and the runner launches claude with `cwd=STUDIO`. So a nightly session loads dev's `SKILL.md`,
+hooks and `settings.local.json`, and Step 1a's absolute path calls dev's `looper_logic.py`. Skill
+and guard changes are therefore live on the next nightly run as soon as they're committed to
+whatever branch dev has checked out; only `looper_runner.py` itself needs `ops-deploy.sh`. For the
+same reason the runner imports `looper_logic` relative to `__file__`, not to `STUDIO` — a
+`STUDIO`-relative import would pull the module from whichever branch dev sits on, and on one
+without `window_summary` that is an ImportError at module scope, before `notify()` exists, which
+would lose the window in silence.
+
+The runner also now distinguishes an early stop from a drained queue. It decides an iteration made
+progress by watching `~/logs/task-looper.log` grow, so a session that declines to start looks
+exactly like an empty queue. At window end it counts tasks still at Looper Status `Queue` in the SL
+mirror; if any remain it logs `ENDED EARLY` and sends a high-priority notification naming them,
+instead of reporting a finished window.
+
 The old "one unavoidable prompt per session" limitation is gone: it was caused by the state file
 living under `.claude/`, which Claude Code treats as sensitive and always prompts on. With state
 in `/tmp` and correctly-written allow rules (`Edit(**)` globs, `//`-prefixed absolute paths),
@@ -129,8 +171,8 @@ interactive runs are fully prompt-free.
 
 ## Test mode
 
-`/studio-looper --test` runs the entire pipeline against a sandbox Asana project (prefix `SLT`,
-GID `1216618878942979`) instead of the real `SL` queue, routing to `studio/looper-test/` instead
+`/studio-looper --test` runs the entire pipeline against a sandbox Asana project (prefix `SLT`)
+instead of the real `SL` queue, routing to `studio/looper-test/` instead
 of `studio/looper/`. Use it to safely test skill/hook changes, headless invocation, or the
 concurrency guard without any risk to the real queue or a client repo. Setup is documented in
 `studio/looper-test/CLAUDE.md` — it needs a one-time manual step from Mark (adding bainbot as a

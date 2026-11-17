@@ -1,6 +1,6 @@
 ---
 name: kairos
-description: Social post timing and scheduling. Given a drafted post from Aura, check broadcast history and recommend when to publish. Enforces minimum 5-day gap between posts.
+description: "Social post timing: check broadcast history and recommend when to publish. Enforces a minimum 5-day gap."
 allowed-tools: [Read, Write]
 ---
 
@@ -47,4 +47,4 @@ Change status to `published` once it has gone live.
 
 ### 5. Handoff
 
-Return the publish recommendation to Mark. Kairos does not publish — Mark approves and posts.
+Return the publish recommendation to Mark. Kairos does not publish — once Mark approves, LinkedIn posts go out via `/linkedin-post`.

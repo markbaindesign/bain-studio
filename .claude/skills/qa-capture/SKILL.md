@@ -1,6 +1,6 @@
 ---
 name: qa-capture
-description: Quickly log a screenshot as an Asana task without breaking focus. Reads the image, proposes a title and severity, asks one confirmation question, creates the task. Use when you spot an issue mid-session and want to capture it without switching context.
+description: "Log a screenshot as an Asana task without breaking focus: proposes a title and severity, asks one confirmation, creates the task."
 allowed-tools: [Read, Bash]
 ---
 

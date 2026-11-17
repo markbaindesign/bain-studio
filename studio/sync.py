@@ -36,6 +36,7 @@ import json
 import time
 import requests
 from dataclasses import dataclass
+from html import escape as html_escape
 from datetime import date, datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -80,6 +81,144 @@ def _get_looper_status_option_gid(name: str):
             log.warning(f"Could not fetch Looper Status enum options: {e}")
     return _LOOPER_STATUS_OPTIONS.get(name.lower())
 
+
+# --- Generic custom fields -------------------------------------------------
+# Every custom field on a task is mirrored. These five types are also pushed
+# back from the mirror; anything else (people, formula, reference/milestone) is
+# rendered from Asana's own display_value and left read-only, because Asana
+# either computes it or takes a shape the mirror cannot express on one line.
+PUSHABLE_FIELD_TYPES = {"text", "number", "date", "enum", "multi_enum"}
+
+# Mirror keys owned by built-in lines. A custom field whose name collapses to
+# one of these would render a second line with the same key, and the parser
+# keeps only the last — so it is mirrored by neither name nor pushed. Priority
+# is the exception: it has a built-in line AND is a plain enum custom field, so
+# it is excluded from generic rendering but pushed through the generic path.
+RESERVED_MIRROR_KEYS = {
+    "local_id", "asana_id", "section", "priority", "looper_status", "due", "start",
+    "assignee", "assignee_status", "tags", "followers", "dependencies", "dependents",
+    "notes", "blockers", "progress", "comments", "attachments", "modified", "url",
+}
+
+# Enum option names → GIDs per custom field GID, filled on demand once per run.
+_ENUM_OPTIONS: dict = {}
+# Field names already warned about this run, so a collision is logged once, not
+# once per task.
+_FIELD_WARNED: set = set()
+
+
+def _cf_type(cf: dict) -> str:
+    return cf.get("resource_subtype") or cf.get("type") or ""
+
+
+def _mirror_key(name: str) -> str:
+    return (name or "").strip().lower().replace(" ", "_")
+
+
+def _cf_mirror_value(cf: dict) -> str:
+    """The mirror string for a custom field value, or "none" when it is unset.
+
+    `_mirror_override` is set by the push path: build_mirror() renders from the
+    same task object later in the run, so without it the mirror would be written
+    with the pre-push value and the next run would push that stale value back
+    over what we just set.
+    """
+    if "_mirror_override" in cf:
+        return cf["_mirror_override"]
+    ftype = _cf_type(cf)
+    if ftype == "enum":
+        return (cf.get("enum_value") or {}).get("name") or "none"
+    if ftype == "multi_enum":
+        names = [o.get("name") or "" for o in (cf.get("multi_enum_values") or [])]
+        return ", ".join(n for n in names if n) or "none"
+    if ftype == "number":
+        val = cf.get("number_value")
+        if val is None:
+            return "none"
+        return str(int(val)) if float(val).is_integer() else str(val)
+    if ftype == "date":
+        dv = cf.get("date_value") or {}
+        return dv.get("date") or dv.get("date_time") or "none"
+    if ftype == "text":
+        return (cf.get("text_value") or "").strip() or "none"
+    return (cf.get("display_value") or "").strip() or "none"
+
+
+def _enum_option_gid(cf: dict, name: str):
+    """GID of an enum option by name, matched case-insensitively.
+
+    Option labels drift ("In Progress" vs "In progress"), so never match exactly.
+    enum_options come back on the task payload; a field that does not carry them
+    is fetched once and cached.
+    """
+    gid = cf.get("gid")
+    opts = {
+        (o.get("name") or "").lower(): o.get("gid")
+        for o in (cf.get("enum_options") or [])
+        if o.get("gid")
+    }
+    if not opts:
+        if gid not in _ENUM_OPTIONS:
+            try:
+                data = _get(f"/custom_fields/{gid}")["data"]
+                _ENUM_OPTIONS[gid] = {
+                    (o.get("name") or "").lower(): o.get("gid")
+                    for o in (data.get("enum_options") or [])
+                }
+            except Exception as e:
+                log.warning(f"Could not fetch enum options for custom field {gid}: {e}")
+                _ENUM_OPTIONS[gid] = {}
+        opts = _ENUM_OPTIONS[gid]
+    return opts.get((name or "").strip().lower())
+
+
+def _is_builtin_field(fgid: str, key: str) -> bool:
+    """Is this the custom field behind a built-in mirror line?
+
+    Matched by GID, never by name. Priority renders from PRIORITY_FIELD_GID
+    alone, so a project whose own "Priority" field has a different GID shows
+    `none` in the mirror while Asana holds a value — pushing that by name would
+    clear the real field on every task.
+    """
+    if key == "priority":
+        return bool(PRIORITY_FIELD_GID) and fgid == PRIORITY_FIELD_GID
+    if key == "looper_status":
+        return bool(LOOPER_STATUS_FIELD_GID) and fgid == LOOPER_STATUS_FIELD_GID
+    return False
+
+
+def _managed_field_gids() -> set:
+    """Fields this script owns. Never mirrored as generic lines, never pushed."""
+    return {g for g in (SHARED_FIELD_GID, LAST_SYNCED_FIELD_GID) if g}
+
+
+def _mirrorable_fields(t: dict) -> list:
+    """The task's custom fields that get a generic mirror line, in Asana order."""
+    out = []
+    for cf in t.get("custom_fields", []):
+        gid  = cf.get("gid")
+        name = (cf.get("name") or "").strip()
+        if not gid or not name or gid in _managed_field_gids():
+            continue
+        key = _mirror_key(name)
+        if key in RESERVED_MIRROR_KEYS:
+            # Priority and Looper Status have their own lines; a third-party
+            # field colliding with a built-in key is a naming problem to fix in
+            # Asana, and is called out once per run.
+            if not _is_builtin_field(gid, key) and name not in _FIELD_WARNED:
+                _FIELD_WARNED.add(name)
+                log.warning(f"  Custom field '{name}' collides with the built-in mirror "
+                            f"field '{key}' — not mirrored. Rename it in Asana.")
+            continue
+        out.append(cf)
+    return out
+
+
+def _custom_field_lines(t: dict) -> list:
+    return [f"- **{(cf.get('name') or '').strip()}:** {_cf_mirror_value(cf)}"
+            for cf in _mirrorable_fields(t)]
+
+
 JUNK_PATTERNS  = re.compile(r"^- |😍|📰|\[Product Update\]", re.IGNORECASE)
 PLAIN_CHECK    = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
 # "none" is written into the mirror by the --create-task path and by older
@@ -88,7 +227,277 @@ PLAIN_CHECK    = re.compile(r"^Checked \d{4}-\d{2}-\d{2}\.$")
 # real text and every task carrying it looks like a duplicate to the guard below.
 NO_PROGRESS    = re.compile(r"^\s*none\s*$", re.IGNORECASE)
 GID_IN_PARENS  = re.compile(r'\((\d+)\)')
-FIELD_RE       = re.compile(r"- \*\*(.+?):\*\* (.+)")
+# Anchored to the start of a line: a mirror field is always a top-level bullet,
+# and an unanchored match read bold-labelled prose inside a description as a
+# field. See _split_description() for the other half of that fix.
+FIELD_RE       = re.compile(r"^- \*\*(.+?):\*\* (.+)", re.M)
+
+# --- Progress note rendering -------------------------------------------------
+# FIELD_RE above is not DOTALL, so a Progress note is strictly ONE mirror line:
+# a literal newline truncates it, and a continuation line starting "- **X:**"
+# is misparsed as another field. Multi-line review notes are therefore encoded
+# on that single line with BLOCK_SEP and expanded here at post time.
+BLOCK_SEP      = "||"
+# A leading @mark (or @me) marks a note as one Mark must act on. It does two
+# things: embeds the documented rich-text mention of ASANA_USER_GID, and makes
+# the caller add him as a collaborator before posting (see _ensure_follower).
+#
+# The collaborator add, followed by MENTION_FOLLOW_WAIT, is what makes the
+# embedded mention count: posted sooner than 30 seconds after the add, Asana
+# treats it as plain activity and it misses an inbox filtered to "Mentioned".
+# See BSTD-878 and docs/utilities/asana-comments.md.
+#
+# Notes without the token post plain and stay silent — that is the whole
+# signalling mechanism, so do not add the token unconditionally.
+MENTION_RE     = re.compile(r"^\s*@(?:mark|me)\b[:,]?\s*", re.IGNORECASE)
+# Longest plausible rendered mention prefix ("@Mark Bain Design " and the like).
+MENTION_PREFIX_MAX = 64
+
+
+def _render_progress(text: str) -> tuple:
+    """Turn a one-line mirror Progress note into (html_text, wants_mention).
+
+    Splits on BLOCK_SEP into lines, escapes the result for Asana's rich text,
+    and prefixes an @-mention when the note opened with @mark. Returns
+    (None, False) for an empty note.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return None, False
+    wants_mention = bool(MENTION_RE.match(raw))
+    raw = MENTION_RE.sub("", raw, count=1)
+    lines = [seg.strip() for seg in raw.split(BLOCK_SEP)]
+    lines = [l for l in lines if l]
+    # Asana rejects bare &, < and > in html_text with a 400, but it does NOT
+    # decode the numeric entity Python emits for an apostrophe: escaping quotes
+    # put a literal "&#x27;" in the comment (verified against SLT-001,
+    # 2026-11-05). quote=False escapes & < > only; body text needs no more.
+    body = "\n".join(html_escape(l, quote=False) for l in lines)
+    body = _link_task_ids(body)
+    if wants_mention and USER_GID:
+        body = f'<a data-asana-gid="{USER_GID}"/> {body}'
+    return f"<body>{body}</body>", wants_mention
+
+
+# A local task ID in a note ("see BSTD-856") becomes a link to that task, so
+# Mark can jump to it from the comment. Only IDs that resolve through some
+# registered project's asana-ids.json are linked; anything else stays text.
+#
+# data-asana-dynamic="false" keeps the ID as the visible link text. Without it
+# Asana turns any link to a task, href or data-asana-gid alike, into a mention
+# that shows the task's title and drops the ID (verified 2026-11-17 on SLT-001).
+#
+# The lookarounds keep IDs inside a branch name or path (feature/BSTD-878-x)
+# and inside URLs as they are.
+TASK_ID_IN_TEXT = re.compile(r"(?<![\w/=#.-])([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-\d+)(?![\w/-])")
+# How Asana renders a task link in a story's plain `text`: its URL, not the ID.
+TASK_URL_IN_TEXT = re.compile(r"https://app\.asana\.com/0/0/(\d+)/f/?")
+_LINK_MAPS = None   # (gid_to_lid, lid_to_gid), read once per run
+
+
+def _link_maps() -> tuple:
+    global _LINK_MAPS
+    if _LINK_MAPS is None:
+        _LINK_MAPS = _local_id_maps()
+    return _LINK_MAPS
+
+
+def _link_task_ids(body: str) -> str:
+    """Wrap every resolvable local task ID in `body` (already escaped) in a task link."""
+    lid_to_gid = _link_maps()[1]
+    if not lid_to_gid:
+        return body
+
+    def link(m):
+        gid = lid_to_gid.get(m.group(1))
+        if not gid:
+            return m.group(0)
+        return f'<a data-asana-gid="{gid}" data-asana-dynamic="false">{m.group(1)}</a>'
+    return TASK_ID_IN_TEXT.sub(link, body)
+
+
+def _unlink_task_urls(text: str) -> str:
+    """Turn the task URLs Asana stores for a linked ID back into the ID, for comparison."""
+    gid_to_lid = _link_maps()[0]
+    return TASK_URL_IN_TEXT.sub(lambda m: gid_to_lid.get(m.group(1), m.group(0)), text or "")
+
+
+# Limits on a note that becomes an Asana comment. Set loose on purpose: these
+# catch a wall of text, not a slightly long note. A note that trips one is NOT
+# posted — the audit trail for a fix is not the review instructions for it, and
+# posting it anyway puts Mark back where he started.
+# The limits apply to the SUMMARY: the Where: block is split off first and
+# posted as its own comment (split_location), so it never counts here.
+NOTE_MAX_CHARS  = 500   # whole summary
+BLOCK_MAX_CHARS = 150   # any one || block
+NOTE_MAX_BLOCKS = 6     # Review + Check: + 3 checks + Gaps is 6
+WHERE_MAX_CHARS = 300   # the separate location comment
+
+# Mark reads the @mark summary to decide what to do; where the work lives is a
+# separate, silent comment posted right under it. So a Where: block is pulled
+# out of the note (split_location), and the rest of an @mark note may not carry
+# a commit, branch, path or URL. Mark's call, 2026-11-17.
+WHERE_RE    = re.compile(r"^where\s*:", re.IGNORECASE)
+LOCATION_RE = re.compile(
+    r"https?://\S+"                                            # URL
+    r"|\b(?:feature|release|hotfix|bugfix|looper)/[\w.-]+"      # git-flow branch
+    r"|(?<![\w/])(?:~|\.{1,2})?/[\w.-]+/[\w./-]*"               # absolute or ~/ path
+    r"|\b[\w.-]+/[\w.-]+\.[A-Za-z]{1,5}\b"                     # relative file path
+    r"|\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b"     # commit SHA
+)
+# A "Done" handover with open subtasks must say why each is not needed.
+DONE_RE     = re.compile(r"^done\b", re.IGNORECASE)
+SUBTASKS_RE = re.compile(r"^subtasks\s*:", re.IGNORECASE)
+
+
+def split_location(text: str) -> tuple:
+    """Split a note into (summary, where): the Where: block(s) become their own note.
+
+    The summary keeps a leading @mark; the where note never carries one, so it
+    posts silently. Either part may be "".
+    """
+    raw = (text or "").strip()
+    m = MENTION_RE.match(raw)
+    body = raw[m.end():] if m else raw
+    segs = [s.strip() for s in body.split(BLOCK_SEP) if s.strip()]
+    where = [s for s in segs if WHERE_RE.match(s)]
+    rest  = [s for s in segs if not WHERE_RE.match(s)]
+    summary = f" {BLOCK_SEP} ".join(rest)
+    if m and summary:
+        summary = "@mark " + summary
+    return summary, f" {BLOCK_SEP} ".join(where)
+
+
+def validate_where_note(text: str) -> str:
+    plain = _progress_plain(text)
+    if len(plain) > WHERE_MAX_CHARS:
+        return (f"the Where: comment runs to {len(plain)} chars, over the "
+                f"{WHERE_MAX_CHARS}-char limit: name the branch, commit and path, nothing else")
+    return ""
+
+
+def validate_done_subtasks(text: str, open_subtasks: list) -> str:
+    """Why a "Done" note may not go out while subtasks are open, or ""."""
+    plain = _progress_plain(text)
+    if not open_subtasks or not DONE_RE.match(plain):
+        return ""
+    if any(SUBTASKS_RE.match(b) for b in plain.split("\n")):
+        return ""
+    names = ", ".join(repr(n) for n in open_subtasks[:5])
+    return (f"it says Done but {len(open_subtasks)} subtask(s) are open ({names}). "
+            f"Add a 'Subtasks:' block saying, for each, that it is done and Mark can "
+            f"tick it, or why it is not required")
+
+
+def open_subtask_names(task_gid: str) -> list:
+    """Names of a task's incomplete subtasks; [] when it has none or the call fails."""
+    try:
+        data = _get(f"/tasks/{task_gid}/subtasks",
+                    {"opt_fields": "name,completed"}).get("data") or []
+    except Exception as e:
+        log.warning(f"    Could not read subtasks of {task_gid} ({e})")
+        return []
+    return [s.get("name") or "?" for s in data if not s.get("completed")]
+
+
+def validate_progress_note(text: str) -> str:
+    """Why this note may not be posted as a comment, or "" when it is fine.
+
+    Only genuine walls of text are rejected. A note under every limit passes
+    whatever its shape, so notes written by tools with their own formats
+    (studio-delivery-gate, feature, end-session) keep working.
+    """
+    summary, where = split_location(text)
+    plain = _progress_plain(summary)
+    if where and (bad := validate_where_note(where)):
+        return bad
+    if not plain:
+        return ""
+    if PLAIN_CHECK.match(plain):      # "Checked {date}." — a heartbeat, not a note
+        return ""
+    blocks = plain.split("\n")
+    if MENTION_RE.match(summary):
+        loc = next((m for m in map(LOCATION_RE.search, blocks) if m), None)
+        if loc:
+            return (f"the summary names a location ({loc.group(0)!r}) — branches, commits, "
+                    f"paths and URLs go in the Where: block, which posts as its own comment")
+    if len(plain) > NOTE_MAX_CHARS:
+        return (f"{len(plain)} chars exceeds the {NOTE_MAX_CHARS}-char limit — "
+                f"the reasoning belongs in the commit message, not the comment")
+    if len(blocks) > NOTE_MAX_BLOCKS:
+        return (f"{len(blocks)} blocks exceeds the {NOTE_MAX_BLOCKS}-block limit "
+                f"(max 5 Check items)")
+    worst = max(blocks, key=len)
+    if len(worst) > BLOCK_MAX_CHARS:
+        return (f"a block runs to {len(worst)} chars, over the {BLOCK_MAX_CHARS}-char "
+                f"limit — one line each: {worst[:60]!r}...")
+    return ""
+
+
+# Limit on a task description (Asana's `notes`) written through this script.
+# Loose on purpose, like the comment limits above: the median studio
+# description is ~500 chars, while the walls of text this exists to stop ran
+# 2,000-3,500. A description says what the task is, what done looks like and
+# where the work is. How the problem arose, what was ruled out and the session
+# narrative belong in a commit message or a comment.
+#
+# Only descriptions written through this script are checked. Tasks that arrive
+# by Asana's own email intake never pass through here, so a forwarded alert or
+# vendor email is unaffected however long it is.
+DESCRIPTION_MAX_CHARS = 1200
+
+
+def validate_task_description(text: str) -> str:
+    """Why this description may not be written, or "" when it is fine."""
+    body = (text or "").strip()
+    if len(body) <= DESCRIPTION_MAX_CHARS:
+        return ""
+    return (f"description is {len(body)} chars, over the {DESCRIPTION_MAX_CHARS}-char limit. "
+            f"State what the task is, what done looks like and where the work is. The "
+            f"history, the alternatives and the session narrative belong in a commit "
+            f"message or a comment.")
+
+
+def _progress_plain(text: str) -> str:
+    """The mention-stripped, BLOCK_SEP-expanded plain text of a Progress note.
+
+    This is what Asana stores as a story's `text` once html_text is posted, so
+    it is the form to compare against when checking for a duplicate.
+    """
+    raw = MENTION_RE.sub("", (text or "").strip(), count=1)
+    return "\n".join(seg.strip() for seg in raw.split(BLOCK_SEP) if seg.strip())
+
+
+def _normalise_comment(text: str) -> str:
+    """Whitespace-collapsed form of a comment body, for comparison."""
+    return re.sub(r"\s+", " ", (text or "")).strip()
+
+
+def _comment_matches(story_text: str, want_plain: str) -> bool:
+    """Is `story_text` the comment that `want_plain` would produce?
+
+    Asana renders the embedded mention in a story's plain `text` as a bare URL -
+    the anchor's href - never as the display name, so a posted comment never
+    again equals the mirror text that produced it. The href is a link to the
+    user's task list on the API path and to their profile on the web-UI path;
+    either way `text` holds a URL, while the display name survives only as the
+    anchor's inner text in `html_text`. Verified both ways 2026-11-07.
+
+    The mention is only ever a prefix, and trying to strip it by pattern ate
+    real words after the name, so compare by suffix instead: no name parsing,
+    and a note posted without a mention still matches exactly.
+    """
+    want = _normalise_comment(_unlink_task_urls(want_plain))
+    if not want:
+        return False
+    # A linked task ID comes back as the task's URL; map it back to the ID.
+    have = _normalise_comment(_unlink_task_urls(story_text))
+    if not have.endswith(want):
+        return False
+    # Only a rendered mention may precede the body. Without this cap, a short
+    # new note that happens to be the tail of an older, longer comment would
+    # read as a duplicate and never get posted.
+    return len(have) - len(want) <= MENTION_PREFIX_MAX
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +554,14 @@ class ProjectConfig:
 
 PROJECTS_FILE = STUDIO_DIR / "projects.json"
 
+# Project identity resolver (ADR 021). Imported defensively: sync.py is the
+# studio's single Asana entry point and must not fail to start because the
+# resolver is missing on an older checkout.
+try:
+    import registry as _registry
+except ImportError:  # pragma: no cover - only on a checkout without it
+    _registry = None
+
 
 def load_projects_registry() -> list:
     """Load projects.json, migrating flat path arrays to object format."""
@@ -186,6 +603,10 @@ def discover_projects(filter_prefix=None, include_inactive=False, quiet=False) -
         if status in ("paused", "archived") and not filter_prefix and not include_inactive:
             continue
         root = Path(raw).expanduser()
+        if not root.exists():
+            if not quiet:
+                log.warning(f"  Skipping {raw} — path not found; remove it from projects.json")
+            continue
         claude_md = root / "CLAUDE.md"
         if not claude_md.exists():
             if not quiet:
@@ -201,13 +622,24 @@ def discover_projects(filter_prefix=None, include_inactive=False, quiet=False) -
 
         gid_m    = re.search(r"ASANA_PROJECT_GID:\s*(\S+)", text)
         prefix_m = re.search(r"ASANA_TASK_PREFIX:\s*(\S+)", text)
-        if not gid_m:
+
+        # The registry wins. A project inside this public repo (this repo, the
+        # looper, the looper test) must not carry its own GID in a tracked
+        # CLAUDE.md, so the registry is the only place it can come from. A
+        # client project's CLAUDE.md lives in that client's own private repo, so
+        # reading it stays fine and is the fallback. See ADR 021 and BSTD-875.
+        reg_entry = _registry.by_path(root) if _registry else None
+        reg_gid    = (reg_entry or {}).get("gid") or ""
+        reg_prefix = (reg_entry or {}).get("prefix") or ""
+
+        if not reg_gid and not gid_m:
             if not quiet:
-                log.warning(f"  Skipping {raw} — no ASANA_PROJECT_GID in CLAUDE.md")
+                log.warning(
+                    f"  Skipping {raw} — no GID in the registry and none in CLAUDE.md")
             continue
 
-        gid    = gid_m.group(1)
-        prefix = prefix_m.group(1) if prefix_m else root.name.upper()[:4]
+        gid    = reg_gid or gid_m.group(1)
+        prefix = reg_prefix or (prefix_m.group(1) if prefix_m else root.name.upper()[:4])
 
         if gid in seen_gids or prefix in SKIP_PREFIXES:
             continue
@@ -215,7 +647,8 @@ def discover_projects(filter_prefix=None, include_inactive=False, quiet=False) -
             continue
 
         name_m = re.search(r"ASANA_PROJECT_NAME:\s*(.+)", text)
-        name   = name_m.group(1).strip() if name_m else (
+        name   = (reg_entry or {}).get("name") or (
+            name_m.group(1).strip() if name_m else
             root.name.replace("_", " ").replace("-", " ").title()
         )
 
@@ -413,7 +846,12 @@ def fetch_tasks(proj: ProjectConfig, field_gid: str) -> list:
         "opt_fields": (
             "gid,name,notes,due_on,due_at,start_on,completed,modified_at,permalink_url,"
             "assignee.gid,assignee.name,assignee_status,"
-            "custom_fields.gid,custom_fields.text_value,custom_fields.enum_value.name,custom_fields.enum_value.gid,"
+            "custom_fields.gid,custom_fields.name,custom_fields.type,custom_fields.resource_subtype,"
+            "custom_fields.text_value,custom_fields.number_value,custom_fields.date_value,"
+            "custom_fields.display_value,"
+            "custom_fields.enum_value.name,custom_fields.enum_value.gid,"
+            "custom_fields.enum_options.gid,custom_fields.enum_options.name,"
+            "custom_fields.multi_enum_values.gid,custom_fields.multi_enum_values.name,"
             "memberships.section.name,memberships.section.gid,memberships.project.gid,"
             "tags.gid,tags.name,"
             "followers.gid,followers.name,"
@@ -519,6 +957,27 @@ def bot_comment_texts(stories: list) -> set:
         and (s.get("created_by") or {}).get("gid") == BAINBOT_GID
         and (s.get("text") or "").strip()
     }
+
+
+def bot_comment_stories(stories: list) -> list:
+    """bainbot's own comments as {gid, text, created_at}, oldest first.
+
+    bot_comment_texts answers "did we already say this"; this answers "which
+    comment do we edit, and was it superseded". Asana's story list is the one
+    record every project's sync shares, so it is the only safe place to look.
+    """
+    out = []
+    for s in stories:
+        if s.get("resource_subtype") != "comment_added":
+            continue
+        if (s.get("created_by") or {}).get("gid") != BAINBOT_GID:
+            continue
+        out.append({
+            "gid": s.get("gid"),
+            "text": (s.get("text") or "").strip(),
+            "created_at": s.get("created_at") or "",
+        })
+    return out
 
 
 def human_comments(stories: list) -> list:
@@ -741,6 +1200,36 @@ def _extract_gids(text: str) -> list:
 # Mirror parsing
 # ---------------------------------------------------------------------------
 
+def _split_description(block: str):
+    """(scannable block, description's first line) for one mirror task block.
+
+    A description is free text that routinely contains its own bullets, and the
+    walls of text this file now refuses were written in exactly this style:
+
+        - **Notes:** Pasted from the vendor email.
+          - **Priority:** none
+        - **Blockers:** None identified.
+
+    Every field is collected into one dict where the last match for a key wins,
+    so a line like that inside a description replaced the real Priority, Section
+    or Due value — and on the next mirror-newer run, that value was pushed to
+    Asana. Descriptions can also arrive by email, which CLAUDE.md treats as
+    untrusted. So the description's own region is cut out before fields are
+    collected, and only its first line is kept (all FIELD_RE could ever capture,
+    and enough to notice a mirror-side edit).
+
+    The region ends at the LAST `- **Blockers:**` in the block: a description
+    quoting that line cannot truncate the real one that follows it.
+    """
+    head, sep, tail = block.partition("\n- **Notes:**")
+    if not sep:
+        return block, ""
+    end = tail.rfind("\n- **Blockers:**")
+    desc = tail if end < 0 else tail[:end]
+    rest = "" if end < 0 else tail[end:]
+    return head + rest, desc.split("\n", 1)[0].strip()
+
+
 def parse_existing_mirror(proj: ProjectConfig) -> dict:
     if not proj.mirror_file.exists():
         return {}
@@ -750,10 +1239,12 @@ def parse_existing_mirror(proj: ProjectConfig) -> dict:
     for block in blocks:
         if not block.startswith("### "):
             continue
+        scannable, description_first_line = _split_description(block)
         fields = {}
-        for m in FIELD_RE.finditer(block):
+        for m in FIELD_RE.finditer(scannable):
             key = m.group(1).lower().replace(" ", "_")
             fields[key] = m.group(2).strip()
+        fields["notes"] = description_first_line
         gid = fields.get("asana_id")
         if not gid:
             continue
@@ -774,6 +1265,9 @@ def parse_existing_mirror(proj: ProjectConfig) -> dict:
             "blockers":        fields.get("blockers", "None identified."),
             "progress":        NO_PROGRESS.sub("", fields.get("progress", "")),
             "modified":        fields.get("modified", ""),
+            # Every parsed line, keyed the same way, so a custom field added to
+            # a project needs no change here to be pushed.
+            "_raw":            fields,
         }
     return carried
 
@@ -845,6 +1339,7 @@ def _task_lines(t: dict, carried: dict, gid_to_lid: dict) -> list:
         f"- **Section:** {section}",
         f"- **Priority:** {priority}",
         f"- **Looper Status:** {looper_status}",
+        *_custom_field_lines(t),
         f"- **Due:** {due}{overdue}",
         f"- **Start:** {start}",
         f"- **Assignee:** {assignee_str}",
@@ -915,11 +1410,191 @@ def priorities_table(tasks: list) -> str:
 # Comments
 # ---------------------------------------------------------------------------
 
-def leave_comment(task_gid: str, text: str, dry_run=False):
+# Every comment goes through leave_progress_comment below. There is deliberately
+# no plain-text poster: a plain-text story cannot carry an @-mention, so it
+# reaches the thread and never an inbox filtered to "Mentioned", while looking
+# perfectly correct on the task. A `leave_comment` that posted
+# {"data": {"text": ...}} sat here unused until 2026-11-06 and was removed
+# rather than left as a loaded gun. See ~/.claude/rules/asana-comments.md.
+
+
+# DO NOT REMOVE THIS. It is the only reason a @mark note reaches Mark at all,
+# and it is Asana's own documented procedure — not a workaround for a defect.
+#
+# John_Vu, from Asana, in forum thread 3326 on 2024-01-05: a rich-text mention
+# "does not automatically add the @mentioned user to the resource", and the
+# prescribed step is a follow-up call to addFollowersForTask. That is this.
+# https://forum.asana.com/t/any-way-to-create-user-mentions-using-api/3326
+#
+# An html_text mention on its own therefore reaches the thread and nothing else:
+# no notification, nothing logged, nothing failed. Adding him as a collaborator
+# first turns the story into "comment on a task you follow", which is a
+# normal-inbox entry and a browser notification. POST /tasks/{gid}/addFollowers
+# then a short pause before creating the story
+# (https://developers.asana.com/docs/rich-text). Being the assignee is not
+# enough — BD-204 was posted to an assigned-but-unfollowed task on 2026-11-05
+# and arrived nowhere.
+#
+# The wait matters as much as the add. Asana does not count a comment as a real
+# mention if it is posted less than 30 seconds after the mentioned user was made
+# a collaborator: it lands as activity on a followed task, which an inbox
+# filtered to "Mentioned" excludes. Asana's staff confirmed this as a bug on the
+# Asana forum on 2026-11-17 and gave 30+ seconds as the workaround. With the old
+# 3-second wait every API note missed the filter, which is why the 2026-11-06
+# tests concluded no API comment could reach it. A probe on SLT-013 on
+# 2026-11-17, posted 37 seconds after the add, reached the filter. See BSTD-878.
+#
+# The wait runs only when the follower was just added; a task Mark already
+# follows posts at once and still counts as a mention. Do not shorten it below
+# 30 seconds until Asana fixes the bug.
+MENTION_FOLLOW_WAIT = 35.0  # seconds, between addFollowers and the story; Asana needs 30+
+
+
+def _ensure_follower(task_gid: str, user_gid: str):
+    """Make `user_gid` follow `task_gid` so an @-mention actually notifies.
+
+    Returns (added, name): `added` True when a follower was just added, meaning
+    the caller should pause before posting and record the new follower. Never
+    raises — a note that cannot be signalled is still worth posting, so a
+    failure warns and carries on.
+    """
+    try:
+        data = (_get(f"/tasks/{task_gid}", {"opt_fields": "followers.gid"}) or {}).get("data") or {}
+        if any((f or {}).get("gid") == user_gid for f in (data.get("followers") or [])):
+            return False, ""
+        resp = _post(f"/tasks/{task_gid}/addFollowers?opt_fields=followers.gid,followers.name",
+                     {"data": {"followers": [user_gid]}})
+        fols = ((resp or {}).get("data") or {}).get("followers") or []
+        name = next((f.get("name", "") for f in fols if (f or {}).get("gid") == user_gid), "")
+        log.info(f"    Added {name or user_gid} as a follower of {task_gid} so the @-mention notifies")
+        return True, name
+    except Exception as e:
+        log.warning(f"    Could not add {user_gid} as a follower of {task_gid} ({e}) — "
+                    f"posting the note anyway, but the mention may not reach the inbox")
+        return False, ""
+
+
+# A @mark note is the "Mark must act" signal. It reaches the Mentioned-filtered
+# inbox once MENTION_FOLLOW_WAIT is honoured (BSTD-878), and a fresh @mark note
+# also pings Slack as a second channel. The Asana comment stays the record; Slack is only the signal.
+#
+# Three rules, each guarding a way this would go wrong:
+#   - The comment is posted FIRST and its GID returned regardless. A Slack
+#     outage must never cost the note.
+#   - Fresh posts only. An edited note does not re-notify in Asana either, and
+#     pinging on every re-sync would flood the channel it exists to keep usable.
+#   - Never raises. notifier.notify() already returns False rather than
+#     throwing, and the import is guarded for a checkout without it.
+def _ping_slack(task_gid: str, mirror_text: str, task: dict = None):
+    """Signal a review/blocked note to Slack. Best-effort, never raises."""
+    try:
+        import notifier
+    except Exception:
+        return False
+    try:
+        blocks = [b.strip() for b in (mirror_text or "").split(BLOCK_SEP)]
+        blocks = [b for b in blocks if b]
+        headline = MENTION_RE.sub("", blocks[0], count=1) if blocks else "(no text)"
+        lid = (task or {}).get("_local_id", "")
+        name = (task or {}).get("name", "")
+        url = f"https://app.asana.com/0/0/{task_gid}/f"
+        subject = f"{lid}: {name}".strip(": ") or f"Asana task {task_gid}"
+        body = f"{headline}\n{url}"
+        details = BLOCK_SEP.join(blocks[1:]).replace(BLOCK_SEP, "\n") if len(blocks) > 1 else ""
+        return notifier.notify(body, subject=subject, priority="high",
+                               sender="asana", details=details)
+    except Exception as e:
+        log.warning(f"    Could not ping Slack for {task_gid} ({e}) — "
+                    f"the comment is posted, only the signal was lost")
+        return False
+
+
+def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
+                           dry_run=False, task: dict = None) -> str:
+    """Post (or edit in place) the review comment built from a Progress note.
+
+    `mirror_text` is the single mirror line, BLOCK_SEP-encoded. When `story_gid`
+    is given, bainbot's existing comment is edited rather than a second one
+    posted: a correction must not double the reading (see docs/utilities/
+    asana-comments.md). Returns the story GID the text now lives on.
+    """
+    html, wants_mention = _render_progress(mirror_text)
+    if html is None:
+        return story_gid
+    if wants_mention and not USER_GID:
+        log.warning("    Progress note asked for an @-mention but ASANA_USER_GID "
+                    "is unset — posting without one, so a 'Mentioned' inbox "
+                    "filter will not show it")
     if dry_run:
-        log.info(f"    [DRY-RUN] Would comment on {task_gid}: {text[:80]}...")
-        return
-    _post(f"/tasks/{task_gid}/stories", {"data": {"text": text}})
+        verb = f"edit story {story_gid}" if story_gid else "comment"
+        log.info(f"    [DRY-RUN] Would {verb} on {task_gid}"
+                 f"{' with @-mention' if wants_mention else ''}: {html[:120]}...")
+        return story_gid
+    if story_gid:
+        # PUT /stories/{gid} only works on a story the caller authored, which is
+        # always true here (bainbot posted it). A 403/404 means the comment was
+        # deleted or authored by someone else — fall through to a fresh post
+        # rather than losing the note.
+        try:
+            _put(f"/stories/{story_gid}", {"data": {"html_text": html}})
+            log.info(f"    Edited existing comment {story_gid} on {task_gid}")
+            return story_gid
+        except Exception as e:
+            log.warning(f"    Could not edit story {story_gid} ({e}) — posting a new comment")
+    # Only a fresh post can notify: re-mentioning someone already mentioned on
+    # an edited story raises nothing, which is why an already-posted note that
+    # missed the inbox cannot be rescued by editing it.
+    if wants_mention and USER_GID:
+        added, uname = _ensure_follower(task_gid, USER_GID)
+        if added:
+            time.sleep(MENTION_FOLLOW_WAIT)
+            # Record the new follower on the in-memory task, which the mirror is
+            # rebuilt from later this run. Without this the mirror still shows
+            # the pre-mention set, and _push_set_field — which diffs the mirror
+            # against LIVE Asana, with no last-synced guard — would call
+            # removeFollowers on the next run: an add/remove story per task per
+            # hour, the PIPE-028 flood that buries human comments.
+            if task is not None:
+                fols = task.setdefault("followers", [])
+                if not any((f or {}).get("gid") == USER_GID for f in fols):
+                    fols.append({"gid": USER_GID, "name": uname})
+    resp = _post(f"/tasks/{task_gid}/stories", {"data": {"html_text": html}})
+    new_story = (resp.get("data") or {}).get("gid")
+    if wants_mention:
+        if _ping_slack(task_gid, mirror_text, task):
+            log.info(f"    Signalled {task_gid} to Slack")
+        else:
+            log.warning(f"    Slack signal for {task_gid} did not send — the "
+                        f"comment is on the task, but it may not reach Mark")
+    return new_story
+
+
+def post_note(task_gid: str, mirror_text: str, story_gid: str = "",
+              where_story_gid: str = "", dry_run=False, task: dict = None,
+              bot_stories: list = None) -> tuple:
+    """Post a note as two comments: the summary, then its Where: block, silently.
+
+    Returns (summary_story_gid, where_story_gid). The where comment is edited in
+    place when the summary was, skipped when an identical bainbot comment is
+    already on the task, and otherwise posted fresh under the summary.
+    """
+    summary, where = split_location(mirror_text)
+    new_story = (leave_progress_comment(task_gid, summary, story_gid, dry_run, task=task)
+                 if summary else story_gid)
+    if not where:
+        return new_story, where_story_gid
+    want = _progress_plain(where)
+    dup = next((b for b in (bot_stories or [])
+                if _comment_matches(b.get("text", ""), want)), None)
+    if dup:
+        return new_story, dup["gid"]
+    edit = where_story_gid if story_gid else ""
+    try:
+        where_story = leave_progress_comment(task_gid, where, edit, dry_run, task=task)
+    except Exception as e:
+        log.warning(f"    Posted the summary on {task_gid} but not its Where: comment ({e})")
+        return new_story, where_story_gid
+    return new_story, where_story or edit
 
 
 # ---------------------------------------------------------------------------
@@ -934,9 +1609,19 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
     def _diff(mirror_val, asana_val):
         return (mirror_val or "").strip() != (asana_val or "").strip()
 
-    # Notes are read-only in the mirror — multi-line content doesn't survive the
-    # FIELD_RE single-line parser, so pushing notes would silently truncate them.
-    # Edit notes directly in Asana.
+    # The description (Asana's `notes`) is deliberately read-only in the mirror:
+    # it is the brief a task was created with, and it changes on purpose, not as
+    # a side effect of a file edit. Amendments belong in a comment; a genuinely
+    # wrong description is rewritten with --update-task, which logs the change.
+    # FIELD_RE is also single-line, so a pushed description would truncate at
+    # the first newline. Say so when an edit is spotted rather than swallowing
+    # it: only the first line can be compared, which is enough to notice.
+    mirror_desc = (prev.get("notes") or "").strip()
+    asana_desc  = (t.get("notes") or "").strip()
+    asana_first = asana_desc.split("\n", 1)[0].strip() or "No notes."
+    if mirror_desc and mirror_desc != asana_first:
+        log.warning(f"  [{prefix}] {lid}: description edited in the mirror — not pushed. "
+                    f"Use: sync.py --update-task --task-gid {gid} --task-notes '...'")
 
     due = prev.get("due", "none")
     if _diff(due, t.get("due_on") or "none"):
@@ -1020,6 +1705,130 @@ def _push_simple_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool
     except Exception as e:
         log.warning(f"  [{prefix}] Could not push fields to {lid}: {e}")
         return False
+
+
+def _cf_push_value(cf: dict, mirror_val: str, lid: str, prefix: str):
+    """(True, payload value) for a custom field, or (False, None) to skip it.
+
+    A value the field cannot hold is skipped with a warning rather than sent:
+    Asana 400s the whole PUT, which would lose every other field in the same
+    push. "none" clears the field.
+    """
+    ftype = _cf_type(cf)
+    name  = (cf.get("name") or "").strip()
+    blank = mirror_val.strip().lower() in ("", "none")
+    if ftype == "text":
+        return True, ("" if blank else mirror_val.strip())
+    if ftype == "number":
+        if blank:
+            return True, None
+        try:
+            return True, float(mirror_val.strip())
+        except ValueError:
+            log.warning(f"  [{prefix}] {lid}: '{mirror_val}' is not a number for "
+                        f"'{name}' — skipping")
+            return False, None
+    if ftype == "date":
+        if blank:
+            return True, None
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", mirror_val.strip()):
+            log.warning(f"  [{prefix}] {lid}: '{mirror_val}' is not an ISO date for "
+                        f"'{name}' — skipping")
+            return False, None
+        # A date custom field takes an object with exactly one of date /
+        # date_time, not the bare string a text field takes. Sending both keys
+        # is rejected ("DayAndDateTime should have exactly one of"). Confirmed
+        # against the Asana developer forum and a live write; the official
+        # custom-fields guide documents the enum shape but not this one.
+        return True, {"date": mirror_val.strip()}
+    if ftype == "enum":
+        if blank:
+            return True, None
+        opt = _enum_option_gid(cf, mirror_val)
+        if not opt:
+            log.warning(f"  [{prefix}] {lid}: '{mirror_val.strip()}' is not an option of "
+                        f"'{name}' — skipping")
+            return False, None
+        return True, opt
+    if ftype == "multi_enum":
+        if blank:
+            return True, []
+        gids = []
+        for part in mirror_val.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            opt = _enum_option_gid(cf, part)
+            if not opt:
+                log.warning(f"  [{prefix}] {lid}: '{part}' is not an option of "
+                            f"'{name}' — skipping the whole field")
+                return False, None
+            gids.append(opt)
+        return True, gids
+    return False, None
+
+
+def _push_custom_fields(t: dict, prev: dict, dry_run: bool, prefix: str) -> bool:
+    """Push every changed custom field from the mirror to Asana.
+
+    Generic on purpose: a field added to a project in Asana is mirrored and
+    pushable with no change here. Looper Status is excluded because
+    _push_simple_fields owns it — it carries queue-specific defaulting rules
+    that a plain value comparison would undo.
+
+    A multi-enum push writes exactly the set the mirror shows, which replaces
+    whatever Asana held. That is what a mirror means; it also means a stale
+    mirror line removes options, which is why the pull/push direction is decided
+    by modified_at before this is ever called.
+    """
+    gid     = t["gid"]
+    lid     = t.get("_local_id", gid)
+    raw     = prev.get("_raw") or {}
+    updates = {}
+    applied = {}
+
+    for cf in t.get("custom_fields", []):
+        fgid = cf.get("gid")
+        name = (cf.get("name") or "").strip()
+        if not fgid or not name or fgid in _managed_field_gids():
+            continue
+        if LOOPER_STATUS_FIELD_GID and fgid == LOOPER_STATUS_FIELD_GID:
+            continue
+        if _cf_type(cf) not in PUSHABLE_FIELD_TYPES:
+            continue
+        key = _mirror_key(name)
+        if key in RESERVED_MIRROR_KEYS and not _is_builtin_field(fgid, key):
+            continue
+        if key not in raw:
+            continue  # written by an older sync.py — nothing to compare against
+        mirror_val = raw[key].strip()
+        if mirror_val == _cf_mirror_value(cf):
+            continue
+        ok, value = _cf_push_value(cf, mirror_val, lid, prefix)
+        if not ok:
+            continue
+        updates[fgid] = value
+        applied[fgid] = (cf, mirror_val)
+
+    if not updates:
+        return False
+    names = sorted((cf.get("name") or "") for cf, _ in applied.values())
+    if dry_run:
+        log.info(f"    [DRY-RUN] Would set custom fields on {lid}: {names}")
+        return False
+    try:
+        _put(f"/tasks/{gid}", {"data": {"custom_fields": updates}})
+        log.info(f"  [{prefix}] Pushed custom fields to {lid}: {names}")
+    except Exception as e:
+        log.warning(f"  [{prefix}] Could not push custom fields to {lid}: {e}")
+        return False
+    # Reflect what Asana now holds, so the mirror written later this run shows
+    # the pushed value rather than the stale one it would otherwise push again.
+    for fgid, (cf, mirror_val) in applied.items():
+        cf["_mirror_override"] = mirror_val or "none"
+        if fgid == PRIORITY_FIELD_GID:
+            t["_priority"] = mirror_val or "none"
+    return True
 
 
 def _parse_refs(text: str) -> dict:
@@ -1127,6 +1936,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
             stories = fetch_stories(t["gid"])
             t["_comments"] = human_comments(stories)
             t["_bot_comments"] = bot_comment_texts(stories)
+            t["_bot_stories"]  = bot_comment_stories(stories)
 
         prev_gids    = parse_existing_task_gids(proj)
         curr_gids    = {t["gid"] for t in tasks}
@@ -1182,6 +1992,10 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                 pushed += 1
                 touched_gids.add(gid)
 
+            if _push_custom_fields(t, prev, dry_run, proj.prefix):
+                pushed += 1
+                touched_gids.add(gid)
+
             for label, mirror_key, asana_key, add_path, remove_path, item_key in [
                 ("tags",         "tags",         "tags",         "/tasks/{task_gid}/addTag",          "/tasks/{task_gid}/removeTag",          "tag"),
                 ("followers",    "followers",    "followers",    "/tasks/{task_gid}/addFollowers",     "/tasks/{task_gid}/removeFollowers",     "followers"),
@@ -1210,6 +2024,15 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
         # --- Progress comments ---
         posted_progress = state.get("posted_progress", {})
+        # Story GIDs live in their OWN map, never inside posted_progress. The
+        # hourly cron runs an older sync.py from the ops worktree (ADR 014) and
+        # shares this state file, where it reads posted_progress[gid] as a plain
+        # string. Storing a dict there made its `curr_p != posted_progress[gid]`
+        # test true on every run, so it posted the note a second time as raw
+        # text — literal "@mark" and "||" — and overwrote the GID.
+        progress_stories = state.get("progress_stories", {})
+        # The silent Where: comment posted under each summary (split_location).
+        where_stories = state.get("progress_where_stories", {})
         commented = 0
 
         # Guard: if the same non-trivial progress text appears on more than 2 tasks,
@@ -1230,32 +2053,82 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
             curr_p   = (prev or {}).get("progress", "")
             local_id = t.get("_local_id", "?")
 
+            prev_text  = posted_progress.get(gid) or ""
+            prev_story = progress_stories.get(gid) or ""
+
             if (curr_p
                     and not PLAIN_CHECK.match(curr_p)
-                    and curr_p != posted_progress.get(gid)):
+                    and curr_p != prev_text):
                 if progress_counts[curr_p] > 2:
                     log.warning(f"  [{proj.prefix}] Skipping comment for {local_id} — same progress text on {progress_counts[curr_p]} tasks (mirror edit bug?)")
                     continue
+
                 # Asana-side dedupe. posted_progress is per-project state, so for
                 # a task multi-homed into two boards (its home project and Studio
                 # Looper) the second project's sync has no record of the first
                 # having already posted this exact text, and duplicates it.
-                if curr_p.strip() in (t.get("_bot_comments") or set()):
+                # Compare the NORMALISED bodies: an @-mention comes back from
+                # Asana as the display name ("@Mark Bain ..."), so the raw mirror
+                # text never matches its own posted comment again.
+                bad = validate_progress_note(curr_p)
+                if bad:
+                    log.error(f"  [{proj.prefix}] NOT posting the note on {local_id} — {bad}. "
+                              f"Rewrite the Progress line in the mirror; task state still synced.")
+                    continue
+
+                summary, _where = split_location(curr_p)
+                if DONE_RE.match(_progress_plain(summary)):
+                    bad = validate_done_subtasks(summary, open_subtask_names(gid))
+                    if bad:
+                        log.error(f"  [{proj.prefix}] NOT posting the note on {local_id} — {bad}. "
+                                  f"Rewrite the Progress line in the mirror; task state still synced.")
+                        continue
+
+                want = _progress_plain(summary)
+                bot_stories = t.get("_bot_stories") or []
+                dup = next((b for b in bot_stories
+                            if _comment_matches(b["text"], want)), None)
+                if dup:
                     log.info(f"  [{proj.prefix}] Skipping comment for {local_id} — identical bainbot comment already on the task")
                     if not dry_run:
-                        posted_progress[gid] = curr_p
+                        posted_progress[gid]  = curr_p
+                        progress_stories[gid] = dup["gid"]
                     continue
+
+                # Edit in place, or post afresh? A human comment dated after our
+                # last note means Mark has responded (a rejection, a question),
+                # so the next note is a NEW round of work and must raise its own
+                # notification. Without an intervening human comment it is a
+                # correction of the same work: edit, so the thread stays one
+                # current note instead of a note plus a contradiction.
+                edit_story = ""
+                if prev_story:
+                    ours = next((b for b in bot_stories if b["gid"] == prev_story), None)
+                    since = (ours or {}).get("created_at", "")
+                    answered = any(c.get("created_at", "") > since
+                                   for c in (t.get("_comments") or [])) if since else False
+                    if not answered:
+                        edit_story = prev_story
+
                 try:
-                    log.info(f"  [{proj.prefix}] Posting progress comment for {local_id}...")
-                    leave_comment(gid, curr_p, dry_run)
+                    verb = "Editing" if edit_story else "Posting"
+                    log.info(f"  [{proj.prefix}] {verb} progress comment for {local_id}...")
+                    new_story, where_story = post_note(
+                        gid, curr_p, edit_story, where_stories.get(gid, ""),
+                        dry_run, task=t, bot_stories=bot_stories)
                     if not dry_run:
-                        posted_progress[gid] = curr_p
+                        posted_progress[gid]  = curr_p
+                        progress_stories[gid] = new_story or edit_story
+                        if where_story:
+                            where_stories[gid] = where_story
                     commented += 1
                     touched_gids.add(gid)
                 except Exception as e:
                     log.warning(f"  Failed to comment on {local_id}: {e}")
 
-        state["posted_progress"] = posted_progress
+        state["posted_progress"]  = posted_progress
+        state["progress_stories"] = progress_stories
+        state["progress_where_stories"] = where_stories
 
         # Stamp Last Synced on tasks we actually wrote to this run (pushes +
         # comments), plus tasks seen for the first time so the field is never
@@ -1350,6 +2223,10 @@ def create_task(project_gid: str, name: str, notes: str = '', assignee_gid: str 
     Create a task in the given Asana project via bainbot, return the new task GID.
     Optionally set it as a dependency of depends_on_gid.
     """
+    bad = validate_task_description(notes)
+    if bad:
+        raise ValueError(bad)
+
     payload = {
         "data": {
             "name": name,
@@ -1390,6 +2267,27 @@ def update_task(task_gid: str, name: str = None, notes: str = None,
     Replaces the notes wholesale; read the current value first if you mean to
     amend rather than overwrite.
     """
+    # The limit must not trap a correction. 21 existing studio descriptions are
+    # already over it, and the whole point of --update-task is fixing a wrong or
+    # misleading one: refusing a 1,400-char correction to a 3,500-char
+    # description would leave the wrong text in place. So on an update, an
+    # over-limit description is refused only when it is no shorter than the one
+    # it replaces. Creation stays strict — there is nothing to improve on.
+    if notes is not None and validate_task_description(notes):
+        current = ""
+        try:
+            current = (_get(f"/tasks/{task_gid}", {"opt_fields": "notes"})["data"]
+                       .get("notes") or "")
+        except Exception as e:
+            log.warning(f"  Could not read the current description of {task_gid}: {e}")
+        if len(notes.strip()) >= len(current.strip()):
+            raise ValueError(
+                f"{validate_task_description(notes)} The description it replaces is "
+                f"{len(current.strip())} chars, so this is not a correction. Shorten it, or "
+                f"put the detail in a comment.")
+        log.info(f"  Description is over the {DESCRIPTION_MAX_CHARS}-char limit but shorter "
+                 f"than the {len(current.strip())} chars it replaces — allowing the correction.")
+
     data = {}
     if name is not None:
         data["name"] = name
@@ -1429,15 +2327,24 @@ def create_subtasks(parent_gid: str, names: list, dry_run: bool = False) -> list
 
 def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT UP",
                      notes: str = "", due: str = "", assignee: str = "",
-                     depends_on: str = "", dry_run: bool = False) -> str:
+                     depends_on: str = "", follow_up_of: tuple = None,
+                     dry_run: bool = False) -> str:
     """
     Create a task in Asana, assign a local ID, place it in the correct section,
     and append it to the local mirror. Returns the local ID (e.g. NORE-042).
 
     assignee defaults to BainBot. depends_on is the GID of a task the new one
     blocks; if linking it fails, the task exists but this raises.
+
+    follow_up_of is (gid, label) of the task this one follows up. The new
+    task's description then opens "Follow-up to {label}." with the label linked
+    to that task, as Asana's own "Create follow-up task" does.
     """
     from datetime import datetime
+
+    bad = validate_task_description(notes)
+    if bad:
+        raise ValueError(bad)
 
     # 1. Resolve section GID
     sections = fetch_sections(proj)
@@ -1457,7 +2364,16 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
             "assignee": assignee_gid,
         }
     }
-    if notes:
+    if follow_up_of:
+        # html_notes, not notes: only rich text can carry a task link. The link
+        # markup matches _link_task_ids, so the label stays visible as the ID.
+        fu_gid, fu_label = follow_up_of
+        lead = (f'Follow-up to <a data-asana-gid="{fu_gid}" data-asana-dynamic="false">'
+                f'{html_escape(fu_label, quote=False)}</a>.')
+        body = lead + (f"\n\n{html_escape(notes, quote=False)}" if notes else "")
+        payload["data"]["html_notes"] = f"<body>{body}</body>"
+        notes = f"Follow-up to {fu_label}." + (f" {notes}" if notes else "")
+    elif notes:
         payload["data"]["notes"] = notes
     if due:
         payload["data"]["due_on"] = due
@@ -1465,7 +2381,8 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
     if dry_run:
         log.info(f"  [DRY-RUN] Would create task: {name!r} in {proj.prefix}/{section_name_upper}, "
                  f"assigned to {assignee_gid}"
-                 + (f", blocking {depends_on}" if depends_on else ""))
+                 + (f", blocking {depends_on}" if depends_on else "")
+                 + (f", following up {follow_up_of[1]}" if follow_up_of else ""))
         return f"{proj.prefix}-DRY"
 
     resp = _post("/tasks", payload)
@@ -1499,6 +2416,18 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
             raise RuntimeError(f"Created {lid} ({new_gid}) but could not make it block "
                                f"{depends_on}: {e}") from e
 
+    # 6. Point the original task at its follow-up. A link in a description
+    # leaves no trace on the task it names (checked 2026-11-17), so without
+    # this the original has no way to reach the follow-up. Silent: no @mark.
+    if follow_up_of:
+        try:
+            _post(f"/tasks/{follow_up_of[0]}/stories", {"data": {"html_text":
+                  f'<body>Follow-up: <a data-asana-gid="{new_gid}" '
+                  f'data-asana-dynamic="false">{lid}</a></body>'}})
+            log.info(f"  Linked from {follow_up_of[1]}")
+        except Exception as e:
+            log.warning(f"  Created {lid} but could not comment on {follow_up_of[1]}: {e}")
+
     if assignee_gid == BAINBOT_GID:
         assignee_name = ASSIGNEE_NAME
     else:
@@ -1507,7 +2436,7 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
         except Exception:
             assignee_name = assignee_gid
 
-    # 6. Append to mirror
+    # 7. Append to mirror
     today = date.today().isoformat()
     now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     permalink = f"https://app.asana.com/1/{WORKSPACE_GID}/project/{proj.gid}/task/{new_gid}"
@@ -1836,7 +2765,9 @@ def main():
     parser.add_argument("--task-name", metavar="NAME",
                         help="Task name (required with --create-task)")
     parser.add_argument("--task-notes", metavar="NOTES", default="",
-                        help="Task notes/description (optional with --create-task)")
+                        help=f"Task description (optional with --create-task). "
+                             f"Refused over {DESCRIPTION_MAX_CHARS} chars — see "
+                             f"docs/utilities/new-task.md")
     parser.add_argument("--task-section", metavar="SECTION", default="NEXT UP",
                         help="Section to place the task in (default: NEXT UP)")
     parser.add_argument("--task-due", metavar="YYYY-MM-DD", default="",
@@ -1846,6 +2777,10 @@ def main():
                              "Use 'me' for ASANA_USER_GID")
     parser.add_argument("--task-depends-on", metavar="GID", default="",
                         help="GID of the task this new task unblocks (optional)")
+    parser.add_argument("--follow-up-of", metavar="TASK", default="",
+                        help="With --create-task: the task this one follows up (local ID, "
+                             "GID or URL). Its description opens with a link to that task, "
+                             "and --project defaults to that task's project")
     parser.add_argument("--update-task", action="store_true",
                         help="Update an existing task's name and/or notes "
                              "(requires --task-gid; notes cannot be pushed "
@@ -1860,8 +2795,17 @@ def main():
                         help="Post a comment to an Asana task via bainbot (use with --task-gid and --comment-text)")
     parser.add_argument("--task-gid", metavar="GID", default="",
                         help="Asana task GID to comment on (required with --comment)")
+    parser.add_argument("--story-gid", metavar="GID", default="",
+                        help="With --comment: edit this existing bainbot comment in place "
+                             "instead of posting a second one (how a note is corrected)")
+    parser.add_argument("--where-story-gid", metavar="GID", default="",
+                        help="With --comment and --story-gid: the note's separate Where: "
+                             "comment, edited in place alongside the summary")
     parser.add_argument("--comment-text", metavar="TEXT", default="",
-                        help="Comment text to post (required with --comment)")
+                        help="Comment text to post (required with --comment). "
+                             "Supports the review-note format: a leading @mark "
+                             "becomes a real Asana @-mention, and || separates "
+                             "blocks. See docs/utilities/asana-comments.md")
     parser.add_argument("--get-task", metavar="REF",
                         help="Read-only: print one task (notes + comments) via bainbot. "
                              "REF is an Asana task URL, a GID, or a local ID like BD-152")
@@ -1882,17 +2826,50 @@ def main():
             parser.error("--update-task requires --task-gid")
         if not args.task_name and not args.task_notes:
             parser.error("--update-task requires --task-name and/or --task-notes")
-        update_task(args.task_gid,
-                    name=args.task_name or None,
-                    notes=args.task_notes or None,
-                    dry_run=args.dry_run)
+        try:
+            update_task(args.task_gid,
+                        name=args.task_name or None,
+                        notes=args.task_notes or None,
+                        dry_run=args.dry_run)
+        except ValueError as e:
+            log.error(f"Not updating {args.task_gid}: {e}")
+            sys.exit(1)
         sys.exit(0)
 
     if args.comment:
         if not args.task_gid or not args.comment_text:
             parser.error("--comment requires --task-gid and --comment-text")
-        leave_comment(args.task_gid, args.comment_text, dry_run=args.dry_run)
-        log.info(f"Commented on task {args.task_gid}.")
+        # Same renderer as a Progress note, so a one-off comment gets the same
+        # @mark mention and || block expansion. Mark's Asana inbox is filtered
+        # to "Mentioned": a plain-text comment from any tool is invisible to him.
+        bad = validate_progress_note(args.comment_text)
+        if bad:
+            log.error(f"Not posting: {bad}")
+            sys.exit(1)
+        # A bare task GID carries no project state, so --comment cannot find the
+        # note it posted last time: without --story-gid it always posts afresh,
+        # leaving the old note above the new one. Correcting a note means passing
+        # the story GID this run prints.
+        summary, _where = split_location(args.comment_text)
+        if DONE_RE.match(_progress_plain(summary)):
+            bad = validate_done_subtasks(summary, open_subtask_names(args.task_gid))
+            if bad:
+                log.error(f"Not posting: {bad}")
+                sys.exit(1)
+        new_story, where_story = post_note(args.task_gid, args.comment_text,
+                                           args.story_gid, args.where_story_gid,
+                                           dry_run=args.dry_run)
+        if where_story and where_story != args.where_story_gid:
+            log.info(f"Posted the Where: comment as story {where_story}; to correct it "
+                     f"with the summary, also pass --where-story-gid {where_story}.")
+        if args.story_gid:
+            log.info(f"Edited comment {args.story_gid} on task {args.task_gid}.")
+        elif not new_story:
+            log.info(f"Commented on task {args.task_gid}.")
+        else:
+            log.info(f"Commented on task {args.task_gid} (story {new_story}). To correct "
+                     f"this note, re-run with --story-gid {new_story}; without it a second "
+                     f"comment is posted below the first.")
         sys.exit(0)
 
     if args.create:
@@ -1924,6 +2901,16 @@ def main():
     if args.create_task:
         if not args.task_name:
             parser.error("--create-task requires --task-name")
+        follow_up_of = None
+        if args.follow_up_of:
+            gid_to_lid, lid_to_gid = _local_id_maps()
+            fu_gid = resolve_task_ref(args.follow_up_of, lid_to_gid)
+            if not fu_gid:
+                parser.error(f"--follow-up-of: cannot resolve {args.follow_up_of!r} to a task")
+            fu_lid = gid_to_lid.get(fu_gid)
+            follow_up_of = (fu_gid, fu_lid or fu_gid)
+            if not args.project and fu_lid:
+                args.project = re.sub(r"-\d+$", "", fu_lid)
         if not args.project:
             parser.error("--create-task requires --project (the task prefix, e.g. BD)")
         projects = discover_projects(filter_prefix=args.project)
@@ -1945,8 +2932,12 @@ def main():
                 due=args.task_due,
                 assignee=assignee,
                 depends_on=args.task_depends_on,
+                follow_up_of=follow_up_of,
                 dry_run=args.dry_run,
             )
+        except ValueError as e:
+            log.error(f"Not creating task: {e}")
+            sys.exit(1)
         except RuntimeError as e:
             log.error(str(e))
             sys.exit(1)

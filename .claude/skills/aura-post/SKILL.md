@@ -1,6 +1,6 @@
 ---
 name: aura-post
-description: Draft a social media post for a given event or moment. Invoke with a moment description or an Arke candidate. Returns a LinkedIn-ready draft in studio voice.
+description: "Draft a LinkedIn-ready social post in studio voice from a moment description or an Arke candidate."
 allowed-tools: [Read, Write]
 ---
 

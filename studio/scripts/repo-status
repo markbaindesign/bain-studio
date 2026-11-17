@@ -1,0 +1,539 @@
+#!/usr/bin/env python3
+"""Dense, always-on list of every registered studio repo and what is unfinished in it.
+
+The companion to session-status: that one answers "which session needs me",
+this one answers "where did I leave work". Both are read-only and poll on a
+timer, so there is nothing to refresh by hand.
+
+Every path in studio/projects.json is read with four or five git commands:
+the branch and working tree from `status --porcelain=v2 --branch`, the
+worktrees, the local branches not merged into the integration branch, and the
+last commit. Several registry paths resolve to one repo - SL and SLT are
+directories inside bain-studio - so rows are deduplicated by the repo's
+toplevel, not by the registered path.
+
+**Nothing is fetched.** A poll that talked to a remote would need credentials
+and would be slow, so every figure here comes from local refs. That is also
+why "behind" is not shown: without a fetch it would be a stale number dressed
+as a fact. Ahead is honest, because local commits are local knowledge.
+
+Every git call runs with GIT_OPTIONAL_LOCKS=0. Plain `git status` takes
+index.lock to write back refreshed stat information, and a pane doing that to
+twenty repos a minute would eventually collide with a real commit in one of
+them.
+
+Collection takes seconds, mostly waiting on cold disk, so it runs on a
+background thread: the screen keeps its last result and says how old it is
+rather than freezing while the next one is gathered.
+
+Keys: j/k or arrows to move, r to refresh, q to quit.
+"""
+
+import curses
+import json
+import os
+import subprocess
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+POLL_SECONDS = 60
+WORKERS = 10
+
+# The registry is gitignored and lives beside the script, which in the ops
+# worktree is a symlink to the development checkout's copy (ops-worktree-link.sh).
+# A worktree other than ops has no copy at all, so a path can be given instead -
+# which is also how the tests point it at a fixture.
+REGISTRY = Path(os.environ.get("STUDIO_PROJECTS")
+                or Path(__file__).resolve().parent.parent / "projects.json")
+OPS_TREE = Path.home() / "ops" / "bain-studio"
+
+# Where day-to-day work is integrated, in order of preference. The first one a
+# repo actually has is what unmerged branches are counted against.
+INTEGRATION = ("develop", "main", "master")
+
+# Attention first: a path that has gone, then uncommitted work, then commits
+# that exist nowhere else, then stray files, then a repo parked on a feature
+# branch. "ok" and "nogit" ask for nothing, so they sit at the bottom - nogit
+# last because it is a registry fact, not a repo state.
+STATUS_ORDER = {"missing": 0, "dirty": 1, "ahead": 2, "mirror": 3,
+                "untracked": 4, "branch": 5, "ok": 6, "nogit": 7}
+GLYPH = {"missing": "✕", "dirty": "●", "ahead": "▲", "mirror": "◍",
+         "untracked": "◌", "branch": "◐", "ok": "○", "nogit": "·"}
+
+# sync.py rewrites these at the project root on a schedule, so in half the
+# client repos they are the only thing modified. They are counted apart from
+# real work: with them in the dirty count, ten of nineteen repos sat
+# permanently at the top of the list, which is the same as sorting by nothing.
+MIRROR_FILES = ("asana-mirror.md", "asana-ids.json")
+
+# git reads nothing from a remote here, so index.lock is never worth taking.
+GIT_ENV = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+
+
+def git(path, *args, timeout=20):
+    """One git command in `path`. Returns (stdout, stderr), either may be ''."""
+    try:
+        out = subprocess.run(["git", "-C", str(path), *args], env=GIT_ENV,
+                             capture_output=True, text=True, timeout=timeout)
+    except (subprocess.SubprocessError, OSError) as exc:
+        return "", str(exc)
+    if out.returncode != 0:
+        return "", out.stderr.strip()
+    return out.stdout.strip(), ""
+
+
+def registry_paths():
+    """Active project paths from the registry, in registry order."""
+    try:
+        entries = json.loads(REGISTRY.read_text())
+    except (OSError, ValueError):
+        return []
+    paths = []
+    for entry in entries:
+        path = entry if isinstance(entry, str) else entry.get("path")
+        status = "active" if isinstance(entry, str) else entry.get("status", "active")
+        if path and status == "active":
+            paths.append(path)
+    return paths
+
+
+def parse_status(text):
+    """Branch, upstream, ahead and file counts from `status --porcelain=v2 --branch`.
+
+    Tracked and untracked changes are counted apart: a repo whose only
+    "changes" are an untracked .claude/ and .ddev/ is not work in progress, and
+    counting them together put most repos permanently at the top of the list.
+
+    `branch.ab` is only present when the branch has an upstream configured, and
+    `branch.head` is the literal "(detached)" on a detached HEAD.
+    """
+    state = {"branch": "", "upstream": "", "ahead": 0,
+             "tracked": 0, "mirror": 0, "untracked": 0, "conflicts": 0}
+    for line in text.splitlines():
+        if line.startswith("# branch.head "):
+            state["branch"] = line.split(" ", 2)[2]
+        elif line.startswith("# branch.upstream "):
+            state["upstream"] = line.split(" ", 2)[2]
+        elif line.startswith("# branch.ab "):
+            for field in line.split(" ", 2)[2].split():
+                if field.startswith("+"):
+                    state["ahead"] = int(field[1:])
+        elif line.startswith(("1 ", "2 ")):
+            # A changed entry ("1 ") has the path as its ninth field; a rename
+            # ("2 ") carries an extra score field first and appends the old path
+            # after a tab. Splitting a fixed number of times rather than on
+            # every space keeps a path that contains spaces intact.
+            fields = 9 if line.startswith("2 ") else 8
+            parts = line.split(" ", fields)
+            path = parts[fields].split("\t")[0] if len(parts) > fields else ""
+            if os.path.basename(path) in MIRROR_FILES:
+                state["mirror"] += 1
+            else:
+                state["tracked"] += 1
+        elif line.startswith("? "):
+            state["untracked"] += 1
+        elif line.startswith("u "):
+            state["conflicts"] += 1
+    return state
+
+
+def parse_worktrees(text):
+    """How many live worktrees a repo has, from `worktree list --porcelain`.
+
+    A prunable entry is a worktree whose directory has gone; git still lists it
+    until someone prunes, and counting it would report work that is not there.
+    """
+    records = [r.splitlines() for r in text.split("\n\n")]
+    return sum(1 for record in records
+               if any(l.startswith("worktree ") for l in record)
+               and not any(l.startswith("prunable") for l in record))
+
+
+def pick_integration(branches):
+    """The branch unmerged work is counted against: develop, else main, else master."""
+    for name in INTEGRATION:
+        if name in branches:
+            return name
+    return ""
+
+
+def unmerged_count(lines, integration):
+    """Local branches holding work that is not in the integration branch.
+
+    The integration branches themselves are never counted: main not being
+    merged into develop is the normal state of a git-flow repo, not unfinished
+    work. A looper/* branch does count - unattended work left on a branch is
+    exactly what this column is for.
+    """
+    return len([name for name in lines
+                if name.strip() and name.strip() not in INTEGRATION
+                and name.strip() != integration])
+
+
+def classify(row):
+    """One repo's state, worst first."""
+    if row["state"] in ("missing", "nogit"):
+        return row["state"]
+    if row["tracked"] or row["conflicts"]:
+        return "dirty"
+    if row["mirror"] and not row["ahead"] and row["upstream"]:
+        # Nothing but a synced mirror waiting to be committed: it still wants a
+        # commit, so not "ok", but it is not work left half-done either.
+        return "mirror"
+    # No upstream at all is unpushed work just as surely as commits ahead of
+    # one: the branch exists on this machine and nowhere else.
+    if row["ahead"] or not row["upstream"]:
+        return "ahead"
+    if row["untracked"]:
+        return "untracked"
+    if row["branch"] not in INTEGRATION:
+        return "branch"
+    return "ok"
+
+
+def repo_state(path):
+    """Everything shown for one registered path."""
+    row = {"path": path, "name": os.path.basename(path.rstrip("/")) or path,
+           "top": path, "branch": "", "upstream": "", "ahead": 0, "tracked": 0,
+           "mirror": 0, "untracked": 0, "conflicts": 0, "worktrees": 1, "unmerged": 0,
+           "remotes": True,
+           "committed": 0, "subject": "", "state": "", "note": ""}
+    if not os.path.isdir(path):
+        row["state"] = "missing"
+        row["note"] = "path is gone"
+        return row
+
+    top, error = git(path, "rev-parse", "--show-toplevel")
+    if not top:
+        row["state"] = "nogit"
+        # "dubious ownership" is a different problem from "not a repository" -
+        # the first is fixable with safe.directory, the second means the
+        # registry is wrong - so the reason is kept rather than flattened.
+        row["note"] = ("dubious ownership" if "dubious ownership" in error
+                       else "not a git repo")
+        return row
+    row["top"] = top
+    row["name"] = os.path.basename(top) or top
+
+    status, _ = git(path, "status", "--porcelain=v2", "--branch")
+    row.update(parse_status(status))
+
+    # A branch with no configured upstream may still have been pushed, so fall
+    # back to origin/<branch> before calling it unpushed.
+    if row["branch"] and not row["upstream"] and row["branch"] != "(detached)":
+        ref = f"refs/remotes/origin/{row['branch']}"
+        found, _ = git(path, "rev-parse", "--verify", "--quiet", ref)
+        if found:
+            row["upstream"] = f"origin/{row['branch']}"
+            count, _ = git(path, "rev-list", "--count", f"{row['upstream']}..HEAD")
+            row["ahead"] = int(count) if count.isdigit() else 0
+        else:
+            # A branch nobody pushed and a repo with nowhere to push to are
+            # different problems: the second wants /repo-create, not a push.
+            remotes, _ = git(path, "remote")
+            row["remotes"] = bool(remotes.strip())
+
+    trees, _ = git(path, "worktree", "list", "--porcelain")
+    row["worktrees"] = parse_worktrees(trees) or 1
+
+    heads, _ = git(path, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+    integration = pick_integration(heads.splitlines())
+    if integration:
+        branches, _ = git(path, "branch", "--no-merged", integration,
+                          "--format=%(refname:short)")
+        row["unmerged"] = unmerged_count(branches.splitlines(), integration)
+
+    last, _ = git(path, "log", "-1", "--format=%ct\t%s")
+    if "\t" in last:
+        when, subject = last.split("\t", 1)
+        row["committed"] = int(when) if when.isdigit() else 0
+        row["subject"] = subject
+    row["state"] = classify(row)
+    return row
+
+
+def dedupe(rows):
+    """One row per repo. SL and SLT are directories inside bain-studio, so three
+    registry paths resolve to one repo and would otherwise be listed three times.
+    The shortest path wins, which is the repo root rather than a directory in it."""
+    best = {}
+    for row in rows:
+        key = row["top"]
+        if key not in best or len(row["path"]) < len(best[key]["path"]):
+            best[key] = row
+    return list(best.values())
+
+
+def collect():
+    paths = registry_paths()
+    if not paths:
+        return []
+    with ThreadPoolExecutor(max_workers=min(WORKERS, len(paths))) as pool:
+        rows = list(pool.map(repo_state, paths))
+    rows = dedupe(rows)
+    # Within a state, whatever was touched most recently first: that is the one
+    # the work was probably left in.
+    rows.sort(key=lambda r: (STATUS_ORDER.get(r["state"], 9), -r["committed"]))
+    return rows
+
+
+def ops_state():
+    """Whether the ops worktree is running the newest release.
+
+    A tagged release is not done until ops is deployed, so the pane says which
+    tag ops holds and whether a newer one exists. Local changes to tracked
+    files matter too: ops-deploy.sh refuses to deploy over them.
+    """
+    if not OPS_TREE.is_dir():
+        return {"note": "no ops worktree"}
+    tag, _ = git(OPS_TREE, "describe", "--tags", "--exact-match")
+    head, _ = git(OPS_TREE, "rev-parse", "--short", "HEAD")
+    tags, _ = git(OPS_TREE, "tag", "--sort=-v:refname")
+    status, _ = git(OPS_TREE, "status", "--porcelain=v2")
+    newest = tags.splitlines()[0] if tags.splitlines() else ""
+    return {"tag": tag, "head": head, "newest": newest,
+            "tracked": sum(1 for line in status.splitlines()
+                           if line.startswith(("1 ", "2 ", "u "))),
+            "note": ""}
+
+
+def ops_text(ops):
+    """The ops line, and whether it is asking for something."""
+    if ops.get("note"):
+        return f"ops {ops['note']}", True
+    where = ops["tag"] or (f"@{ops['head']}" if ops["head"] else "?")
+    behind = bool(ops["newest"] and ops["tag"] != ops["newest"])
+    text = f"ops {where}"
+    if behind:
+        text += f" → {ops['newest']} to deploy"
+    elif ops["tag"]:
+        text += " current"
+    if ops["tracked"]:
+        text += f" · {ops['tracked']} local change" + ("s" if ops["tracked"] > 1 else "")
+    return text, behind or bool(ops["tracked"])
+
+
+def ago(seconds):
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h"
+    if seconds < 86400 * 365:
+        return f"{seconds // 86400}d"
+    return f"{seconds // (86400 * 365)}y"
+
+
+def counts_text(row):
+    """The working tree in one column: real changes, mirror files, untracked."""
+    parts = []
+    if row["tracked"] or row["conflicts"]:
+        parts.append(f"{row['tracked'] + row['conflicts']}M")
+    if row["mirror"]:
+        parts.append(f"{row['mirror']}m")
+    if row["untracked"]:
+        parts.append(f"{row['untracked']}?")
+    return " ".join(parts)
+
+
+def ahead_text(row):
+    """Commits that exist only here. `local` means the branch has no upstream at
+    all, so all of it does. Behind is deliberately absent: nothing is fetched."""
+    if row["state"] in ("missing", "nogit"):
+        return ""
+    if not row["upstream"]:
+        return "local" if row.get("remotes", True) else "no remote"
+    return f"↑{row['ahead']}" if row["ahead"] else ""
+
+
+def extras_text(row):
+    """Work parked elsewhere in the repo: extra worktrees, unmerged branches."""
+    parts = []
+    if row["worktrees"] > 1:
+        parts.append(f"{row['worktrees'] - 1}wt")
+    if row["unmerged"]:
+        parts.append(f"{row['unmerged']}ub")
+    return " ".join(parts)
+
+
+def row_text(row, width):
+    """One row, fitted to the pane.
+
+    Columns are given up in order of what can be done without: the subject
+    first, then the parked-work counts, then the branch is squeezed. State,
+    repo name and the working-tree counts always survive, because they are what
+    the app is for.
+    """
+    head = "{} {:<9} {:<20} ".format(
+        GLYPH.get(row["state"], "?"), row["state"], row["name"][:20])
+    tail = " {:>11} {:>5}".format(counts_text(row), ago_or_note(row))
+    branch = row["note"] or row["branch"] or "-"
+    extras = " {:>9} {:>8}".format(ahead_text(row), extras_text(row))
+
+    room = max(0, width - 1 - len(head) - len(tail))
+    body = None
+    for extra in (extras, ""):
+        if room >= 8 + len(extra):
+            branch_width = min(26, room - len(extra))
+            body = "{:<{w}}".format(branch[:branch_width], w=branch_width) + extra
+            break
+    if body is None:
+        body = "{:<{w}}".format(branch[:room], w=room)
+
+    text = head + body + tail
+    # The last commit subject says what the work in there was, and is the first
+    # thing worth reading once the state has been taken in.
+    if row["subject"] and width >= len(text) + 24:
+        text += "  " + row["subject"][: width - len(text) - 3]
+    return text[: max(0, width - 1)]
+
+
+def ago_or_note(row):
+    """Time since the last commit, or nothing where there is no commit to date."""
+    return ago(time.time() - row["committed"]) if row["committed"] else "-"
+
+
+def draw(stdscr, rows, ops, cursor, refreshed, pending, error=""):
+    stdscr.erase()
+    height, width = stdscr.getmaxyx()
+
+    counts = {name: sum(1 for r in rows if r["state"] == name) for name in STATUS_ORDER}
+    tally = " · ".join(f"{counts[n]} {n}" for n in STATUS_ORDER if counts[n])
+    head = f"{len(rows)} repos   {tally}"
+    if not rows and not pending:
+        # An empty screen would read as "nothing to do" when the likelier
+        # cause is a worktree with no registry beside it.
+        head = f"no projects read from {REGISTRY}"
+    stamp = ("refreshing" if pending else f"{ago(time.time() - refreshed)} ago")
+    wants = counts["missing"] + counts["dirty"] + counts["ahead"]
+    if error:
+        # A pass that threw must say so: the alternative is a screen of figures
+        # quietly going stale.
+        head, wants = f"collect failed: {error}", 1
+    # The stamp owns the right-hand end, so a long head is cut rather than run
+    # into it: a registry path can be longer than the pane is wide.
+    head = head[: max(0, width - len(stamp) - 2)]
+    stdscr.addnstr(0, 0, head.ljust(max(0, width - len(stamp) - 1)) + stamp, width - 1,
+                   curses.A_BOLD | (curses.color_pair(1) if wants else 0))
+
+    first_row = 1
+    if ops and height > 2:
+        text, wants_ops = ops_text(ops)
+        stdscr.addnstr(1, 0, text.ljust(width - 1), width - 1,
+                       curses.color_pair(2) if wants_ops else curses.A_DIM)
+        first_row = 2
+
+    for index, row in enumerate(rows):
+        line = index + first_row
+        if line >= height:
+            break
+        attr = curses.color_pair({"missing": 1, "dirty": 1, "ahead": 2,
+                                  "untracked": 4, "branch": 4}.get(row["state"], 3))
+        if row["state"] in ("ok", "nogit"):
+            attr |= curses.A_DIM
+        if cursor is not None and index == cursor:
+            attr |= curses.A_REVERSE
+        stdscr.addnstr(line, 0, row_text(row, width).ljust(width - 1), width - 1, attr)
+
+    if (rows and cursor is not None and cursor < len(rows)
+            and height > len(rows) + first_row + 1):
+        stdscr.addnstr(height - 1, 0, rows[cursor]["path"][: width - 1], width - 1,
+                       curses.A_DIM)
+    stdscr.refresh()
+
+
+class Collector:
+    """Gathers in a background thread so a slow poll never freezes the screen.
+
+    Twenty repos off cold disk take several seconds, almost all of it waiting.
+    The screen keeps the previous result and says how old it is; a refresh
+    asked for while one is already running is ignored rather than queued.
+    """
+
+    def __init__(self):
+        self.rows = []
+        self.ops = {}
+        self.refreshed = 0.0
+        self.pending = False
+        self.error = ""
+        self._lock = threading.Lock()
+
+    def start(self):
+        with self._lock:
+            if self.pending:
+                return
+            self.pending = True
+        threading.Thread(target=self._work, daemon=True).start()
+
+    def _work(self):
+        """One pass. Anything thrown is reported and the previous rows kept.
+
+        Without the finally, one unexpected line of git output would kill this
+        thread with `pending` left true: start() would refuse every later
+        refresh and the pane would say "refreshing" until it was respawned - a
+        stuck screen that still looks like a working one.
+        """
+        error = ""
+        rows, ops = None, None
+        try:
+            rows, ops = collect(), ops_state()
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+        finally:
+            with self._lock:
+                if rows is not None:
+                    self.rows, self.ops = rows, ops
+                self.error = error
+                self.refreshed = time.time()
+                self.pending = False
+
+    def snapshot(self):
+        with self._lock:
+            return self.rows, self.ops, self.refreshed, self.pending, self.error
+
+
+def main(stdscr):
+    curses.curs_set(0)
+    curses.use_default_colors()
+    for pair, colour in ((1, curses.COLOR_RED), (2, curses.COLOR_YELLOW), (3, -1),
+                         (4, curses.COLOR_CYAN)):
+        curses.init_pair(pair, colour, -1)
+    collector = Collector()
+    collector.start()
+    # No cursor until the keyboard is used: starting on row 0 reads as a
+    # selection on a screen that is almost always only read.
+    cursor = None
+
+    while True:
+        rows, ops, refreshed, pending, error = collector.snapshot()
+        if cursor is not None:
+            cursor = max(0, min(cursor, max(0, len(rows) - 1)))
+        draw(stdscr, rows, ops, cursor, refreshed, pending, error)
+
+        # One tick a second: the only thing moving between polls is the stamp.
+        stdscr.timeout(1000)
+        key = stdscr.getch()
+        if key in (ord("q"), 27):
+            return
+        if key in (ord("j"), curses.KEY_DOWN):
+            cursor = 0 if cursor is None else cursor + 1
+        elif key in (ord("k"), curses.KEY_UP):
+            cursor = 0 if cursor is None else cursor - 1
+        elif key == ord("g"):
+            cursor = 0
+        elif key == ord("G"):
+            cursor = len(rows) - 1
+
+        if key == ord("r") or time.time() - refreshed >= POLL_SECONDS:
+            collector.start()
+
+
+if __name__ == "__main__":
+    try:
+        curses.wrapper(main)
+    except KeyboardInterrupt:
+        pass

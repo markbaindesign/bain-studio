@@ -27,7 +27,7 @@ No args — skill will ask what to document.
 | Checklist | `docs/gods/{god}/{name}-checklist.md` |
 | Skill / utility | `docs/utilities/{name}.md` |
 | ADR | `docs/adr/ADR-NNN-{slug}.md` |
-| Project | `docs/projects/{prefix}.md` |
+| Project | `$STUDIO_CONTENT_DIR/projects/{prefix}.md` (Dropbox, not this repo) |
 
 ## Notes
 

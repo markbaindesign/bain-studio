@@ -55,10 +55,10 @@ Aggregates (`income_30d`, `balance_after_30d`, the BBVA 30-day figure and the co
 Each billable, non-fixed-fee Harvest project with uninvoiced work becomes one entry. It is assumed to be invoiced at the end of the current month and paid after the client's `lag_days`, net of any `fee_pct`. The entry is matched to a client rule on `"Client | Project"`.
 
 - Fixed-fee projects are skipped. Their payments are milestones.
-- `unbilled.exclude` (regex on `"Client | Project"`) drops hours a recurring tier already pays for: the NORE Upwork contract, the Techstyle retainer, and KF's fixed monthly fee. A project paid by a recurring entry must be listed here, or it is counted twice.
+- `unbilled.exclude` (regex on `"Client | Project"`) drops hours a recurring tier already pays for: the NORE Upwork contract, the TSTY retainer, and KF's fixed monthly fee. A project paid by a recurring entry must be listed here, or it is counted twice.
 - Once the hours are invoiced, Harvest stops reporting them as uninvoiced, and the invoice appears as a receivable after it is booked in GnuCash.
 - Harvest data is passed to `gnucash_parser.parse(harvest_projects=...)` by the dashboard server and by the collector's direct path. If Harvest or its uninvoiced report fails, `income_sources_missing` lists `harvest`, and the Slack report says income is incomplete. A failure is never treated as zero.
-- Spanish clients (e.g. Jaume Beato) are forecast at the uninvoiced base amount. The cash actually received is base + 21% IVA - 15% IRPF.
+- Spanish clients are forecast at the uninvoiced base amount. The cash actually received is base + 21% IVA - 15% IRPF.
 
 ## How receivables are read
 

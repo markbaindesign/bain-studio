@@ -1,12 +1,6 @@
 ---
 name: brand-voice
-description: >
-  Tune Mark's brand voice rules — what he would and wouldn't say in a particular
-  context (cold outreach, client messages, social posts, proposals, etc). Reads and
-  updates the master brand voice doc at
-  /media/data/Dropbox/Work/Content/Brand Voice/brand-voice.md. Accessible from any
-  project. Trigger phrases: "brand voice", "tune my voice", "voice rules",
-  "/brand-voice".
+description: "Tune Mark's brand voice rules for a given context (cold outreach, client messages, social, proposals). Reads and updates the master brand voice doc."
 allowed-tools: [Read, Write, Edit, Bash]
 ---
 

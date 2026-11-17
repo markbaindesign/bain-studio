@@ -1,6 +1,6 @@
 ---
 name: studio-ghost-projects
-description: Scan for inactive or ghost projects — registered projects with no recent Asana activity, stale mirrors, or abandoned branches. Surfaces projects that may need archiving, chasing, or closing.
+description: "Scan for ghost projects: no recent Asana activity, stale mirrors, abandoned branches. Surfaces what needs archiving or chasing."
 allowed-tools: [Read, Bash]
 ---
 

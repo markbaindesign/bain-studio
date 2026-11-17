@@ -1,6 +1,7 @@
 ---
 name: repo-create
-description: Create a GitHub or Bitbucket repository and wire up the local git repo (init, remote, push, default branch). Provider-agnostic - defaults to Bitbucket private, GitHub for --public. Wraps studio/scripts/repo-create. Usage: /repo-create [name] [--gh|--bb] [--public]
+description: "Create a GitHub or Bitbucket repository and wire up the local git repo. Defaults to Bitbucket private, GitHub for --public."
+argument-hint: "[name] [--gh|--bb] [--public]"
 model: haiku
 allowed-tools: [Bash]
 ---

@@ -144,7 +144,7 @@ When used with `/commission`, pass WordPress flags in the commission arguments a
 
 - **WordPress project layout standard**: `/media/data/dev/bain-studio/docs/utilities/wp-project-layout.md`
 - **Example WordPress VVV project**: `/media/data/dev/vvv/clients/www/nore`
-- **Example WordPress DDEV project**: `/media/data/dev/ddev/ebiz-global`
+- **Example WordPress DDEV project**: `/media/data/dev/ddev/{project}`
 
 ## Related
 
@@ -176,7 +176,7 @@ the skeleton the union of `wp-project-layout.md` and `wp-scaffold/PLAN.md`.
 
 One environment finding surfaced during review: `wp-cli.yml` is listed in
 `~/.gitignore_global` under a VVV heading, so it has never been tracked in any studio project
-(`nore` and `buddhist-film-foundation` both have it on disk, untracked). Under DDEV it is a
+(two VVV projects have it on disk, untracked). Under DDEV it is a
 project file that should be versioned. The script now warns when a file it wrote is ignored,
 naming the gitignore and line, rather than force-adding over a deliberate user setting.
 Removing that line from the global gitignore is a separate decision for Mark.

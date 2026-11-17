@@ -168,6 +168,21 @@ git tag -a X.Y.Z -m "X.Y.Z"
 
 Tags carry no `v` prefix. See the versioning section of `/media/data/dev/CLAUDE.md`.
 
+### 10. Deploy the tag to ops
+
+**A tagged release is not finished until ops is running it.** The scheduled jobs
+(`sync.py`, Hermes, the collectors, the forecast report) all run from
+`/home/bain/ops/bain-studio`, not the dev checkout, so a tag that is never deployed
+leaves every unattended job on the previous release.
+
+```bash
+studio/scripts/ops-deploy.sh --check     # confirm the delta
+studio/scripts/ops-deploy.sh             # deploy the newest tag
+```
+
+Report the deployed version back. If the deploy fails, say so plainly - the release
+is only half done.
+
 ---
 
 ## Notes
@@ -181,3 +196,5 @@ Tags carry no `v` prefix. See the versioning section of `/media/data/dev/CLAUDE.
 - Write from the client's perspective — "Fixed broken contact form" not "Fixed POST handler null reference on /wp-json/contact/v1/submit".
 - If a QA review-passed item contradicts the git log, trust the QA item.
 - Run `/release-report` after this to generate the client-facing version.
+- **Every tag deploys.** Cutting a release without running `ops-deploy.sh` is an
+  incomplete release: cron keeps running the old code with no error to notice.

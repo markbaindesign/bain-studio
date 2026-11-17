@@ -1,6 +1,6 @@
 ---
 name: seo-audit
-description: Technical SEO audit across key pages of a live site. Checks robots.txt, sitemap, per-page metadata (title, description, canonical, H1, JSON-LD, Open Graph), and Core Web Vitals via Google PageSpeed Insights API (free, no account needed). Saves a dated markdown report to context/seo/ in the project directory. Run at project start, after SEO work, or on demand.
+description: "Technical SEO audit of a live site: robots.txt, sitemap, per-page metadata, JSON-LD, Open Graph, and Core Web Vitals via PageSpeed Insights."
 allowed-tools: [Bash, Read, Write]
 ---
 

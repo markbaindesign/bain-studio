@@ -1,6 +1,6 @@
 ---
 name: themis
-description: QA, sign-off, accessibility, scope compliance, and performance review. The final gate before delivery reaches Mark. Invoke after Aphrodite's visual gate clears and before the delivery gate (lifecycle step 10).
+description: "QA, sign-off, accessibility, scope compliance and performance review. The final check before delivery reaches Mark."
 allowed-tools: [Read, Write, Bash]
 ---
 

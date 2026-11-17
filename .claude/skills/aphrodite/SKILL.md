@@ -1,7 +1,6 @@
 ---
 name: aphrodite
-description: Visual design direction and brand review. Produces design direction documents for client projects and pre-QA visual gate reports. Invoke at the start of the Design station (lifecycle step 8) or before handing to Themis for QA.
-argument-hint: direction | review
+description: "Visual design direction and pre-QA visual review. Invoke at the Design station or before handing to Themis."
 allowed-tools: [Read, Write, Bash]
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: kb
-description: Add or update an entry in the studio knowledge base (docs/). Routes the entry to the correct location based on type — god doc, utility, checklist, ADR, or project doc.
+description: "Add or update an entry in the studio knowledge base (docs/), routed to the right location by type."
 allowed-tools: [Read, Write, Edit, Bash]
 ---
 
@@ -41,7 +41,7 @@ Determine the entry type and target path:
 | Checklist | `docs/gods/{god-name}/{name}-checklist.md` | performance-checklist |
 | Skill (utility) | `docs/utilities/{skill-name}.md` | brand-doc, notifier |
 | ADR | `docs/adr/ADR-NNN-{slug}.md` | new architectural decision |
-| Project | `docs/projects/{prefix}.md` | bff.md, kf.md |
+| Project | `$STUDIO_CONTENT_DIR/projects/{prefix}.md` (Dropbox, not this repo) | — |
 | Other / unclear | Ask before writing | — |
 
 To find the next ADR number:

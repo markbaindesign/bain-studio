@@ -21,7 +21,33 @@ import xml.etree.ElementTree as ET
 PROFILES_DIR = os.path.expanduser("~/.shutter/profiles")
 SETTINGS_FILE = os.path.expanduser("~/.shutter/settings.xml")
 ACCOUNTS_FILE = os.path.expanduser("~/.shutter/accounts.xml")
-TEMPLATE_PREFERENCE = ["QA_Beato", "QA", "default"]
+# Preference order for the profile to clone from. Template names derived from a
+# client name are NOT in this public repo: they are read from
+# $XDG_CONFIG_HOME/bain-studio/shutter.json and prepended to this list.
+# See ADR 021 addendum, BSTD-875.
+TEMPLATE_PREFERENCE = ["QA", "default"]
+
+
+def _load_template_preference():
+    """Prepend configured templates from outside the repo. Never raises."""
+    import json as _json
+    cfg_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    path = os.environ.get("BAIN_SHUTTER_CONFIG") or f"{cfg_home}/bain-studio/shutter.json"
+    try:
+        with open(path) as fh:
+            pref = (_json.load(fh) or {}).get("template_preference") or []
+        if isinstance(pref, list) and pref:
+            seen, merged = set(), []
+            for name in [str(x) for x in pref] + TEMPLATE_PREFERENCE:
+                if name not in seen:
+                    seen.add(name)
+                    merged.append(name)
+            TEMPLATE_PREFERENCE[:] = merged
+    except Exception:
+        pass
+
+
+_load_template_preference()
 
 def profile_path(name): return os.path.join(PROFILES_DIR, f"{name}.xml")
 def accounts_path(name): return os.path.join(PROFILES_DIR, f"{name}_accounts.xml")

@@ -5,7 +5,7 @@ description: Mothball a WP Engine staging install down to a minimal holding site
 
 # WP Engine — mothballing a staging install
 
-**Status:** in use. First applied on MWE staging (`mwestaging`), Apr–May 2026.
+**Status:** in use. First applied on the MWE staging install, Apr–May 2026.
 
 ## Why
 
@@ -93,7 +93,7 @@ Not silenced:
 
 ### Outbound mail is NOT trapped on WP Engine staging — tested
 
-Tested on `mwestaging`, 2026-09-09. WP Engine does **not** sandbox outbound mail on a staging
+Tested on an MWE staging install, 2026-09-09. WP Engine does **not** sandbox outbound mail on a staging
 environment: a `wp_mail()` fired from WP-Cron on the web runtime (`sapi=fpm-fcgi`) returned `true`
 and the message was delivered to an external inbox within seconds. WP Engine's own
 `sendmail_path` wrapper is configured on the web nodes, and only a `wp_mail_from` filter is in

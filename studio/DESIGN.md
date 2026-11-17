@@ -93,7 +93,7 @@ Asana config lives in each project's `CLAUDE.md`:
 ```
 ASANA_PROJECT_GID: 1234567890123456
 ASANA_TASK_PREFIX: MCF
-ASANA_PROJECT_NAME: Mhairi McFarlane
+ASANA_PROJECT_NAME: Example Project
 ```
 
 Config lives in CLAUDE.md rather than a separate config file so there's one canonical source of truth per project, and new projects wire up with a single field addition.

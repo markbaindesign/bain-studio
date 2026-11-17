@@ -1,0 +1,1045 @@
+#!/usr/bin/env python3
+"""Dense, always-on list of every Claude Code session on this machine.
+
+Data comes from `claude agents --json`, which enumerates sessions across all
+projects (the built-in `claude agents` TUI does not: it is scoped to the current
+project and shows background agents only).
+
+That command reports only the config directory it is invoked with, so one call
+misses every session running under a second Claude account. Mark runs KF under
+CLAUDE_CONFIG_DIR=~/.claude-kf. Every ~/.claude* directory holding a projects/
+folder is therefore queried, and the account is shown when there is more than one.
+
+Status starts from the CLI but is not trusted as-is:
+    waiting  sitting on a permission prompt, needs an answer
+    shell    turn is over, but a background shell keeps the CLI at "busy"
+    idle     finished its turn and parked, waiting for a prompt
+    working  genuinely mid-turn, needs nothing
+
+That is also the sort order: whoever is blocked on an answer first, then the
+parked sessions, then the ones working. Working sits last because a session
+mid-turn is asking for nothing; an idle one may well be waiting to be picked
+up. Within a group the most recently active session is at the top.
+
+The CLI reports "busy" while any background shell the session spawned is
+alive, even when the model finished its turn an hour ago and asked a
+question. That is the one case this app exists to surface, and it was
+sorting last. The transcript settles it: a session whose newest user or
+assistant entry is an assistant one with stop_reason "end_turn" and no
+outstanding tool_use has finished its turn, whatever the CLI says.
+
+The newest entry has to be checked, not just the newest stop_reason. At the
+start of a turn - prompt in, model still thinking, nothing written yet - the
+previous turn's "end_turn" is still the last one in the file. Replaying one
+real transcript, reading stop_reason alone called 13 of 145 turn-starts
+"finished".
+
+The transcript also carries, in the same read: context size (the last
+assistant usage - input + cache_read + cache_creation + output, which matches
+the figure Claude Code shows in its own footer) and the session's AI title.
+
+Last-activity time comes from the mtime of the session transcript under
+~/.claude/projects/. Transcripts are re-parsed only when that mtime moves.
+No hooks, no database.
+
+Two things the transcript cannot say are read from files the status line
+already writes: the model in use and the context percentage, per session, from
+~/.claude/logs/sessions/<sessionId>.json; and the quota header - the five-hour
+and weekly rate limit of every account - from <config dir>/ratelimit-current.json.
+Both are snapshots taken on the last status-line render, not live figures.
+
+The `where` column gives the tmux target of each session, so it can be found by
+hand: `tmux select-window -t studio:3` for `studio:3.0`.
+
+Keys: j/k or arrows to move, r to refresh, q to quit.
+
+`--conky` prints the same screen once as conky markup and exits, for the pinned
+panel on the third monitor (~/.config/conky/studio-claude.conf). A panel is not
+a window: it cannot take focus, so the dash no longer competes with the
+terminal next to it for a click or a Super+Tab. The cost is that nothing
+animates between refreshes - conky's ${blink} carries the waiting pulse and
+the rest stand still - and that every refresh is a new process, so the
+transcript cache is cold each time. A collect runs in ~0.4s, which a 5-second
+panel interval absorbs.
+"""
+
+import curses
+import json
+import os
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+# The quota budget rules, shared with the studio dashboard so the two cannot
+# disagree about what counts as burning too fast.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import claude_pace  # noqa: E402
+
+POLL_SECONDS = 4
+STATUS_ORDER = {"waiting": 0, "shell": 1, "idle": 2, "working": 3}
+GLYPH = {"waiting": "●", "working": "◐", "idle": "○", "shell": "◑"}
+
+# Only the statuses that want a human pulse, so movement on screen means
+# "someone is needed" and nothing else. Redrawing is decoupled from polling:
+# the screen ticks at TICK_SECONDS, the CLI is still only asked every
+# POLL_SECONDS. The value is how many ticks the glyph holds before it swaps
+# with PULSE_OFF - waiting flips every tick, shell every third.
+TICK_SECONDS = 0.5
+PULSE_OFF = "◦"
+PULSE = {"waiting": 1, "shell": 3}
+
+# Working rotates rather than pulses, so work in progress is visibly alive
+# without imitating a status that wants a human. The quadrants run clockwise and
+# are distinct from ◐ (working at rest) and ◑ (shell), so no status can
+# impersonate another mid-cycle.
+SPIN = {"working": "◴◷◶◵"}
+ANIMATED = set(PULSE) | set(SPIN)
+DEFAULT_CONFIG = Path.home() / ".claude"
+
+# Per-session snapshots written by ~/.claude/hooks/statusline.py on every
+# render. That path is hardcoded in the hook, so sessions on a second account
+# land here too, not under their own config directory.
+SNAPSHOTS = DEFAULT_CONFIG / "logs" / "sessions"
+
+# Quota percentages are only worth colouring once they are close enough to
+# change what to do next: amber is "finish the task", red is "stop starting things".
+QUOTA_AMBER = 70
+QUOTA_RED = 90
+
+# Row colours. Curses' eight basic colours hold no orange, and basic green is
+# brighter than a status that wants nothing deserves, so the 256-colour indexes
+# are used where the terminal has them and the nearest basic colour otherwise.
+GREEN_256 = 71
+ORANGE_256 = 208
+
+# How much of a transcript's tail to read. Enough to hold the last assistant
+# entry in all observed cases; a session whose tail is filled with
+# api-request-blob lines needs the wider read, so one retry is allowed.
+TAIL_BYTES = 256 * 1024
+TAIL_BYTES_WIDE = 4 * 1024 * 1024
+
+# Parsed transcripts, keyed by path -> (mtime, state). The poll is every few
+# seconds and these files reach megabytes, so an unchanged one is never reread.
+_CACHE = {}
+
+
+def run(cmd, timeout=10, env=None):
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                             env=env)
+        return out.stdout if out.returncode == 0 else ""
+    except (subprocess.SubprocessError, OSError):
+        return ""
+
+
+def config_dirs():
+    """Every Claude config directory on this machine, default account first.
+
+    A second account is a sibling of ~/.claude - ~/.claude-kf, say - selected with
+    CLAUDE_CONFIG_DIR. A projects/ folder is what marks one as real rather than a
+    stray backup or a file like ~/.claude.json.
+    """
+    found = [d for d in sorted(Path.home().glob(".claude*"))
+             if d.is_dir() and (d / "projects").is_dir()]
+    if DEFAULT_CONFIG in found:
+        found.remove(DEFAULT_CONFIG)
+        found.insert(0, DEFAULT_CONFIG)
+    return found or [DEFAULT_CONFIG]
+
+
+# Account label by email domain, the same names the status line prints
+# (~/.claude/hooks/statusline.py). That file is outside this repo and the app
+# runs from the ops worktree, so the map is duplicated rather than imported.
+#
+# Client domains are NOT in this public repo. They are read from
+# $XDG_CONFIG_HOME/bain-studio/account-labels.json, which is why a label may be
+# missing here and present at run time. See ADR 021 addendum, BSTD-875.
+# An unlabelled domain degrades to its first component, so a missing config
+# costs a nicer label and nothing else.
+ACCOUNT_LABELS = {"bain.design": "bain"}
+
+
+def _load_account_labels():
+    """Merge client domain labels from outside the repo. Never raises."""
+    import json as _json
+    cfg_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    path = os.environ.get("BAIN_ACCOUNT_LABELS") or f"{cfg_home}/bain-studio/account-labels.json"
+    try:
+        with open(path) as fh:
+            extra = (_json.load(fh) or {}).get("labels") or {}
+        if isinstance(extra, dict):
+            ACCOUNT_LABELS.update({str(k): str(v) for k, v in extra.items()})
+    except Exception:
+        pass
+
+
+_load_account_labels()
+
+# config dir -> label, filled only on a successful read. Claude Code rewrites
+# .claude.json often, so a 4-second poll will occasionally catch it mid-write;
+# without this, the label would fall back for a frame and split the tally. The
+# signed-in account rarely changes while a pane runs - a logout and login in
+# that config dir would do it, and then the pane needs respawning.
+_ACCOUNTS = {}
+
+
+def account_of(config_dir):
+    """~/.claude -> 'bain', ~/.claude-kf -> 'kf'.
+
+    Named after the signed-in account, not the directory, so the names match
+    the status line. The email lives in <config dir>/.claude.json, except for
+    the default account, whose file is ~/.claude.json - the same lookup the
+    status line does. There is no fallback from one file to the other: reading
+    the wrong one would label a KF session "bain".
+    """
+    if config_dir in _ACCOUNTS:
+        return _ACCOUNTS[config_dir]
+    account_file = (Path.home() / ".claude.json" if config_dir == DEFAULT_CONFIG
+                    else config_dir / ".claude.json")
+    try:
+        with open(account_file) as f:
+            email = json.load(f).get("oauthAccount", {}).get("emailAddress")
+        domain = email.split("@")[-1]
+        label = ACCOUNT_LABELS.get(domain) or domain.split(".")[0].lower()
+        _ACCOUNTS[config_dir] = label
+        return label
+    except (OSError, ValueError, AttributeError, IndexError):
+        # No readable account file: fall back to the directory suffix.
+        return config_dir.name[len(".claude"):].lstrip("-.") or "default"
+
+
+def sessions_for(config_dir):
+    env = dict(os.environ, CLAUDE_CONFIG_DIR=str(config_dir))
+    raw = run(["claude", "agents", "--json"], env=env)
+    try:
+        found = json.loads(raw) if raw.strip() else []
+    except json.JSONDecodeError:
+        return []
+    for entry in found:
+        entry["_account"] = account_of(config_dir)
+        entry["_transcripts"] = config_dir / "projects"
+    return found
+
+
+def sessions():
+    dirs = config_dirs()
+    # One subprocess per account, in parallel: serialising them would stall the
+    # redraw by ~0.3s each.
+    with ThreadPoolExecutor(max_workers=max(1, len(dirs))) as pool:
+        return [row for batch in pool.map(sessions_for, dirs) for row in batch]
+
+
+def pane_by_pid():
+    """Map every pid that owns a tmux pane to its session:window.pane target."""
+    fmt = "#{session_name}:#{window_index}.#{pane_index} #{pane_pid}"
+    out = run(["tmux", "list-panes", "-a", "-F", fmt])
+    panes = {}
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].isdigit():
+            panes[int(parts[1])] = parts[0]
+    return panes
+
+
+def ancestors(pid, limit=12):
+    """Walk up /proc to the pane's own process. Claude runs as a child of the shell."""
+    chain = []
+    for _ in range(limit):
+        try:
+            stat = (Path("/proc") / str(pid) / "stat").read_text()
+            ppid = int(stat.rsplit(")", 1)[1].split()[1])
+        except (OSError, IndexError, ValueError):
+            break
+        if ppid <= 1:
+            break
+        chain.append(ppid)
+        pid = ppid
+    return chain
+
+
+def locate(pid, panes):
+    for candidate in [pid] + ancestors(pid):
+        if candidate in panes:
+            return panes[candidate]
+    return None
+
+
+def transcript(root, session_id):
+    """The session's transcript file, or None if it has none yet."""
+    for path in root.glob(f"*/{session_id}.jsonl"):
+        return path
+    return None
+
+
+def last_activity(path, started_at_ms):
+    """Transcript mtime, falling back to session start."""
+    if path is not None:
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            pass
+    return started_at_ms / 1000
+
+
+def tail_lines(path, size):
+    """The last `size` bytes of a file as whole lines."""
+    with open(path, "rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        start = max(0, handle.tell() - size)
+        handle.seek(start)
+        data = handle.read()
+    lines = data.decode("utf-8", "replace").splitlines()
+    # A non-zero offset lands mid-line; that fragment is not valid JSON.
+    return lines[1:] if start else lines
+
+
+def scan(lines):
+    """Turn state, context size and title from a slice of transcript lines.
+
+    `finished` is the question that matters: has the model stopped and handed
+    back? It is true only when the newest user-or-assistant entry is an
+    assistant one that ended its turn with nothing still in flight. Every user
+    entry - a prompt or a tool result - resets that, which is what keeps a turn
+    in progress from reading as finished.
+    """
+    state = {"finished": False, "ctx": 0, "title": "", "seen_turn": False}
+    for line in lines:
+        if '"type"' not in line:
+            continue
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        kind = entry.get("type")
+        if kind == "ai-title" and entry.get("aiTitle"):
+            state["title"] = entry["aiTitle"]
+        elif kind == "user":
+            state["finished"] = False
+            state["seen_turn"] = True
+        elif kind == "assistant":
+            message = entry.get("message", {})
+            blocks = message.get("content")
+            pending = isinstance(blocks, list) and any(
+                b.get("type") == "tool_use" for b in blocks if isinstance(b, dict)
+            )
+            state["finished"] = message.get("stop_reason") == "end_turn" and not pending
+            state["seen_turn"] = True
+            usage = message.get("usage") or {}
+            if usage:
+                state["ctx"] = (
+                    usage.get("input_tokens", 0)
+                    + usage.get("cache_read_input_tokens", 0)
+                    + usage.get("cache_creation_input_tokens", 0)
+                    + usage.get("output_tokens", 0)
+                )
+    return state
+
+
+def transcript_state(path):
+    """Cached scan() of a transcript, reparsed only when its mtime moves."""
+    if path is None:
+        return None
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return None
+    cached = _CACHE.get(path)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    try:
+        state = scan(tail_lines(path, TAIL_BYTES))
+        if not state["seen_turn"]:
+            # Nothing but blobs in the tail - look further back before giving up.
+            state = scan(tail_lines(path, TAIL_BYTES_WIDE))
+    except OSError:
+        return None
+    _CACHE[path] = (mtime, state)
+    return state
+
+
+def snapshot(session_id):
+    """Model and context percentage for one session, or {} if not recorded yet.
+
+    The context figure the transcript gives is a token count; the percentage
+    needs the window size, which only the status line is told. These files are
+    small and only the live sessions are read, so no caching is needed.
+    """
+    try:
+        with open(SNAPSHOTS / f"{session_id}.json") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return {"model": data.get("model") or "",
+            "ctx_pct": data.get("last_context_pct") or 0}
+
+
+def quota_for(config_dir):
+    """One account's rate limit snapshot, or None if it has none.
+
+    Written by the status line, so it is only as fresh as the last render on
+    that account. A reset timestamp in the past means the window has rolled
+    over since and the percentage belongs to the old one - the caller says
+    "reset" rather than quoting it.
+    """
+    try:
+        with open(config_dir / "ratelimit-current.json") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return {
+        "account": account_of(config_dir),
+        "pct": data.get("current_pct"),
+        "reset_ts": data.get("reset_ts") or 0,
+        "weekly_pct": data.get("weekly_pct"),
+        "weekly_reset_ts": data.get("weekly_reset_ts") or 0,
+    }
+
+
+def quotas():
+    """Every account's rate limit snapshot, default account first."""
+    return [q for q in (quota_for(d) for d in config_dirs()) if q]
+
+
+def short_model(name):
+    """'Opus 5.5' -> 'o5.5'. Model choice is the biggest lever on quota, so it
+    earns a column, but only a narrow one."""
+    parts = name.split()
+    if not parts:
+        return ""
+    version = parts[-1] if parts[-1][:1].isdigit() else ""
+    return parts[0][:1].lower() + version
+
+
+def tokens(count):
+    """283000 -> '283k'. Zero means the transcript did not say."""
+    if not count:
+        return "-"
+    if count < 1000:
+        return str(count)
+    return f"{count // 1000}k"
+
+
+def ago(seconds):
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}"
+    return f"{seconds // 86400}d"
+
+
+def collect():
+    panes = pane_by_pid()
+    now = time.time()
+    rows = []
+    for s in sessions():
+        # A crashed session can outlive its entry; trust /proc over the CLI.
+        if not Path("/proc", str(s.get("pid", 0))).exists():
+            continue
+        path = transcript(s.get("_transcripts", DEFAULT_CONFIG / "projects"),
+                          s.get("sessionId", ""))
+        seen = last_activity(path, s.get("startedAt", 0))
+        state = transcript_state(path)
+        status = s.get("status", "?")
+        # The CLI says busy while a background shell lives on. If the transcript
+        # shows the turn is over, the model is not working - say so, and put it
+        # in the attention group under waiting. It is its own status rather than
+        # idle because a live shell may yet wake the session: it is neither
+        # working nor parked.
+        if status == "busy" and state and state["finished"]:
+            status = "shell"
+        elif status == "busy":
+            # The CLI's word for it; "working" is what it means to a reader.
+            status = "working"
+        snap = snapshot(s.get("sessionId", ""))
+        rows.append(
+            {
+                "status": status,
+                "ctx": (state or {}).get("ctx", 0),
+                "ctx_pct": snap.get("ctx_pct", 0),
+                "model": snap.get("model", ""),
+                "title": (state or {}).get("title", ""),
+                "account": s.get("_account", "?"),
+                "where": locate(s.get("pid", 0), panes) or "-",
+                "project": (os.path.basename(s.get("cwd", "")) or "/")
+                + (" (bg)" if s.get("kind") == "background" else ""),
+                "cwd": s.get("cwd", ""),
+                "name": s.get("name", ""),
+                "kind": s.get("kind", ""),
+                "for": now - seen,
+            }
+        )
+    # Whoever is blocked first, then the parked ones, then the sessions that
+    # need nothing; within a status, the most recently active at the top.
+    rows.sort(key=lambda r: (STATUS_ORDER.get(r["status"], 9), r["for"]))
+    return rows
+
+
+def glyph_for(status, frame):
+    """The status glyph: spun while working, pulsed when it wants a human, still
+    when parked."""
+    spinner = SPIN.get(status)
+    if spinner:
+        return spinner[frame % len(spinner)]
+    hold = PULSE.get(status)
+    if hold and (frame // hold) % 2:
+        return PULSE_OFF
+    return GLYPH.get(status, "?")
+
+
+# Width of each optional column, including its leading space.
+EXTRA_WIDTH = {"model": 6, "ctx": 6, "pct": 5}
+# The order they are given up in: context size survives longest of the three.
+EXTRA_SETS = (("model", "ctx", "pct"), ("model", "ctx"), ("ctx",), ())
+
+
+def layout(width, show_account):
+    """Which optional columns fit at this width, and the project column's width.
+
+    One place decides it, so the header and the rows below it always break at
+    the same place.
+    """
+    head_width = 25 + (6 if show_account else 0)
+    room = max(0, width - 1 - head_width - 7)
+    for extras in EXTRA_SETS:
+        size = sum(EXTRA_WIDTH[name] for name in extras)
+        if room >= 10 + size:
+            return extras, min(24, room - size)
+    return (), room
+
+
+def header_text(width, show_account):
+    """The column legend, laid out by the same rules as the rows."""
+    extras, project_width = layout(width, show_account)
+    account = "{:<5} ".format("acct") if show_account else ""
+    text = "{} {:<8} {}{:<13} ".format(" ", "status", account, "where")
+    text += "{:<{w}}".format("project"[:project_width], w=project_width)
+    labels = {"model": " {:>5}".format("model"), "ctx": " {:>5}".format("ctx"),
+              "pct": " {:>4}".format("ctx%")}
+    text += "".join(labels[name] for name in extras)
+    text += " {:>6}".format("last")
+    if width >= len(text) + 24:
+        text += "  " + "title"
+    return text[: max(0, width - 1)]
+
+
+def row_text(row, width, show_account, frame=0):
+    """One row, fitted to the pane.
+
+    The columns are given up in order of what can be done without: the title
+    first, then the context percentage, then the model, then the context size,
+    then the project is squeezed. Status, tmux target and the time in state
+    always survive, because they are what the app is for. A fixed-width row was
+    clipped by curses on the right, which cost the time column on a narrow pane
+    and sliced context sizes in half. `layout` makes that choice for the header
+    too.
+    """
+    extras, project_width = layout(width, show_account)
+    account = "{:<5} ".format(row["account"][:5]) if show_account else ""
+    head = "{} {:<8} {}{:<13} ".format(
+        glyph_for(row["status"], frame), row["status"], account, row["where"])
+    # Fixed widths even when a value is missing: every row has the same head
+    # and tail, so all of them drop the same columns and the rest stay aligned.
+    cells = {
+        "model": " {:>5}".format(short_model(row["model"])[:5]),
+        "ctx": " {:>5}".format(tokens(row["ctx"])),
+        "pct": " {:>4}".format(f"{row['ctx_pct']}%" if row["ctx_pct"] else ""),
+    }
+    body = "{:<{w}}".format(row["project"][:project_width], w=project_width)
+    body += "".join(cells[name] for name in extras)
+
+    text = head + body + " {:>6}".format(ago(row["for"]))
+    # The title is what the session is actually about, and the first thing worth
+    # reading - but only where it can be shown at a useful length.
+    if row["title"] and width >= len(text) + 24:
+        text += "  " + row["title"][: width - len(text) - 3]
+    # Below roughly 45 columns even the fixed head over-runs; truncate rather
+    # than hand curses a line it would clip at a different place.
+    return text[: max(0, width - 1)]
+
+
+def quota_text(found):
+    """The quota line, with the worst percentage on it.
+
+    Five-hour resets are hours away, so they get a clock time; weekly resets
+    are days away, so a weekday is enough. The colour is left to the caller:
+    curses needs a screen before it will hand out a colour pair, and this
+    needs to be readable without one.
+    """
+    now = time.time()
+    worst = 0
+    parts = []
+    for q in found:
+        if q["reset_ts"] and q["reset_ts"] <= now:
+            # Window rolled over since the snapshot: the figure is the old one.
+            five = "5h reset"
+        else:
+            five = f"5h {q['pct']}%"
+            # No reset time rather than a wrong one: an unset timestamp would
+            # format as the epoch and read as a real clock time.
+            if q["reset_ts"]:
+                five += " \u2192" + time.strftime("%H:%M", time.localtime(q["reset_ts"]))
+            worst = max(worst, q["pct"] or 0)
+        week = ""
+        if q["weekly_reset_ts"] and q["weekly_reset_ts"] <= now:
+            # Same as the five-hour window: a week that has rolled over since
+            # the snapshot leaves last week's figure in the file. An account
+            # left unused past its reset would otherwise colour the whole line.
+            week = " \u00b7 wk reset"
+        elif q["weekly_pct"] is not None:
+            week = f" \u00b7 wk {q['weekly_pct']}%"
+            if q["weekly_reset_ts"]:
+                # A weekday is enough for a reset days out, but "\u2192Fri" on a
+                # Friday reads as next Friday, so the last day gets a clock time.
+                fmt = "%H:%M" if q["weekly_reset_ts"] - now < 86400 else "%a"
+                week += " \u2192" + time.strftime(fmt, time.localtime(q["weekly_reset_ts"]))
+            worst = max(worst, q["weekly_pct"])
+        parts.append(f"{q['account']} {five}{week}")
+    return "   ".join(parts), worst
+
+
+def draw(stdscr, rows, cursor, refreshed, quota=(), frame=0):
+    stdscr.erase()
+    height, width = stdscr.getmaxyx()
+
+    counts = {name: sum(1 for r in rows if r["status"] == name)
+              for name in ("waiting", "shell", "idle", "working")}
+    waiting = counts["waiting"]
+
+    accounts = sorted({r["account"] for r in rows})
+    # A zero shell count is dead space, like the account column.
+    tally = " · ".join(f"{counts[n]} {n}"
+                       for n in ("waiting", "shell", "idle", "working")
+                       if n != "shell" or counts["shell"])
+    head = f"{len(rows)} sessions   {tally}"
+    stamp = f"{ago(time.time() - refreshed)} ago"
+    if len(accounts) > 1:
+        per_account = "   " + " · ".join(
+            f"{a} {sum(1 for r in rows if r['account'] == a)}" for a in accounts
+        )
+        # Half an account tally is worse than none, so it goes only where it fits.
+        if len(head) + len(per_account) + len(stamp) + 1 <= width:
+            head += per_account
+    stdscr.addnstr(0, 0, head.ljust(max(0, width - len(stamp) - 1)) + stamp, width - 1,
+                   curses.A_BOLD | (curses.color_pair(1) if waiting
+                                    else curses.color_pair(4) if counts["shell"]
+                                    else 0))
+
+    first_row = 1
+    if quota and height > 2:
+        text, worst = quota_text(quota)
+        attr = (curses.color_pair(1) if worst >= QUOTA_RED
+                else curses.color_pair(2) if worst >= QUOTA_AMBER
+                else curses.A_DIM)
+        stdscr.addnstr(1, 0, text.ljust(width - 1), width - 1, attr)
+        first_row = 2
+
+    # The legend sits directly over the rows it names. Dim, never reverse:
+    # reverse is the cursor.
+    if height > first_row + 1:
+        stdscr.addnstr(first_row, 0,
+                       header_text(width, len(accounts) > 1).ljust(width - 1),
+                       width - 1, curses.A_DIM)
+        first_row += 1
+
+    for index, row in enumerate(rows):
+        line = index + first_row
+        if line >= height:
+            break
+        selected = cursor is not None and index == cursor
+        # The account column is dead space on a single-account machine, so it
+        # only appears once a second Claude config directory is in play.
+        text = row_text(row, width, len(accounts) > 1, frame)
+        # Working is green because it needs nothing; idle is orange because a
+        # session parked with no prompt is the one that may want picking up.
+        attr = curses.color_pair(
+            {"waiting": 1, "shell": 4, "idle": 6, "working": 5}.get(
+                row["status"], 3))
+        if selected:
+            attr |= curses.A_REVERSE
+        stdscr.addnstr(line, 0, text.ljust(width - 1), width - 1, attr)
+
+    if (rows and cursor is not None and cursor < len(rows)
+            and height > len(rows) + first_row + 1):
+        stdscr.addnstr(height - 1, 0, rows[cursor]["cwd"][: width - 1], width - 1,
+                       curses.A_DIM)
+    stdscr.refresh()
+
+
+def main(stdscr):
+    curses.curs_set(0)
+    curses.use_default_colors()
+    # Pair 2 stays yellow for the quota line, which has its own thresholds.
+    green = GREEN_256 if curses.COLORS > GREEN_256 else curses.COLOR_GREEN
+    orange = ORANGE_256 if curses.COLORS > ORANGE_256 else curses.COLOR_YELLOW
+    for pair, colour in ((1, curses.COLOR_RED), (2, curses.COLOR_YELLOW), (3, -1),
+                         (4, curses.COLOR_CYAN), (5, green), (6, orange)):
+        try:
+            curses.init_pair(pair, colour, -1)
+        except curses.error:
+            curses.init_pair(pair, -1, -1)
+    rows = collect()
+    quota = quotas()
+    refreshed = time.time()
+    # No cursor until the keyboard is used. Starting at row 0 made the top line
+    # look picked out, which reads as a selection on a screen that is almost
+    # always only read.
+    cursor = None
+    frame = 0
+
+    while True:
+        # Nothing moving means nothing to animate, so sit on the poll interval
+        # rather than waking twice a second to redraw an unchanged screen.
+        animating = any(r["status"] in ANIMATED for r in rows)
+        stdscr.timeout(int((TICK_SECONDS if animating else POLL_SECONDS) * 1000))
+
+        if cursor is not None:
+            cursor = max(0, min(cursor, max(0, len(rows) - 1)))
+        draw(stdscr, rows, cursor, refreshed, quota, frame)
+
+        key = stdscr.getch()
+        frame += 1
+        if key in (ord("q"), 27):
+            return
+        if key in (ord("j"), curses.KEY_DOWN):
+            cursor = 0 if cursor is None else cursor + 1
+        elif key in (ord("k"), curses.KEY_UP):
+            cursor = 0 if cursor is None else cursor - 1
+        elif key == ord("g"):
+            cursor = 0
+        elif key == ord("G"):
+            cursor = len(rows) - 1
+
+        if key == ord("r") or time.time() - refreshed >= POLL_SECONDS:
+            rows = collect()
+            quota = quotas()
+            refreshed = time.time()
+
+
+
+# ---------------------------------------------------------------- conky mode
+
+# Tokyo Night. The hues carry the same meaning as the curses screen's
+# 256-colour indexes - red wants a human, cyan is a live shell, orange is
+# parked and may want picking up, green needs nothing - but the panel is a
+# themed surface rather than a terminal, so the values are the palette's own.
+CONKY_STATUS_COLOUR = {"waiting": "f7768e", "shell": "7dcfff",
+                       "idle": "ff9e64", "working": "9ece6a"}
+# The quota line's own thresholds, kept off the status palette for the same
+# reason the curses version keeps pair 2 to itself: recolouring the rows should
+# not touch the header. Tokyo Night's yellow, then its red.
+QUOTA_AMBER_HEX = "e0af68"
+QUOTA_RED_HEX = "f7768e"
+
+# The panel's own font, Roboto Mono for Powerline, has none of the status
+# circles and no arrow (verified with fc-list ":charset=25d0"), and conky
+# drives Xft directly: a comma-separated family list in the config is not a
+# fallback chain, it picks the first family and draws a blank. So the glyph and
+# the reset arrow are wrapped in one family that does have them, switched
+# inline with ${font} and switched back. Override with --glyph-font; the size
+# has to be restated because ${font} with no size does not inherit the panel's.
+GLYPH_FONT = "DejaVu Sans Mono:size=10"
+
+# ---- panel geometry ------------------------------------------------------
+#
+# This script owns every measurement on the panel, and studio-claude-bg.lua
+# owns none: it paints the rectangles this says, at the pixel offsets this
+# gives it, through CARD_STATE. Keeping the arithmetic in one place is what
+# stops the cards drifting away from the text they are meant to sit behind.
+#
+# The values match studio-claude.conf: a 480px band on the third monitor, a
+# 20px inner margin, Roboto Mono 10 at an 18px line.
+CONKY_TEXT_LEFT = 20
+CONKY_TEXT_TOP = 20
+CONKY_LINE_HEIGHT = 18
+CONKY_CHAR_WIDTH = 8.6
+CONKY_CONTENT_WIDTH = 440
+CONKY_CARD_X = 8
+CONKY_CARD_WIDTH = 464
+CONKY_CARD_LINES = 3
+# Padding and gap are what decide how many cards the column holds, and 13 is
+# the number worth hitting: 12 sessions have been seen running at once, and a
+# card that forces the 12th into an overflow line defeats the point of the app.
+CONKY_CARD_PAD = 5          # above the first line and below the last
+CONKY_CARD_GAP = 6          # between one card and the next
+CONKY_PANEL_HEIGHT = 1080
+
+# Where the card rectangles are handed to the Lua hook. A cache path, not
+# studio state: it is rewritten every refresh and means nothing once the panel
+# stops.
+CARD_STATE = Path.home() / ".cache" / "bain-studio" / "claude-dash-cards.txt"
+
+# The usage bars under each account's quota line: a track the width of the
+# text, filled to the percentage, with a marker where the budget says it
+# should be. Ported from the studio dashboard's Claude usage card, which is
+# where the pace idea comes from.
+BAR_HEIGHT = 6
+BAR_GAP = 4                 # between the text line and the first bar
+BAR_SPACING = 3             # between the two bars
+BAR_WIDTH = 440
+BAR_MARKER_WIDTH = 2
+BAR_TRACK_COLOUR = "1f2335"
+BAR_MARKER_COLOUR = "565f89"
+# Tokyo Night again, by pace rather than by level: on budget, over by 5
+# points, over by 15 - or at 90% of the window whatever the pace.
+PACE_COLOUR = {claude_pace.OK: "9ece6a",
+               claude_pace.SLIGHTLY_FAST: "e0af68",
+               claude_pace.FAST: "f7768e"}
+
+# Column positions within a card. ${goto} measures from the window's left
+# edge, not from the text area, so these include the 20px inner margin: 20 is
+# where conky starts a line of its own accord, and every line of a card lines
+# up on it.
+CARD_WHERE_X = 150
+CARD_BODY_X = 20
+
+# What a 440px line holds at 8.6px a character, less the columns beside it.
+CONKY_TITLE_CHARS = int((CONKY_CONTENT_WIDTH - CARD_BODY_X) / CONKY_CHAR_WIDTH)
+CONKY_PROJECT_CHARS = 22
+
+
+def conky_escape(text):
+    """`$` is conky's variable sigil and `$$` is how it prints a literal one.
+
+    Session titles and project names are arbitrary text - a directory called
+    `$HOME` or a title quoting a shell variable would otherwise be read as
+    markup and swallow the rest of the line.
+    """
+    return str(text).replace("$", "$$")
+
+
+def in_glyph_font(text, font):
+    """Draw this much in a font that has the character, then switch back."""
+    return "${font %s}%s${font}" % (font, text)
+
+
+def conky_card(row, show_account, glyph_font=GLYPH_FONT):
+    """One session as three lines of conky markup.
+
+    Three, not four, because the card height is what decides how many sessions
+    the column holds: at three lines it takes 13, which covers the busiest day
+    seen so far, and at four it takes 10.
+
+    Nothing in the text moves. `waiting` pulses, because it is the one status
+    asking for something and a panel in the corner of the eye all day has to
+    spend movement carefully - but the pulse is on the card's status bar,
+    which the Lua hook draws. conky's ${blink} was tried on the glyph and
+    shifted the rest of the line sideways on every tick: in its off phase it
+    does not occupy the same width as the glyph it hides.
+    """
+    colour = CONKY_STATUS_COLOUR.get(row["status"], "9a948a")
+    glyph = in_glyph_font(GLYPH.get(row["status"], "?"), glyph_font)
+
+    account = ""
+    if show_account:
+        account = "${color3}%s " % conky_escape(row["account"][:5])
+    head = "${color %s}%s %s ${goto %d}%s${color1}%s${alignr}${color3}%s" % (
+        colour, glyph, row["status"], CARD_WHERE_X, account,
+        conky_escape(row["where"]), ago(row["for"]))
+
+    figures = " \u00b7 ".join(part for part in (
+        short_model(row["model"])[:5], tokens(row["ctx"]),
+        f"{row['ctx_pct']}%" if row["ctx_pct"] else "") if part)
+    body = "${goto %d}${color}%s${alignr}${color3}%s" % (
+        CARD_BODY_X, conky_escape(row["project"][:CONKY_PROJECT_CHARS]), figures)
+
+    title = "${goto %d}${color3}%s" % (
+        CARD_BODY_X,
+        conky_escape(row["title"][:CONKY_TITLE_CHARS]) if row["title"] else "-")
+    return [head, body, title]
+
+
+def conky_header(rows, found, glyph_font=GLYPH_FONT):
+    """The title and tally, then each account's quota.
+
+    Returns (lines, height, bars): the markup, the pixels it occupies, and the
+    rectangles the Lua hook paints under it. Height is in pixels rather than
+    lines because the bars are not text and do not come in line-sized pieces.
+    """
+    counts = {name: sum(1 for r in rows if r["status"] == name)
+              for name in ("waiting", "shell", "idle", "working")}
+    colour = (CONKY_STATUS_COLOUR["waiting"] if counts["waiting"]
+              else CONKY_STATUS_COLOUR["shell"] if counts["shell"] else None)
+    plural = "" if len(rows) == 1 else "s"
+    count = "%d session%s" % (len(rows), plural)
+    if colour:
+        count = "${color %s}%s${color}" % (colour, count)
+    lines = ["${color2}CLAUDE${color3}${alignr}%s" % count]
+
+    tally = " \u00b7 ".join(f"{counts[n]} {n}"
+                            for n in ("waiting", "shell", "idle", "working")
+                            if n != "shell" or counts["shell"])
+    lines.append("${color3}%s${color}" % tally)
+
+    # `height` is the y where the next thing goes, tracked in pixels as the
+    # lines are built. Bars are painted, not written, so the space they take
+    # has to be made with ${voffset} and counted here by hand - and a line
+    # carrying only a voffset still costs a line, which is why the shift is
+    # the space wanted *less* one line.
+    height = CONKY_TEXT_TOP + 2 * CONKY_LINE_HEIGHT
+    bars = []
+    for account in found:
+        text, windows = quota_line(account, glyph_font)
+        lines.append(text)
+        height += CONKY_LINE_HEIGHT
+        if not windows:
+            continue
+        top = height + BAR_GAP
+        for pct, pace in windows:
+            bars.append(account_bar(top, pct, pace))
+            top += BAR_HEIGHT + BAR_SPACING
+        space = (BAR_GAP + len(windows) * BAR_HEIGHT
+                 + (len(windows) - 1) * BAR_SPACING + BAR_GAP)
+        lines.append("${voffset %d}" % (space - CONKY_LINE_HEIGHT))
+        height += space
+    lines.append("")
+    height += CONKY_LINE_HEIGHT
+    return lines, height, bars
+
+
+def quota_line(account, glyph_font=GLYPH_FONT):
+    """One account's quota as text, with the pace of each of its windows.
+
+    `quota_text` writes the figures, so the terminal and the panel never
+    disagree about them; the colour here is the worse of the two windows'
+    pace states rather than the level thresholds the terminal uses, because
+    the panel has the bars to show where the budget is.
+    """
+    text, _ = quota_text([account])
+    text = conky_escape(text).replace(
+        "\u2192", in_glyph_font("\u2192", glyph_font))
+    # A window whose reset has already passed holds a figure from a window
+    # that is gone - `quota_text` says "reset" rather than quoting it, and
+    # there is nothing to draw a bar of either.
+    now = time.time()
+    windows = []
+    for pct, reset, weekly in (
+            (account.get("pct"), account.get("reset_ts"), False),
+            (account.get("weekly_pct"), account.get("weekly_reset_ts"), True)):
+        if pct is None or not reset or reset <= now:
+            continue
+        windows.append((pct, claude_pace.pace_for(pct, reset, weekly=weekly)))
+    states = [pace["colour_state"] for _, pace in windows if pace]
+    worst = (claude_pace.FAST if claude_pace.FAST in states
+             else claude_pace.SLIGHTLY_FAST if claude_pace.SLIGHTLY_FAST in states
+             else claude_pace.OK)
+    colour = PACE_COLOUR[worst] if states else None
+    if colour and worst != claude_pace.OK:
+        return "${color %s}%s${color}" % (colour, text), windows
+    return "${color3}%s${color}" % text, windows
+
+
+def account_bar(top, pct, pace):
+    """One usage bar: track, fill, and the marker where the budget sits.
+
+    A window with no reset time has no known start, so there is no budget to
+    compare against: the bar is drawn without a marker rather than with a
+    guessed one.
+    """
+    fill = int(BAR_WIDTH * min(100, max(0, pct or 0)) / 100)
+    if pace is None:
+        return (top, CONKY_TEXT_LEFT, BAR_WIDTH, BAR_HEIGHT, fill,
+                PACE_COLOUR[claude_pace.OK], -1)
+    marker = int(BAR_WIDTH * min(100, max(0, pace["expected"])) / 100)
+    return (top, CONKY_TEXT_LEFT, BAR_WIDTH, BAR_HEIGHT, fill,
+            PACE_COLOUR[pace["colour_state"]], marker)
+
+
+def card_capacity(header_height):
+    """How many cards fit below a header of this many pixels."""
+    card_height = (CONKY_CARD_LINES * CONKY_LINE_HEIGHT) + (2 * CONKY_CARD_PAD)
+    room = CONKY_PANEL_HEIGHT - header_height - CONKY_TEXT_TOP
+    return max(0, int((room + CONKY_CARD_GAP) / (card_height + CONKY_CARD_GAP)))
+
+
+def card_rect(index, header_height):
+    """The pixel rectangle of card `index`, as (y, height).
+
+    The text of card n starts CARD_PAD below the card's top, and each card is
+    offset from the one above by its own height plus the gap. The same offsets
+    are fed to conky as ${voffset}, so the two cannot disagree.
+    """
+    card_height = (CONKY_CARD_LINES * CONKY_LINE_HEIGHT) + (2 * CONKY_CARD_PAD)
+    top = header_height + index * (card_height + CONKY_CARD_GAP)
+    return top, card_height
+
+
+def write_card_state(cards, bars=(), path=CARD_STATE):
+    """Hand the rectangles to the Lua hook, one a line, typed by its first word.
+
+        card <y> <height> <colour> <pulse>
+        bar  <y> <x> <width> <height> <fill> <colour> <marker>
+
+    Plain text rather than JSON because the hook has no JSON parser. It is
+    rewritten whole every refresh, so a stale read can only ever be one
+    refresh behind - the hook draws what the text is about to say, because
+    conky builds its text before it draws.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as handle:
+            for top, height, colour, pulse in cards:
+                handle.write(f"card {top} {height} {colour} {pulse}\n")
+            for top, left, width, height, fill, colour, marker in bars:
+                handle.write(f"bar {top} {left} {width} {height} {fill} "
+                             f"{colour} {marker}\n")
+    except OSError:
+        # The panel still reads correctly without its surfaces.
+        pass
+
+
+def emit_conky(glyph_font=GLYPH_FONT):
+    """Print the panel once as conky markup, and leave the rectangles the Lua
+    hook paints where it will find them."""
+    rows = collect()
+    show_account = len({r["account"] for r in rows}) > 1
+    header, header_height, bars = conky_header(rows, quotas(), glyph_font)
+    capacity = card_capacity(header_height)
+
+    overflow = max(0, len(rows) - capacity)
+    if overflow:
+        # One card's worth of room is given back to say what is not shown, so
+        # a session can never be silently missing - the whole point of the app
+        # is that it is not.
+        capacity -= 1
+        overflow = len(rows) - capacity
+
+    lines = list(header)
+    cards = []
+    for index, row in enumerate(rows[:capacity]):
+        top, height = card_rect(index, header_height)
+        cards.append((top, height,
+                      CONKY_STATUS_COLOUR.get(row["status"], "9a948a"),
+                      1 if row["status"] == "waiting" else 0))
+        card = conky_card(row, show_account, glyph_font)
+        # The gap and the card's top padding, as one shift before its first
+        # line; card_rect() adds the same amounts.
+        card[0] = "${voffset %d}%s" % (
+            CONKY_CARD_PAD if index == 0 else CONKY_CARD_GAP + 2 * CONKY_CARD_PAD,
+            card[0])
+        lines.extend(card)
+    if not rows:
+        lines.append("${color3}no sessions${color}")
+    if overflow > 0:
+        lines.append("${voffset %d}${color3}+%d more${color}"
+                     % (CONKY_CARD_GAP + CONKY_CARD_PAD, overflow))
+
+    write_card_state(cards, bars)
+    print("\n".join(lines))
+
+
+if __name__ == "__main__":
+    if "--conky" in sys.argv:
+        font = GLYPH_FONT
+        if "--glyph-font" in sys.argv:
+            font = sys.argv[sys.argv.index("--glyph-font") + 1]
+        emit_conky(font)
+    else:
+        try:
+            curses.wrapper(main)
+        except KeyboardInterrupt:
+            pass

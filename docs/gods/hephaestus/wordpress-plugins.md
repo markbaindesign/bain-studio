@@ -92,7 +92,7 @@ For deep per-plugin, per-project docs, run `/wp-plugin-expert <slug>` to generat
 
 ### Algolia (WP Search with Algolia)
 - **What:** Replace WP search with Algolia's hosted search-as-you-type.
-- **When to use:** KF, MCF, Film English — sites where WP native search is inadequate.
+- **When to use:** KF-WEB, MCF and other sites where WP native search is inadequate.
 - **Key config:** Settings > Algolia — App ID, Search API Key (public), Admin API Key (server-side only). Configure which post types to index.
 - **Key filter:** `algolia_searchable_post_types`, `algolia_searchable_post_statuses`, `algolia_post_shared_attributes` (customise indexed fields).
 - **Gotcha:** Algolia index IDs encode the environment — prod and staging indices must be kept separate. Re-indexing on large sites is slow; trigger via WP-CLI not the admin UI.

@@ -1,7 +1,6 @@
 ---
 name: tech-access-request
-description: Generate a personalised Tech Access Request doc for a client — greets them by name and lets pre-obtained items be checked off. Produces a branded PDF via brand-doc, one Asana task per access item, and an access record to fill in as they land. Trigger phrases " tech access request", "access request doc", "/tech-access-request".
-argument-hint: <contact name> [--project-gid GID]
+description: "Generate a personalised Tech Access Request doc for a client: branded PDF, one Asana task per access item, and an access record."
 allowed-tools: [Bash, Read, Write]
 ---
 
@@ -56,7 +55,7 @@ future run reads from.
    WordPress admin / SFTP / SSH / Database / cPanel / Repo access — or none?"
 
 3. **Determine the output location.** Default to the client's Dropbox folder:
-   `/media/data/Dropbox/Work/Projects/Client/{Client}/Dev Ops/tech-access-request.md`
+   `/media/data/Dropbox/Work/clients/{Client}/Dev Ops/tech-access-request.md`
    (and the matching `.pdf`). `Dev Ops/` is where the hosting, DNS and access
    notes this request produces already live.
 
@@ -102,7 +101,7 @@ future run reads from.
    where Mark actually monitors work. Skip any item pre-checked in step 2 —
    it's already in hand and does not need chasing.
 
-   Find the project GID from the project's own `CLAUDE.md` (`ASANA_PROJECT_GID`)
+   Resolve the project GID from the registry first (`python3 /media/data/dev/bain-studio/studio/registry.py --prefix {PREFIX} --field gid`), falling back to the project's own `CLAUDE.md`. A project inside the public bain-studio repo carries no GID in its `CLAUDE.md`; a client project's does, in its own private repo.
    if `--project-gid` wasn't passed. If neither is available, say so and skip
    this step rather than creating tasks on the wrong board.
 

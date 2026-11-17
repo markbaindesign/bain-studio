@@ -59,7 +59,7 @@ python3 studio/postman.py sweep --dry-run
 - **Studio inbox:** `studio/inbox/` in the bain-studio repo. Also the fallback for a project
   postman can't find, so check `postman.log` if a message seems to have gone missing.
 - **Project inbox:** `{project}/.claude/inbox/`. `--project` is looked up first as a registered
-  prefix (`prefix:` and `path:` in `docs/projects/*.md`, so `ASP` finds
+  prefix (resolved through `studio/registry.py`, so `ASP` finds
   `/media/data/dev/ddev/algolia-search`), then as a folder name under `STUDIO_SCAN_ROOTS`.
 
 `STUDIO_SCAN_ROOTS` is set in `studio/.env` as a colon-separated list of directory roots to scan.

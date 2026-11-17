@@ -1,6 +1,6 @@
 ---
 name: studio-looper
-description: Cross-project task queue — works BainBot tasks from any studio project in Asana priority order. Advances tasks through Looper Status field. Hands completed work to Mark for review rather than marking done.
+description: "Cross-project task queue: works BainBot tasks from any studio project in Asana priority order, handing finished work to Mark for review."
 allowed-tools: [Bash, Read, Edit]
 ---
 
@@ -140,7 +140,28 @@ For each line printed:
     ```
   Then continue straight to Step 1b — do not stop the run over a stale file, and do not wait for
   further input.
-- **No output at all** — no conflict, proceed normally.
+- **`CLEAR:...`** — no other session targets this queue. Proceed to Step 1b. If the line ends
+  `launched by runner {id}`, you were started by `looper_runner.py`: the runner holds
+  `/tmp/studio-looper/runner.lock` for the whole window and launched you, so **that lock, the
+  `looper_runner.py` process and the `claude -p /studio-looper` process you can see are all your
+  own**. They are never evidence of a competing run.
+- **No output at all** — an older build of `looper_logic.py` with no `CLEAR` line. Same meaning:
+  no conflict, proceed normally.
+
+**This script's output is the only concurrency signal.** Never refuse to start on any other
+basis. In particular, if the `CLEAR` line names a runner, do not consult `ps`, `pgrep`,
+`/tmp/studio-looper/runner.lock` or `Session started` lines in `~/logs/task-looper.log` — under the
+runner every one of those shows you your own run. On 2026-11-05 a headless iteration did exactly
+that: it read an empty result as "the guard is broken", found the runner's lock and its own
+`claude -p` child, and refused. The nightly window ended after 1 of 6 tasks. If the script says
+`CLEAR`, the queue is yours — start it.
+
+(One exception, and only for an **interactive** run with no `LOOPER_RUN_ID` in the environment: a
+live `/tmp/studio-looper/runner.lock` whose pid is alive does mean a nightly window is in progress.
+The runner clears state files between iterations, so this guard can legitimately read `CLEAR`
+mid-window. Don't start — tell Mark "a nightly looper window looks active (runner pid {pid}); run
+anyway, or use `--test`?" and let him choose. That is Step 1a's original purpose: stopping an
+interactive run from racing the nightly one.)
 
 ---
 
@@ -203,7 +224,7 @@ died mid-task (session limit, crash, one-shot `-p` exit) — stranded tasks are 
 queue and sit there forever. Before building the queue, find orphans (an `In progress` task in
 the target mirror not claimed as `current_task` by any live state file):
 ```bash
-LIVE_TASKS=$(python3 studio/scripts/looper_logic.py concurrency {TARGET_PREFIX} | grep '^LIVE:' | cut -d: -f5 | paste -sd, -)
+LIVE_TASKS=$(python3 studio/scripts/looper_logic.py live-tasks {TARGET_PREFIX} | paste -sd, -)
 python3 studio/scripts/looper_logic.py orphans {TARGET_DIR}/asana-mirror.md "$LIVE_TASKS"
 ```
 For each printed task ID, reset it to `Queue` in the mirror and log it:
@@ -212,6 +233,11 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') INFO    [{TARGET_PREFIX}] Orphan recovery: {T
 ```
 (The reset is pushed to Asana by this session's own sync flow; recovered tasks join the queue
 below.)
+
+Use `live-tasks` — never field-split the `concurrency` lines. That step previously read
+`concurrency | grep '^LIVE:' | cut -d: -f5`, but the deadline is an ISO timestamp whose own colons
+shift every later field, so `-f5` returned `00` rather than the task ID. The live set was therefore
+always empty or wrong, which could reset a genuinely in-flight task back to `Queue`.
 
 Build the queue — tasks with `**Looper Status:** Queue` that sit above the mirror's `## DONE`
 section, sorted by Priority (High > Medium > Low > none) then mirror order as tiebreak:
@@ -384,14 +410,16 @@ the work it asked for may already be done. Only block if the command exits non-z
 its error in the blocker (a 404/403 means bainbot is not a member of that task's project).
 
 **Duplicate-work guard.** Before doing anything, check the task's Progress history and comments.
-If the task was already completed ("Ready for review {date}" or equivalent) and has been
+If the task was already completed — the home mirror's Progress note opens `Review:` (or, before 2026-11-17, `Review {date}:`),
+or, from before 2026-11-05, "Ready for review {date}" in either mirror — and has been
 re-queued with **no new instructions**, do NOT redo the work. "No new instructions" means:
 Notes unchanged, **and** the mirror's `- **Comments:**` block contains no entry dated on or after
-the completion date. Compare the dates — do not just check whether comments exist at all. Every
+the completion date. The completion date is the date of bainbot's `Review:` comment, shown by
+`sync.py --get-task`. Compare the dates — do not just check whether comments exist at all. Every
 comment the task has ever collected is listed, so a task re-queued months later still shows its
 original kickoff comment; treating that as "there is a comment, so there are instructions" is the
-opposite failure and re-runs finished work. Move it back to Review with a note: "Previously completed {date}
-({commit/branch}); re-queued without new instructions — tell me what needs to change." Working a
+opposite failure and re-runs finished work. Move it back to Review with a note in the home mirror:
+`**Progress:** @mark Review: already completed {date} ({commit/branch}) || Need: re-queued with no new instructions — tell me what needs to change`. Working a
 task twice within minutes/days because its status bounced is wasted quota and creates duplicate
 commits.
 
@@ -433,7 +461,7 @@ If the answer is there, use it and carry on. Questions with standing answers tha
 runs before:
 - *Where does a report, audit, research note or test template go?* Never the repo. Studio/internal
   research → `/media/data/Dropbox/Work/Studio/context/research/looper/`; client work →
-  `/media/data/Dropbox/Work/Projects/Client/{Client}/Docs/<Topic>/`. Dated `YYYY-MM-DD-<slug>.md`.
+  `/media/data/Dropbox/Work/clients/{Client}/Docs/<Topic>/`. Dated `YYYY-MM-DD-<slug>.md`.
   Check that folder for an existing document on the topic first.
 - *What format?* Markdown, unless the task names another. A client-facing report also gets a
   branded PDF via brand-doc. Test code/tooling that runs against a codebase is code and lives in
@@ -443,7 +471,9 @@ runs before:
 
 A thin task (title only, no notes) is not automatically blocked either: if the title plus the
 project's CLAUDE.md, recent git history and neighbouring tasks make one reading clearly most likely,
-do that and state the interpretation in the Progress note so Mark can redirect at Review. Block
+do that — and say what you built in the `Review:` line plainly enough that a wrong reading is
+obvious at a glance ("Review: made the *clients index* stack below 1000px"). That line is the
+interpretation; it does not get a separate note or a hedge. Block
 only when the plausible readings lead to materially different work, or the work is irreversible
 or outward-facing (live sites, DNS, client email, deleting data).
 
@@ -471,8 +501,8 @@ branch and no commit. Write it straight to:
 $STUDIO_CONTENT_DIR/research/looper/{TASK_ID}-{slug}.md
 ```
 
-Then skip the branch and commit steps entirely, and name that file path in the Progress note
-instead of a branch and commit.
+Then skip the branch and commit steps entirely, and name that file path in the note's
+`Where:` block instead of a branch and commit.
 
 This matters because `bain-studio` is a **public** repo of tools. Research output carries client
 names, infrastructure detail and unremediated findings, none of which should be published. Do not
@@ -490,8 +520,10 @@ git checkout "$BASE"
 ```
 
 **Do NOT push the branch. Do NOT merge it.** It stays local for Mark's review — merging and
-pushing are review-time decisions that belong to Mark. The Progress note must name the branch and
-commit so Mark can find it (`git log looper/{SESSION_ID_SHORT}`). If the repo has uncommitted
+pushing are review-time decisions that belong to Mark. The note's `Where:` block must name the
+branch and commit so Mark can find it (`git log looper/{SESSION_ID_SHORT}`). **The commit message
+is where the reasoning lives** — the diagnosis, what was ruled out, why this fix and not another.
+Write it there in full; the Asana note gets none of it. If the repo has uncommitted
 WIP that overlaps the files you must touch, mark the task Blocked instead of entangling the WIP
 in a looper commit.
 
@@ -525,13 +557,55 @@ PYEOF
 ```
 **Looper Status:** Review
 **Assignee:** Mark Bain (507443625075)
-**Progress:** Ready for review {YYYY-MM-DD}. {What was done, where, what to check.} Use full file paths (e.g. /media/data/dev/...) when referencing files. Session: {pct}% used (resets {reset_dt}).
 ```
+**No Progress note here.** The queue mirror never writes one. `Progress` is not an
+Asana field — it is a mirror-local write channel that `sync.py` turns into a comment, and
+the queue and the home project are two mirrors pointing at *one* Asana task. A note in both
+posts the task two comments, and the dedupe in `sync.py` cannot catch it because the two
+notes differ. One task, one comment, written from the home project.
 
-**2. Update home project mirror** (`{PROJECT_DIR}/asana-mirror.md`):
+**When the queue *is* the home project** (`{TARGET_DIR}` == `{PROJECT_DIR}` — an `SLT` task in
+`studio/looper-test`, for instance), write the note once, in that single mirror. "The queue
+mirror never writes one" means "never write it twice", not "skip it".
+
+**2. Write the review note in the home project mirror** (`{PROJECT_DIR}/asana-mirror.md`):
+
 Progress note only — do NOT change Section, Assignee, or Looper Status:
 ```
-**Progress:** Work complete {YYYY-MM-DD} via studio-looper [{TARGET_PREFIX}]. Awaiting Mark's review. Session: {pct}% used (resets {reset_dt}).
+**Progress:** @mark Review: {what changed, one line} || Check: || 1. {imperative check} || 2. {imperative check} || Gaps: {known, not fixed} || Where: {branch} · {commits} · {URL or file path}
+```
+
+**The `@mark` token is what reaches Mark.** His Asana inbox is filtered to
+*Mentioned*, so `sync.py` converts a leading `@mark` into a real Asana @-mention
+(`_render_progress`). A note without the token is still posted, but he will never see it.
+Use the token when he must act — review, or blocked. Never on routine status changes.
+
+**`||` is a block separator**, expanded to newlines when the comment is posted. It is
+needed because `FIELD_RE` in `sync.py` is not DOTALL: a Progress note must occupy exactly
+one mirror line, and a literal newline truncates it.
+
+**Rules for the note — these are hard limits, not preferences:**
+
+| Rule | Why |
+|---|---|
+| `Review:` line says what changed in **one** line | Asana's inbox truncates at "See more". If the action is not in line one, it is invisible. |
+| **Max 3** `Check:` items, one short line each, imperative | A check is something Mark *does* ("Resize 375px → 1400px, no sideways scroll"), not something he reads. More than 3 means the task should have been split. |
+| **No location in the summary** | Branch, commits, paths and URLs go only in `Where:`, which `sync.py` posts as its own silent comment under the summary. It refuses an `@mark` summary that names one. |
+| **No reasoning, no narrative, no diagnosis** | Why the header was the cause, which property changed, what was ruled out — all of it goes in the commit message, reachable by `git log looper/{SESSION_ID_SHORT}` when he wants it and invisible when he does not. |
+| **No date in the note** | Asana stamps every comment. The duplicate-work guard in 4b reads that stamp via `--get-task`. |
+| **No `Session: {pct}%` line** | Already recorded by the usage-end entry in `~/logs/task-looper.log`. |
+| `Gaps:` only for work knowingly left undone | Omit the block entirely when there is none. Never use it to hedge. |
+| **Follow-ups are tasks** | Anything meant to be done later is created with `sync.py --create-task --follow-up-of {this task}` first and cited by local ID, which `sync.py` links. Never name further work only in prose. |
+| **No interpretation note** | If scope was ambiguous, block and ask (4f) *before* building. Explaining a guess after the fact is not a substitute for asking. |
+
+**Corrections: rewrite the same Progress line. Never add a second note.** `sync.py`
+edits bainbot's existing comment in place when no human comment has landed since
+(`leave_progress_comment`), so the thread holds one current note rather than a note plus a
+contradiction. A "Correction …, replacing my earlier note" comment is a defect.
+
+Worked example:
+```
+**Progress:** @mark Review: header [menu] toggle now at 1000px || Check: || 1. Resize 375px → 1400px: no sideways scroll || 2. Toggle appears below 1000px || Gaps: 320px, contact hero overflows 7px || Where: looper/a3f2c1 · 2252ad1, 38cf615 · https://bain-design.ddev.site
 ```
 
 **3. Sync both:**
@@ -560,20 +634,25 @@ python3 /media/data/dev/bain-studio/studio/notifier.py \
 
 Blocking on a question? It must have passed the **documented-answer gate** in 4c first.
 
-**1. Update target mirror:**
+**1. Update target mirror** — status and assignee only, **no Progress note** (same
+one-task-one-comment rule as 4e):
 ```
 **Looper Status:** Blocked
 **Assignee:** Mark Bain (507443625075)
 **Blockers:** {YYYY-MM-DD} — {What is blocking. What was attempted. What Mark needs to do.}
-**Progress:** Blocked {YYYY-MM-DD}. {One sentence reason.} Session: {pct}% used (resets {reset_dt}).
 ```
 
-**2. Update home project mirror:**
+**2. Write the blocked note in the home project mirror:**
 ```
 **Assignee:** Mark Bain (507443625075)
 **Blockers:** {YYYY-MM-DD} — {same blocker text}
-**Progress:** Blocked {YYYY-MM-DD} via studio-looper [{TARGET_PREFIX}]. {reason.} Session: {pct}% used (resets {reset_dt}).
+**Progress:** @mark Blocked: {the question, one line} || Tried: {where the answer was looked for} || Need: {the one thing Mark must decide or provide}
 ```
+
+A block is a genuine "I need you", so it carries the `@mark` token. Same limits as the
+review note: the question in line one, no narrative, no session line, one line per block.
+`Tried:` is the documented-answer gate's evidence in one line — "not in task, not in
+project CLAUDE.md, not in ADRs" — not a transcript of the search.
 
 **3. Sync both, log, notify:**
 ```bash
@@ -604,7 +683,14 @@ when the body is empty — hook deletes its state file and notifies Mark.
 
 ## Guard rails
 
-- Never mark a task DONE in Asana — move to Review (Looper Status) and reassign to Mark
+- Never mark a task DONE in Asana — move to Review (Looper Status) and reassign to Mark.
+  Completing it is Mark's approval, and it is his click.
+- **One Asana task gets one comment.** Write the Progress note in the home project mirror only;
+  the queue mirror never carries one. Correct a note by rewriting that same line, never by
+  adding a second.
+- **`@mark` is the only thing Mark sees** (his inbox is filtered to *Mentioned*). Use it for
+  review and blocked notes, never for routine status changes.
+- **No narrative in Asana.** Reasoning, diagnosis and alternatives go in the commit message.
 - All commits go on the local `looper/{session_id_short}` branch — never on develop/main/master,
   never pushed, never merged. Review of the branch is Mark's job.
 - Never guess a task's target repo from code searches — registry prefix resolution only; blocked

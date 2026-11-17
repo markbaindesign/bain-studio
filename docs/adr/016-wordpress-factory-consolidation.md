@@ -3,6 +3,12 @@
 Date: 2026-09-11
 Status: Accepted
 
+> **Redacted 2026-11-06.** Client names, domains, provider hostnames and application
+> IDs were removed from this ADR; project prefixes are kept. The decisions and the
+> reasoning are unchanged. What was removed is in
+> `$STUDIO_CONTENT_DIR/internal/studio-infrastructure-identifiers.md` or in that
+> project's `Dev Ops/` note in Dropbox. See ADR 021, BSTD-875.
+
 ## Context
 
 Four repositories in the dev root claimed overlapping territory around building WordPress
@@ -27,8 +33,8 @@ Two further findings shaped the decision:
   reference - are about choosing, naming, packaging and promoting a product line. None is
   about building a theme. Its `repo pipeline & skillset` task restates `wp-repo-factory`'s
   entire spec in one line.
-- **wp-scaffold is the only item with a recorded cost.** Its PLAN notes that `ebiz-global`
-  and `techstyle` were both built with WordPress at the repo root instead of `public_html/`,
+- **wp-scaffold is the only item with a recorded cost.** Its PLAN notes that two projects
+  (EBIZG, TSTY) were both built with WordPress at the repo root instead of `public_html/`,
   because `/onboard-client` does the structure by hand. That is damage already incurred and
   certain to recur.
 
@@ -187,7 +193,7 @@ end. Resolved by extending `scaffold-dir` rather than replacing it, and by not c
   conflict, the layout doc wins.
 - `docs/utilities/wp-project-layout.md` will need updating once the scaffolder exists, to
   point at it as the way the layout is produced.
-- `ebiz-global` and `techstyle` remain mis-structured. Restructuring them onto `public_html/`
+- EBIZG and TSTY remain mis-structured. Restructuring them onto `public_html/`
   is separate work - it touches `.ddev/config.yaml`, `wp-config.php` paths and git history.
 - BTF's Asana project is emptied. Its seven tasks were closed on 2026-09-11: BTF-004 as
   genuinely complete (the `wp-block-theme` skill), the other six migrated to BSTD-796 through

@@ -44,8 +44,8 @@ Invoke in Claude Code with `/skill-name [args]`.
 | `scaffold-dir` | `/scaffold-dir` | Create project directory + git init |
 | `seed-tasks` | `/seed-tasks` | Create initial tasks in Asana via bainbot API |
 | `studio-delivery-gate` | `/studio-delivery-gate` | Full delivery sequence |
-| `raise-invoice` | `/raise-invoice [project]` | Raise an invoice for a project milestone |
-| `log-project` | `/log-project` | Interview + append row to project-database.csv |
+| `raise-invoice` | `/raise-invoice [project]` | Check uninvoiced Harvest hours; raise a Harvest draft invoice |
+| `log-project` | `/log-project` | Interview + write a project file to `context/portfolio/projects/` |
 | `harvest` | `/harvest [project]` | Generate case study, blog post, testimonial request |
 
 ### Context Switching

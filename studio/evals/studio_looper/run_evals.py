@@ -119,6 +119,35 @@ class EvalResult:
 # Scenario: a LIVE state file must block a second run outright
 # ---------------------------------------------------------------------------
 
+# Phrasing varies run to run, so this is a semantic check, not an exact one. The
+# old pair ("already running" / "not starting a second") was too narrow and failed
+# on correct refusals like "The run did not start. Another session already holds
+# the SLT queue" and "Not starting the run. The concurrency guard reports a live
+# SLT run" — a flaky red that cost real debugging time on 2026-11-05. Breadth is
+# safe here because the structural checks in the same eval (the LIVE file still
+# present, no second state file created) are what actually prove the run didn't
+# start; this only confirms the session SAID so rather than stopping mutely.
+REFUSAL_PHRASES = (
+    "already running",
+    "not starting a second",
+    "not starting the run",
+    "did not start",
+    "didn't start",
+    "already holds",
+    "already working",
+    "blocking session",
+    "stopped me before",
+    "stopped before",
+    "refusing to start",
+)
+
+
+def reports_refusal(output: str) -> bool:
+    """True if the session reported declining to start, in any of its usual wordings."""
+    low = output.lower()
+    return any(phrase in low for phrase in REFUSAL_PHRASES)
+
+
 def eval_concurrency_live_blocks_second_run() -> EvalResult:
     name = "concurrency_live_blocks_second_run"
     fake_session = "eval-fake-live"
@@ -140,7 +169,7 @@ def eval_concurrency_live_blocks_second_run() -> EvalResult:
             p for p in STATE_DIR.glob("studio-looper.*.local.md")
             if p.name != fake_path.name
         ]
-        refused = "already running" in output.lower() or "not starting a second" in output.lower()
+        refused = reports_refusal(output)
 
         if not still_there:
             return EvalResult(name, False, "the LIVE state file was deleted — guard rail says never delete another session's file")

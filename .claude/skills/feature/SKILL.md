@@ -1,6 +1,6 @@
 ---
 name: feature
-description: Capture a feature request — scope it, create an Asana task, and (if large) write a lightweight spec. Works in any active project directory.
+description: "Capture a feature request: scope it, create an Asana task, and if large write a lightweight spec. Works in any active project."
 allowed-tools: [Read, Write, Edit, Bash]
 ---
 
@@ -22,7 +22,7 @@ Captures a feature request for the current project. Small features become tasks;
 
 Read `CLAUDE.md` in the current working directory. Extract:
 - `ASANA_TASK_PREFIX` (e.g. `BSTD`, `KF-WEB`)
-- `ASANA_PROJECT_GID`
+- The Asana project GID — resolve from the registry first (`python3 /media/data/dev/bain-studio/studio/registry.py --prefix {PREFIX} --field gid`), falling back to the project's own `CLAUDE.md`. A project inside the public bain-studio repo carries no GID in its `CLAUDE.md`; a client project's does, in its own private repo.
 
 If no CLAUDE.md or prefix found, abort: "Run /feature from a project directory."
 

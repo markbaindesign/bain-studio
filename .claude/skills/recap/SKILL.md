@@ -1,6 +1,6 @@
 ---
 name: recap
-description: Project re-entry brief. Run from inside a project directory when opening a new terminal tab or switching focus. Surfaces Asana state, git context, QA inbox/review counts, inbox, open questions, and a synthesised next action.
+description: "Project re-entry brief from inside a project directory: Asana state, git context, QA counts, inbox, open questions, next action."
 allowed-tools: [Read, Bash]
 ---
 

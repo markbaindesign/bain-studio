@@ -1,7 +1,6 @@
 ---
 name: onboard-client
-description: Orchestrates onboarding a new WordPress client — quizzes Mark for project details, then chains commission, DDEV codebase setup, tech access request, and Dropbox folder creation. Prints a manual-steps checklist for anything that can't be automated (Harvest client/project, Chrome bookmarks, git remote). Invoke when a new WordPress client deal has been signed and it's time to set up the project.
-argument-hint: <client name>
+description: "Onboard a new WordPress client: quiz for details, then chain commission, DDEV setup, tech access request and Dropbox folders, plus a manual-steps checklist."
 allowed-tools: [Read, Write, Edit, Bash, AskUserQuestion]
 ---
 
@@ -31,7 +30,7 @@ Ask Mark for (don't guess):
 - **Contact name** — who the tech access request is addressed to (may differ
   from the client/company name).
 - **Project name** — short descriptive name for Asana/CLAUDE.md (e.g. "Andrew
-  Techstyle Rebuild").
+  Acme Rebuild").
 - **Prefix** — 2–5 uppercase chars for Asana task IDs (e.g. `TSTY`). Suggest
   one from the client name if not given.
 - **Project type** — this branches Steps 3–4:
@@ -63,7 +62,7 @@ Proceed? (y/n)
 
 Codebase path: `/media/data/dev/ddev/{slug}` (slug = lowercase, hyphenated
 client/project name — this matches the existing convention, e.g. the empty
-`techstyle` scaffold already there).
+an existing scaffold already there).
 
 Run `/commission` with the details from Step 1. `/commission` normally looks
 for a spec file first — for client onboarding there usually isn't one, so
@@ -81,7 +80,7 @@ description) when it asks. This gives you:
   Mark's API token" vs. the "ASANA_USER_PAT not set" warning, and flag it to
   Mark if it's the latter.
 - `CLAUDE.md` written with the `## Asana` block
-- Project registered via `/register-project` (projects.json, docs/projects/,
+- Project registered via `/register-project` (registry.json, the Dropbox project note,
   studio CLAUDE.md table)
 
 ---
@@ -103,7 +102,7 @@ exist on the board by the time Step 6 runs.
 
 Save the output into the client's Dropbox folder, not the codebase and not the
 shared template folder:
-`/media/data/Dropbox/Work/Projects/Client/{Client Name}/Dev Ops/tech-access-request.md`
+`/media/data/Dropbox/Work/clients/{Client Name}/Dev Ops/tech-access-request.md`
 and `.pdf`.
 
 It goes under `Dev Ops/` because that is where the hosting, DNS and access
@@ -213,7 +212,7 @@ Then branch on project type from Step 1:
 
 ## Step 5 — Dropbox folder
 
-Create at `/media/data/Dropbox/Work/Projects/Client/{Client Name}/` with:
+Create at `/media/data/Dropbox/Work/clients/{Client Name}/` with:
 
 ```
 Admin/
@@ -293,9 +292,9 @@ are now the actual source of truth for follow-up.
 - **Don't guess project type, prefix, or client name** — always ask in
   Step 1.
 - **Never install WordPress at the repo root.** Docroot is `public_html/`,
-  always. `ebiz-global` and `techstyle` predate this rule and are both wrong;
+  always. Two older projects (EBIZG, TSTY) predate this rule and are both wrong;
   don't copy their layout when looking for a reference. Use `nore` or
-  `buddhist-film-foundation` instead.
+  an existing correctly-structured project instead.
 - **Don't let the tech access step run without a project GID** — the Asana
   tasks are how Mark tracks access, and a run that skips them looks finished
   while leaving nothing to monitor.

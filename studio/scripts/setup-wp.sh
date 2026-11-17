@@ -5,10 +5,10 @@
 # Idempotent. Safe to re-run. Only adds what's missing.
 #
 # Usage:
-#   studio/scripts/setup-wp.sh --slug beato-properties [--root /path/to/project] \
+#   studio/scripts/setup-wp.sh --slug my-project [--root /path/to/project] \
 #     [--acf-key KEY] [--dry-run]
 #
-# --slug    VVV project slug (e.g. "beato-properties") — required
+# --slug    VVV project slug (e.g. "my-project") — required
 # --root    Path to project root (default: current dir)
 # --acf-key ACF Pro license key
 # --dry-run Preview changes, don't write anything
@@ -32,7 +32,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$SLUG" ]]; then
-    echo "Error: --slug is required (e.g. --slug beato-properties)"
+    echo "Error: --slug is required (e.g. --slug my-project)"
     exit 1
 fi
 

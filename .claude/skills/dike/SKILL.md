@@ -1,6 +1,6 @@
 ---
 name: dike
-description: Accessibility check only — WCAG 2.1 AA. Returns a compliance table with Pass / Fail / Flag per criterion. Use when you need an accessibility audit without the full Themis QA suite.
+description: "Accessibility check only, WCAG 2.1 AA. Pass/Fail/Flag per criterion, without the full Themis QA suite."
 allowed-tools: [Read, Write, Bash]
 ---
 

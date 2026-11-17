@@ -18,12 +18,12 @@ def ar(date, qty, desc, path=AR_USD, cur="USD"):
 
 
 def test_paid_invoices_are_not_receivable():
-    rows = [ar("2026-08-31", 1000, "KF Invoice"), ar("2026-09-01", -1000, "KHYENTSE")]
+    rows = [ar("2026-08-31", 1000, "TBT Invoice"), ar("2026-09-01", -1000, "THORNBURY")]
     assert inc.open_receivables(rows) == []
 
 
 def test_payment_sorted_before_same_day_invoice_still_clears_it():
-    rows = [ar("2026-04-02", -1000, "Khyentse"), ar("2026-04-02", 1000, "Khyentse")]
+    rows = [ar("2026-04-02", -1000, "Thornbury"), ar("2026-04-02", 1000, "Thornbury")]
     assert inc.open_receivables(rows) == []
 
 
@@ -34,8 +34,8 @@ def test_part_paid_invoice_keeps_remainder_open():
 
 
 def test_receivable_lands_after_lag_in_mapped_account():
-    rows = [ar("2026-10-07", 1000, "Harvest invoice 897 - TECHSTYLE", AR_EUR, "EUR")]
-    cfg = {"receivables": {"clients": [{"match": "techstyle", "account": "Wise Business (EUR)", "lag_days": 7}]}}
+    rows = [ar("2026-10-07", 1000, "Harvest invoice 897 - MARLOW", AR_EUR, "EUR")]
+    cfg = {"receivables": {"clients": [{"match": "marlow", "account": "Wise Business (EUR)", "lag_days": 7}]}}
     [e] = inc.forecast_income(rows, TODAY, FX, cfg)
     assert (e["date"], e["tier"], e["account"], e["amount"]) == ("2026-10-14", "receivable", "Wise Business (EUR)", 1000)
 
@@ -47,7 +47,7 @@ def test_overdue_receivable_is_expected_tomorrow_and_unmatched_is_unknown():
 
 
 def test_recurring_respects_start_and_converts_currency():
-    cfg = {"recurring": [{"label": "KF", "tier": "fixed", "cadence": "monthly", "day": 3,
+    cfg = {"recurring": [{"label": "TBT", "tier": "fixed", "cadence": "monthly", "day": 3,
                           "amount": 1000, "currency": "USD", "account": "Wise Business (USD)",
                           "start": "2026-11-03"}]}
     entries = inc.forecast_income([], TODAY, FX, cfg)
@@ -72,8 +72,8 @@ def test_past_milestones_are_dropped():
 
 
 KF_CFG = {
-    "receivables": {"clients": [{"match": r"khyentse|\bKF\b", "account": "Wise Business (USD)", "lag_days": 3}]},
-    "recurring": [{"label": "KF", "match": r"khyentse|\bKF\b", "tier": "fixed", "cadence": "monthly", "day": 3,
+    "receivables": {"clients": [{"match": r"thornbury|\bTBT\b", "account": "Wise Business (USD)", "lag_days": 3}]},
+    "recurring": [{"label": "TBT", "match": r"thornbury|\bTBT\b", "tier": "fixed", "cadence": "monthly", "day": 3,
                    "amount": 1000, "currency": "USD", "account": "Wise Business (USD)"}],
 }
 
@@ -81,7 +81,7 @@ KF_CFG = {
 def test_invoiced_recurring_period_is_counted_once():
     # 31 Oct: October's KF invoice is booked to AR before its 3 Nov receipt.
     today = dt.date(2026, 11, 1)
-    rows = [ar("2026-10-31", 1000, "KF Invoice")]
+    rows = [ar("2026-10-31", 1000, "TBT Invoice")]
     nov = [e for e in inc.forecast_income(rows, today, FX, KF_CFG) if e["date"] <= "2026-11-30"]
     assert [(e["tier"], e["date"]) for e in nov] == [("receivable", "2026-11-03")]
 
@@ -89,23 +89,23 @@ def test_invoiced_recurring_period_is_counted_once():
 def test_paid_invoice_still_suppresses_its_recurring_occurrence():
     # Paid early on 2 Nov: no receivable, and the 3 Nov occurrence must not reappear.
     today = dt.date(2026, 11, 2)
-    rows = [ar("2026-10-31", 1000, "Invoice 893 - Khyentse Foundation"), ar("2026-11-02", -1000, "KHYENTSE")]
+    rows = [ar("2026-10-31", 1000, "Invoice 893 - Thornbury Trust"), ar("2026-11-02", -1000, "THORNBURY")]
     entries = inc.forecast_income(rows, today, FX, KF_CFG)
     assert entries[0]["date"] == "2026-12-03"
 
 
 def test_fixed_recurring_ignores_other_invoices_from_same_client():
-    cfg = {"recurring": [{"label": "TS retainer", "match": "techstyle", "tier": "fixed", "cadence": "monthly",
+    cfg = {"recurring": [{"label": "MG retainer", "match": "marlow", "tier": "fixed", "cadence": "monthly",
                           "day": 10, "amount": 135, "currency": "EUR", "account": "Wise Business (EUR)"}]}
-    rows = [ar("2026-11-03", 850, "TECHSTYLE milestone", AR_EUR, "EUR")]
+    rows = [ar("2026-11-03", 850, "MARLOW milestone", AR_EUR, "EUR")]
     entries = inc.forecast_income(rows, TODAY, FX, cfg)
     assert any(e["tier"] == "fixed" and e["date"] == "2026-11-10" for e in entries)
 
 
 def test_invoiced_milestone_drops_out():
-    cfg = {"milestones": [{"label": "m2", "match": "techstyle", "date": "2026-11-22", "amount": 850,
+    cfg = {"milestones": [{"label": "m2", "match": "marlow", "date": "2026-11-22", "amount": 850,
                            "currency": "EUR", "account": "Wise Business (EUR)"}]}
-    rows = [ar("2026-11-12", 850, "Harvest invoice 899 - TECHSTYLE", AR_EUR, "EUR")]
+    rows = [ar("2026-11-12", 850, "Harvest invoice 899 - MARLOW", AR_EUR, "EUR")]
     assert [e["tier"] for e in inc.forecast_income(rows, TODAY, FX, cfg)] == ["receivable"]
 
 
@@ -124,8 +124,8 @@ def test_base_tiers():
 
 UNBILLED_CFG = {
     "receivables": {"clients": [
-        {"match": "techstyle.*upwork", "account": "Wise Business (USD)", "lag_days": 10, "fee_pct": 10},
-        {"match": "middle way", "account": "Wise Business (USD)", "lag_days": 10},
+        {"match": "marlow.*upwork", "account": "Wise Business (USD)", "lag_days": 10, "fee_pct": 10},
+        {"match": "lanterna", "account": "Wise Business (USD)", "lag_days": 10},
     ]},
     "unbilled": {"exclude": ["Maintenance Retainer"]},
 }
@@ -137,22 +137,22 @@ def project(client, name, amt, cur="USD", fixed=False, billable=True):
 
 
 def test_unbilled_hours_are_invoiced_at_month_end_then_paid_after_lag():
-    [e] = inc.forecast_income([], TODAY, FX, UNBILLED_CFG, [project("Middle Way Education (MWE)", "Framework", 1038.6)])
+    [e] = inc.forecast_income([], TODAY, FX, UNBILLED_CFG, [project("Lanterna Schools (LAN)", "Framework", 1038.6)])
     assert (e["tier"], e["date"], e["account"], e["amount"]) == ("unbilled", "2026-11-10", "Wise Business (USD)", 934.74)
 
 
 def test_unbilled_skips_fixed_fee_non_billable_excluded_and_zero():
     projects = [
-        project("Techstyle", "Compliance Center", 2950, "EUR", fixed=True),
+        project("Marlow Goods", "Compliance Center", 2950, "EUR", fixed=True),
         project("X", "Admin", 50, billable=False),
-        project("TECHSTYLE Accessories B.V.", "Techstyle Maintenance Retainer", 90, "EUR"),
+        project("Marlow Goods B.V.", "Marlow Maintenance Retainer", 90, "EUR"),
         project("MWE", "Done", 0),
     ]
     assert inc.forecast_income([], TODAY, FX, UNBILLED_CFG, projects) == []
 
 
 def test_unbilled_upwork_hours_net_of_fee():
-    [e] = inc.forecast_income([], TODAY, FX, UNBILLED_CFG, [project("TECHSTYLE Accessories B.V.", "Techstyle Upwork (hourly)", 100)])
+    [e] = inc.forecast_income([], TODAY, FX, UNBILLED_CFG, [project("Marlow Goods B.V.", "Marlow Upwork (hourly)", 100)])
     assert e["amount"] == 81.0   # $100 less 10% fee, at 0.9
 
 
