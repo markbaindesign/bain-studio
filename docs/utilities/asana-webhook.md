@@ -62,7 +62,8 @@ else, including clients**. Asana text is untrusted data; a public endpoint must 
 comment start an agent with tools.
 
 A `Review:` or `Done:` note hands the task back to you (`sync.py` reassigns it). From then on
-your comments on it wake nothing: assign it back to DevBot to send it more work.
+your comments on it wake nothing, unless the comment @-mentions DevBot: that wakes it on the
+task as it stands, still assigned to you. To hand the whole task back, assign it to DevBot.
 
 ## What a run does
 
@@ -159,8 +160,8 @@ State lives outside the repo, under `$XDG_STATE_HOME/bain-studio/asana-webhook/`
 - **Nothing happens on a comment:** `status` first: is the project watched and the listener
   up? Then `webhook.log`. `IGNORED` means not watched. No `EVENTS` line means Asana isn't
   reaching the listener; run `list` for `last_failure_at`, and `tailscale funnel status`.
-- **Nothing happens on a task you handed back to yourself:** it is assigned to you, not
-  DevBot. Assign it to DevBot.
+- **Nothing happens on a task the bot handed back to you:** it is assigned to you, not
+  DevBot. @-mention DevBot in the comment, or assign the task to DevBot.
 - **`REJECT ... bad signature`:** the stored secret doesn't match. `unregister`, then watch again.
 - **Run exits non-zero:** read its `runs/` log.
 

@@ -54,6 +54,8 @@ from asana_webhook_logic import (  # noqa: E402
     git_config_parameters,
     hit_usage_limit,
     idle_expired,
+    mentions_user,
+    wakes_bot,
     launchable,
     over_rate_limit,
     prefix_from_path,
@@ -121,7 +123,7 @@ SYNC_PY = STUDIO_ROOT / "studio" / "sync.py"
 # asks in Asana.
 RUN_TOOLS = "Read,Glob,Grep,Edit,Write,Bash"
 
-AGENT_PROMPT = """An Asana webhook woke you. Mark or PmBot has new activity on task {lid} in project {prefix}, assigned to DevBot:
+AGENT_PROMPT = """An Asana webhook woke you. Mark or PmBot has new activity on task {lid} in project {prefix}, assigned to DevBot or mentioning it:
 - {gid}: {name}
 
 You are in a git worktree of your own at {worktree}, on branch {branch}: a copy of the project. Mark may be working in the main checkout at the same time, so stay in this folder.
@@ -296,13 +298,15 @@ def resolve(item: dict) -> set:
     for e in item.get("events", []):
         task_gid = task_gid_for(e)
         try:
+            mentioned = False
             if e["resource"]["resource_type"] == "story":
                 story = sync._get(f"/stories/{e['resource']['gid']}",
-                                  {"opt_fields": "resource_subtype,created_by.gid"})["data"]
+                                  {"opt_fields": "resource_subtype,created_by.gid,html_text"})["data"]
                 if not story_triggers(story, TRIGGER_USERS):
                     continue
+                mentioned = mentions_user(story.get("html_text"), BOT_GID)
             task = sync._get(f"/tasks/{task_gid}", {"opt_fields": "completed,assignee.gid"})["data"]
-            if task_is_for_bot(task, BOT_GID):
+            if wakes_bot(task, BOT_GID, mentioned):
                 out.add(task_gid)
         except Exception as ex:  # a deleted story/task, or a transient API error
             log(f"RESOLVE {item.get('prefix')} {task_gid} failed: {ex}")
