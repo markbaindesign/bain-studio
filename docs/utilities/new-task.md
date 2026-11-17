@@ -34,10 +34,25 @@ python3 /media/data/dev/bain-studio/studio/sync.py \
   --task-notes "Blocking SEO crawl of staging site"
 ```
 
+## Follow-up tasks
+
+Work left for later is created as a follow-up of the task it came from:
+
+```bash
+python3 /media/data/dev/bain-studio/studio/sync.py --create-task \
+  --follow-up-of NORE-041 --task-name "Add hreflang tags to staging" \
+  --task-notes "Done when every staging page carries hreflang."
+```
+
+This is the API's version of Asana's "Create follow-up task" menu item, which has no endpoint
+of its own. A link in a description leaves nothing on the task it names, hence the comment on
+the original. Verified on SLT, 2026-11-17.
+
 ## Full options
 
 ```
---project PREFIX       Project prefix (required): NORE, BSTD, MCF, etc.
+--project PREFIX       Project prefix: NORE, BSTD, MCF, etc. Required unless
+                       --follow-up-of names a task with a local ID
 --task-name NAME       Task title (required)
 --task-section NAME    Section to place in (default: NEXT UP)
                        Must match an existing Asana section name exactly
@@ -46,6 +61,10 @@ python3 /media/data/dev/bain-studio/studio/sync.py \
 --task-assignee GID    Assignee (default: BainBot). 'me' uses ASANA_USER_GID
 --task-depends-on GID  A task the new one blocks. If linking fails, the task
                        is still created but the command exits 1 and says so
+--follow-up-of TASK    The task this one follows up (local ID, GID or URL).
+                       The description opens "Follow-up to {ID}." linking that
+                       task, and the original gets a silent "Follow-up: {new ID}"
+                       comment linking back
 --dry-run              Preview without creating anything
 ```
 
@@ -63,6 +82,9 @@ The task is live in Asana and visible in the mirror immediately - no sync run ne
 ## Available sections
 
 Sections vary by project. Common ones: `DOING`, `NEXT UP`, `TO DO`, `STALLED`, `SOMEDAY/MAYBE`.
+
+A task created for work Claude is doing in the current session goes in `DOING`; a follow-up
+or anything for later keeps the default, `NEXT UP`.
 
 To see sections for a project, check its mirror or Asana board. The `--task-section` value must match exactly (case-insensitive).
 

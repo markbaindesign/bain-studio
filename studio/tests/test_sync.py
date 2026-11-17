@@ -33,6 +33,13 @@ from sync import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _no_task_links():
+    """Keep the real registry out of every test: no local ID resolves unless a test says so."""
+    with patch.object(sync, "_LINK_MAPS", ({}, {})):
+        yield
+
+
 @pytest.fixture
 def proj(tmp_path):
     p = ProjectConfig(name="Test Project", root=tmp_path, gid="proj_gid_123", prefix="TEST")
@@ -1079,6 +1086,26 @@ def test_create_task_full_dependency_failure_is_loud(proj, fake_asana, monkeypat
         sync.create_task_full(proj, "Do it", depends_on="blocked_gid")
 
 
+def test_create_task_full_follow_up_links_the_original(proj, fake_asana):
+    lid = sync.create_task_full(proj, "Sea limerick", notes="Add it & check",
+                                follow_up_of=("orig_gid", "ACME-002"))
+    data = fake_asana[0][1]["data"]
+    assert "notes" not in data
+    assert data["html_notes"] == (
+        '<body>Follow-up to <a data-asana-gid="orig_gid" data-asana-dynamic="false">'
+        'ACME-002</a>.\n\nAdd it &amp; check</body>')
+    block = proj.mirror_file.read_text().split(f"### {lid} ")[1]
+    assert "- **Notes:** Follow-up to ACME-002. Add it & check" in block
+    assert ("/tasks/orig_gid/stories", {"data": {"html_text":
+            f'<body>Follow-up: <a data-asana-gid="new_gid" data-asana-dynamic="false">{lid}</a></body>'}}
+            ) in fake_asana
+
+
+def test_create_task_full_follow_up_without_notes(proj, fake_asana):
+    sync.create_task_full(proj, "Sea limerick", follow_up_of=("orig_gid", "ACME-002"))
+    assert fake_asana[0][1]["data"]["html_notes"].endswith("ACME-002</a>.</body>")
+
+
 # ---------------------------------------------------------------------------
 # assign_ids - tasks carrying another project's ID
 # ---------------------------------------------------------------------------
@@ -1256,7 +1283,7 @@ REAL_WALL = (
 
 
 def test_validate_rejects_the_wall_of_text_that_prompted_this():
-    assert "200-char limit" in sync.validate_progress_note(REAL_WALL)
+    assert "150-char limit" in sync.validate_progress_note(REAL_WALL)
 
 
 def test_validate_passes_a_templated_review_note():
@@ -1273,14 +1300,14 @@ def test_validate_passes_heartbeats_and_short_free_form_notes():
 
 
 def test_validate_rejects_too_many_blocks():
-    note = "@mark Review 2026-11-05: x || " + " || ".join(
-        f"{i}. do a thing" for i in range(1, 10))
+    note = "@mark Review: x || " + " || ".join(
+        f"{i}. do a thing" for i in range(1, 7))
     assert "block limit" in sync.validate_progress_note(note)
 
 
 def test_validate_rejects_an_overlong_note_under_the_block_limit():
-    note = " || ".join(["x" * 150] * 7)   # each block legal, total is not
-    assert "exceeds the 900-char limit" in sync.validate_progress_note(note)
+    note = " || ".join(["x" * 140] * 5)   # each block legal, total is not
+    assert "exceeds the 500-char limit" in sync.validate_progress_note(note)
 
 
 # ---------------------------------------------------------------------------
@@ -1748,3 +1775,95 @@ def test_edited_story_adds_no_follower():
         sync.leave_progress_comment("TASK1", REVIEW_NOTE, story_gid="STORY9")
     get.assert_not_called()
     post.assert_not_called()
+
+
+# --- Task IDs in a note become links (fictional IDs and GIDs) ---
+
+LINKS = ({"9001": "ACME-012", "9002": "ACME-013"},
+         {"ACME-012": "9001", "ACME-013": "9002"})
+
+
+def test_render_progress_links_known_task_ids():
+    with patch.object(sync, "_LINK_MAPS", LINKS):
+        html, _ = sync._render_progress("Review: done || Follow-up: ACME-012, and ACME-013.")
+    assert '<a data-asana-gid="9001" data-asana-dynamic="false">ACME-012</a>' in html
+    assert '<a data-asana-gid="9002" data-asana-dynamic="false">ACME-013</a>.' in html
+
+
+def test_render_progress_leaves_unknown_ids_branches_and_urls_alone():
+    note = ("Review: x || Where: feature/ACME-012-fix · https://ex.test/ACME-012 "
+            "· ACME-012-old || See ACME-999")
+    with patch.object(sync, "_LINK_MAPS", LINKS):
+        html, _ = sync._render_progress(note)
+    assert "data-asana-gid" not in html
+
+
+def test_link_markup_does_not_count_against_the_note_limits():
+    note = "Review: " + " ".join(["ACME-012"] * 15)
+    with patch.object(sync, "_LINK_MAPS", LINKS):
+        assert sync.validate_progress_note(note) == ""
+
+
+def test_comment_matches_a_note_whose_ids_came_back_as_urls():
+    # What Asana stores in a story's plain text for a linked ID (verified 2026-11-17).
+    plain = "Review: done\nFollow-up: ACME-012"
+    story = "Review: done\nFollow-up: https://app.asana.com/0/0/9001/f/"
+    with patch.object(sync, "_LINK_MAPS", LINKS):
+        assert sync._comment_matches(story, plain)
+        assert not sync._comment_matches(story, "Review: done\nFollow-up: ACME-013")
+
+
+# ---------------------------------------------------------------------------
+# The summary carries no location; Where: is its own silent comment
+# ---------------------------------------------------------------------------
+
+def test_split_location_moves_where_into_its_own_silent_note():
+    summary, where = sync.split_location(REVIEW_NOTE)
+    assert summary.startswith("@mark Review: header & nav fix || Check:")
+    assert "Where" not in summary and "looper/" not in summary
+    assert where == "Where: looper/a3f2c1 · 2252ad1"
+    assert not sync.MENTION_RE.match(where)
+
+
+def test_split_location_without_where_leaves_the_note_alone():
+    assert sync.split_location("Checked 2026-11-05.") == ("Checked 2026-11-05.", "")
+
+
+def test_validate_rejects_a_location_in_the_mark_summary():
+    for loc in ("feature/x-fix", "2252ad1", "/media/data/dev/site/", "https://ex.test/a",
+                "studio/sync.py"):
+        note = f"@mark Review: done || Check: || 1. Look at {loc}"
+        assert "names a location" in sync.validate_progress_note(note), loc
+
+
+def test_validate_allows_a_location_in_where_and_in_silent_notes():
+    assert sync.validate_progress_note(REVIEW_NOTE) == ""
+    assert sync.validate_progress_note("Did the thing on feature/x-fix") == ""
+
+
+def test_post_note_posts_summary_then_where_silently():
+    with patch.object(sync, "USER_GID", ""), \
+         patch.object(sync, "_post", side_effect=[{"data": {"gid": "S1"}},
+                                                  {"data": {"gid": "W1"}}]) as post:
+        got = sync.post_note("TASK1", REVIEW_NOTE)
+    assert got == ("S1", "W1")
+    bodies = [c[0][1]["data"]["html_text"] for c in post.call_args_list]
+    assert "looper/" not in bodies[0] and bodies[1] == "<body>Where: looper/a3f2c1 · 2252ad1</body>"
+
+
+def test_post_note_skips_a_where_already_on_the_task():
+    bot = [{"gid": "W0", "text": "Where: looper/a3f2c1 · 2252ad1"}]
+    with patch.object(sync, "USER_GID", ""), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "S1"}}) as post:
+        got = sync.post_note("TASK1", REVIEW_NOTE, bot_stories=bot)
+    assert got == ("S1", "W0") and post.call_count == 1
+
+
+def test_done_with_open_subtasks_needs_a_subtasks_block():
+    bad = sync.validate_done_subtasks("@mark Done, Mark complete", ["Add .gitattributes"])
+    assert "Add .gitattributes" in bad
+    ok = ("@mark Done, Mark complete || Subtasks: first three done, tick them; "
+          ".gitattributes not required")
+    assert sync.validate_done_subtasks(ok, ["Add .gitattributes"]) == ""
+    assert sync.validate_done_subtasks("@mark Done, Mark complete", []) == ""
+    assert sync.validate_done_subtasks("@mark Review: x", ["open"]) == ""

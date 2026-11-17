@@ -410,15 +410,16 @@ the work it asked for may already be done. Only block if the command exits non-z
 its error in the blocker (a 404/403 means bainbot is not a member of that task's project).
 
 **Duplicate-work guard.** Before doing anything, check the task's Progress history and comments.
-If the task was already completed — the home mirror's Progress note opens `Review {date}:`,
+If the task was already completed — the home mirror's Progress note opens `Review:` (or, before 2026-11-17, `Review {date}:`),
 or, from before 2026-11-05, "Ready for review {date}" in either mirror — and has been
 re-queued with **no new instructions**, do NOT redo the work. "No new instructions" means:
 Notes unchanged, **and** the mirror's `- **Comments:**` block contains no entry dated on or after
-the completion date. Compare the dates — do not just check whether comments exist at all. Every
+the completion date. The completion date is the date of bainbot's `Review:` comment, shown by
+`sync.py --get-task`. Compare the dates — do not just check whether comments exist at all. Every
 comment the task has ever collected is listed, so a task re-queued months later still shows its
 original kickoff comment; treating that as "there is a comment, so there are instructions" is the
 opposite failure and re-runs finished work. Move it back to Review with a note in the home mirror:
-`**Progress:** @mark Review {YYYY-MM-DD}: already completed {date} ({commit/branch}) || Need: re-queued with no new instructions — tell me what needs to change`. Working a
+`**Progress:** @mark Review: already completed {date} ({commit/branch}) || Need: re-queued with no new instructions — tell me what needs to change`. Working a
 task twice within minutes/days because its status bounced is wasted quota and creates duplicate
 commits.
 
@@ -470,8 +471,8 @@ runs before:
 
 A thin task (title only, no notes) is not automatically blocked either: if the title plus the
 project's CLAUDE.md, recent git history and neighbouring tasks make one reading clearly most likely,
-do that — and say what you built in the `Review {date}:` line plainly enough that a wrong reading is
-obvious at a glance ("Review 2026-11-05: made the *clients index* stack below 1000px"). That line is the
+do that — and say what you built in the `Review:` line plainly enough that a wrong reading is
+obvious at a glance ("Review: made the *clients index* stack below 1000px"). That line is the
 interpretation; it does not get a separate note or a hedge. Block
 only when the plausible readings lead to materially different work, or the work is irreversible
 or outward-facing (live sites, DNS, client email, deleting data).
@@ -571,7 +572,7 @@ mirror never writes one" means "never write it twice", not "skip it".
 
 Progress note only — do NOT change Section, Assignee, or Looper Status:
 ```
-**Progress:** @mark Review {YYYY-MM-DD}: {what changed, one line} || Where: {branch} · {commits} · {URL or file path} || Check: || 1. {imperative check} || 2. {imperative check} || Gaps: {known, not fixed}
+**Progress:** @mark Review: {what changed, one line} || Check: || 1. {imperative check} || 2. {imperative check} || Gaps: {known, not fixed} || Where: {branch} · {commits} · {URL or file path}
 ```
 
 **The `@mark` token is what reaches Mark.** His Asana inbox is filtered to
@@ -587,12 +588,14 @@ one mirror line, and a literal newline truncates it.
 
 | Rule | Why |
 |---|---|
-| `Review {date}:` line says what changed in **one** line | Asana's inbox truncates at "See more". If the action is not in line one, it is invisible. |
-| **Max 5** `Check:` items, one line each, imperative | A check is something Mark *does* ("Resize 375px → 1400px, no sideways scroll"), not something he reads. More than 5 means the task should have been split. |
+| `Review:` line says what changed in **one** line | Asana's inbox truncates at "See more". If the action is not in line one, it is invisible. |
+| **Max 3** `Check:` items, one short line each, imperative | A check is something Mark *does* ("Resize 375px → 1400px, no sideways scroll"), not something he reads. More than 3 means the task should have been split. |
+| **No location in the summary** | Branch, commits, paths and URLs go only in `Where:`, which `sync.py` posts as its own silent comment under the summary. It refuses an `@mark` summary that names one. |
 | **No reasoning, no narrative, no diagnosis** | Why the header was the cause, which property changed, what was ruled out — all of it goes in the commit message, reachable by `git log looper/{SESSION_ID_SHORT}` when he wants it and invisible when he does not. |
-| **The ISO date in line one is required** | The duplicate-work guard in 4b reads it to tell an already-completed task from a re-queued one. Dropping it re-runs finished work. |
+| **No date in the note** | Asana stamps every comment. The duplicate-work guard in 4b reads that stamp via `--get-task`. |
 | **No `Session: {pct}%` line** | Already recorded by the usage-end entry in `~/logs/task-looper.log`. |
 | `Gaps:` only for work knowingly left undone | Omit the block entirely when there is none. Never use it to hedge. |
+| **Follow-ups are tasks** | Anything meant to be done later is created with `sync.py --create-task --follow-up-of {this task}` first and cited by local ID, which `sync.py` links. Never name further work only in prose. |
 | **No interpretation note** | If scope was ambiguous, block and ask (4f) *before* building. Explaining a guess after the fact is not a substitute for asking. |
 
 **Corrections: rewrite the same Progress line. Never add a second note.** `sync.py`
@@ -602,7 +605,7 @@ contradiction. A "Correction …, replacing my earlier note" comment is a defect
 
 Worked example:
 ```
-**Progress:** @mark Review 2026-11-05: header responsive fix — [menu] toggle now at 1000px || Where: looper/a3f2c1 · 2252ad1, 38cf615 · https://bain-design.ddev.site || Check: || 1. Resize any page 375px → 1400px: no sideways scroll, header stays on one line || 2. [menu] toggle appears below 1000px (was 640px) || 3. Contact hero, case-study cards, home grid, testimonial pullquote: no overflow || Gaps: 320px only — contact hero overflows 7px, cat sprite can sit past right edge
+**Progress:** @mark Review: header [menu] toggle now at 1000px || Check: || 1. Resize 375px → 1400px: no sideways scroll || 2. Toggle appears below 1000px || Gaps: 320px, contact hero overflows 7px || Where: looper/a3f2c1 · 2252ad1, 38cf615 · https://bain-design.ddev.site
 ```
 
 **3. Sync both:**
@@ -643,7 +646,7 @@ one-task-one-comment rule as 4e):
 ```
 **Assignee:** Mark Bain (507443625075)
 **Blockers:** {YYYY-MM-DD} — {same blocker text}
-**Progress:** @mark Blocked {YYYY-MM-DD}: {the question, one line} || Tried: {where the answer was looked for} || Need: {the one thing Mark must decide or provide}
+**Progress:** @mark Blocked: {the question, one line} || Tried: {where the answer was looked for} || Need: {the one thing Mark must decide or provide}
 ```
 
 A block is a genuine "I need you", so it carries the `@mark` token. Same limits as the

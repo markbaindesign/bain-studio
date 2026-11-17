@@ -46,7 +46,7 @@ If working tree is clean, note it.
 For each task that was actively worked on this session, update its `Progress:` line in `asana-mirror.md`:
 
 ```
-- **Progress:** {What was done today} {YYYY-MM-DD}.
+- **Progress:** {What was done today}.
 ```
 
 Be specific - "Research complete, ADR written" not "Worked on task".

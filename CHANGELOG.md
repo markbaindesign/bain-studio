@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-17
+
+### Added
+- **`critical_path.py` computes a project's critical path** from its dates and "blocked by" links and writes it to a shared Critical Path field, so the Gantt can be coloured by it. Dependency cycles are refused with the loop named.
+- **`sync.py --create-task --follow-up-of {ID}`** creates a follow-up task linked to the task it came from.
+- **Task IDs in comments become links.** A local ID such as `BSTD-856` that resolves in a registered project is linked to that task; IDs inside branches, paths and URLs are left alone.
+
+### Changed
+- **A note's `Where:` block posts as its own silent comment** under the `@mark` summary. The summary may not name a path, branch, commit or URL, and is capped at 500 characters, 150 per block and 3 checks.
+- **A `Done` note on a task with open subtasks is refused** unless a `Subtasks:` block accounts for each one.
+- **Follow-ups are tasks, and notes carry no date.** The comment rules now say so; Asana stamps every comment.
+
+### Fixed
+- **`@mark` notes reach the "Mentioned" inbox.** `sync.py` now waits 35 seconds after adding Mark as a collaborator before posting, working around an Asana bug that ignored mentions posted sooner (BSTD-878).
+
 ## [2.1.0] - 2026-11-16
 
 ### Added
