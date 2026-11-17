@@ -40,15 +40,39 @@ continuation line starting `- **X:**` is misparsed as another field. `||` separa
 and is expanded to newlines at post time by `_progress_plain`.
 
 ```
-**Progress:** @mark Review {YYYY-MM-DD}: {what changed, one line} || Where: {branch} · {commits} · {URL or path} || Check: || 1. {imperative} || 2. {imperative} || Gaps: {known, not fixed}
+**Progress:** @mark Review: {what changed, one line} || Where: {branch} · {commits} · {URL or path} || Check: || 1. {imperative} || 2. {imperative} || Gaps: {known, not fixed}
 ```
 
 | Block | Holds | Limit |
 |---|---|---|
-| `Review {date}:` / `Blocked {date}:` | What changed, or the question | One line, ISO date required — the looper's duplicate-work guard reads it to tell a completed task from a re-queued one. Asana truncates at "See more", so the action lives here or nowhere. |
+| `Review:` / `Blocked:` | What changed, or the question | One line, no date: Asana stamps the comment, and the looper's duplicate-work guard reads that stamp. Asana truncates at "See more", so the action lives here or nowhere. |
 | `Where:` | Branch, commits, URL or file path | One line. For a research task, the output file path instead. |
 | `Check:` | What Mark does to verify | Max 5, one line each, imperative. More than 5 means the task should have been split. |
-| `Gaps:` | Work knowingly left undone | Omit entirely when there is none. Never a hedge. |
+| `Gaps:` | Work knowingly left undone | Omit entirely when there is none. Never a hedge. Anything meant to be done later is a task, cited by ID. |
+
+**A follow-up is a task, not a sentence.** Before a comment names further work — a follow-up,
+a next step, a `Gaps:` item that someone is meant to pick up — create it with
+`sync.py --create-task` and cite its local ID. Work mentioned only in a comment is lost.
+
+**Cite related tasks by local ID** (`BSTD-856`). `sync.py` turns every ID that resolves in a
+registered project's `asana-ids.json` into a link to that task, so Mark can jump to it. Write
+the bare ID: no URL, no GID, no task title.
+
+**No date in the note.** Asana stamps every comment; write `Review:` and `Blocked:`, not
+`Review 2026-11-05:`.
+
+### How a task ID becomes a link
+
+`_render_progress` wraps each local ID that resolves through `_local_id_maps()` in
+`<a data-asana-gid="{gid}" data-asana-dynamic="false">{ID}</a>`. The `dynamic="false"` keeps
+the ID as the link text: without it Asana turns any task link, `href` or `data-asana-gid`,
+into a mention showing the task's title. An ID inside a branch name, path or URL
+(`feature/BSTD-878-x`) and an ID that resolves nowhere stay plain text.
+
+Asana stores a linked ID in the story's plain `text` as `https://app.asana.com/0/0/{gid}/f/`,
+so `_comment_matches` maps those URLs back to IDs before comparing. Validation runs on the
+mirror text, so link markup never counts against the limits. Verified against SLT-001 on
+2026-11-17.
 
 **No reasoning, no diagnosis, no alternatives considered, no session-usage line.** The
 reasoning goes in the looper commit message, reachable by `git log looper/{session}` when

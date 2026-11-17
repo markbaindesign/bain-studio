@@ -33,6 +33,13 @@ from sync import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _no_task_links():
+    """Keep the real registry out of every test: no local ID resolves unless a test says so."""
+    with patch.object(sync, "_LINK_MAPS", ({}, {})):
+        yield
+
+
 @pytest.fixture
 def proj(tmp_path):
     p = ProjectConfig(name="Test Project", root=tmp_path, gid="proj_gid_123", prefix="TEST")
@@ -1748,3 +1755,39 @@ def test_edited_story_adds_no_follower():
         sync.leave_progress_comment("TASK1", REVIEW_NOTE, story_gid="STORY9")
     get.assert_not_called()
     post.assert_not_called()
+
+
+# --- Task IDs in a note become links (fictional IDs and GIDs) ---
+
+LINKS = ({"9001": "ACME-012", "9002": "ACME-013"},
+         {"ACME-012": "9001", "ACME-013": "9002"})
+
+
+def test_render_progress_links_known_task_ids():
+    with patch.object(sync, "_LINK_MAPS", LINKS):
+        html, _ = sync._render_progress("Review: done || Follow-up: ACME-012, and ACME-013.")
+    assert '<a data-asana-gid="9001" data-asana-dynamic="false">ACME-012</a>' in html
+    assert '<a data-asana-gid="9002" data-asana-dynamic="false">ACME-013</a>.' in html
+
+
+def test_render_progress_leaves_unknown_ids_branches_and_urls_alone():
+    note = ("Review: x || Where: feature/ACME-012-fix · https://ex.test/ACME-012 "
+            "· ACME-012-old || See ACME-999")
+    with patch.object(sync, "_LINK_MAPS", LINKS):
+        html, _ = sync._render_progress(note)
+    assert "data-asana-gid" not in html
+
+
+def test_link_markup_does_not_count_against_the_note_limits():
+    note = "Review: " + " ".join(["ACME-012"] * 20)
+    with patch.object(sync, "_LINK_MAPS", LINKS):
+        assert sync.validate_progress_note(note) == ""
+
+
+def test_comment_matches_a_note_whose_ids_came_back_as_urls():
+    # What Asana stores in a story's plain text for a linked ID (verified 2026-11-17).
+    plain = "Review: done\nFollow-up: ACME-012"
+    story = "Review: done\nFollow-up: https://app.asana.com/0/0/9001/f/"
+    with patch.object(sync, "_LINK_MAPS", LINKS):
+        assert sync._comment_matches(story, plain)
+        assert not sync._comment_matches(story, "Review: done\nFollow-up: ACME-013")

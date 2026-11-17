@@ -128,7 +128,7 @@ Harvest produces the case study, blog post, and testimonial request. Updates Mne
 Update the project mirror — set the delivery milestone task to DONE and add a progress note:
 
 ```
-**Progress:** Delivered {YYYY-MM-DD}. Gate cleared by Themis. Invoice raised. Harvest triggered.
+**Progress:** Delivered. Gate cleared by Themis. Invoice raised. Harvest triggered.
 ```
 
 Run sync:
