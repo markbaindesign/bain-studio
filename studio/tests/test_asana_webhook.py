@@ -13,6 +13,7 @@ from asana_webhook_logic import (
     hit_usage_limit,
     idle_expired,
     launchable,
+    mentions_user,
     over_rate_limit,
     prefix_from_path,
     project_edit_deny,
@@ -26,6 +27,7 @@ from asana_webhook_logic import (
     task_is_for_bot,
     unanswered,
     verify_signature,
+    wakes_bot,
 )
 
 BOT = "100"
@@ -374,3 +376,15 @@ def test_denylist_hits_whole_words_only():
 def test_worktree_git_file_and_output_flag_are_denied():
     assert "Edit(//wt/BD-1/.git)" in protected_path_denies(Path("/wt/BD-1"))
     assert "Bash(git * --output*)" in GIT_WRITE_DENIES
+
+
+def test_handed_back_task_wakes_the_bot_only_when_mentioned():
+    html = f'<body><a data-asana-gid="{BOT}" data-asana-type="user"/> one more change</body>'
+    assert mentions_user(html, BOT)
+    assert not mentions_user("<body>one more change</body>", BOT)
+    assert not mentions_user(f'<body><a data-asana-gid="{BOT}9"/></body>', BOT)
+    mine = {"completed": False, "assignee": {"gid": MARK}}
+    assert not wakes_bot(mine, BOT, mentioned=False)
+    assert wakes_bot(mine, BOT, mentioned=True)
+    assert wakes_bot({"completed": False, "assignee": {"gid": BOT}}, BOT, mentioned=False)
+    assert not wakes_bot({"completed": True, "assignee": {"gid": BOT}}, BOT, mentioned=True)

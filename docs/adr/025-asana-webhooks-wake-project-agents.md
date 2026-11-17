@@ -106,3 +106,5 @@ Decided with Mark in a grill session:
 - **Replies always reach Mark.** A run posts one note at the end: `Answer:`, `Review:` or
   `Blocked:`. `sync.py` mentions Mark on those (and `Done:`) without the `@mark` token, and a
   `Review:` or `Done:` reassigns the task to him.
+- **A handed-back task wakes the bot only when Mark @-mentions it.** After a `Review:` or
+  `Done:` the task is his, and a plain comment from him is a note to himself or a client.

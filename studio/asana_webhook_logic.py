@@ -94,6 +94,24 @@ def task_is_for_bot(task: dict, bot_gid: str) -> bool:
     return (task.get("assignee") or {}).get("gid") == bot_gid
 
 
+def mentions_user(html_text: str, user_gid: str) -> bool:
+    """Does a comment's rich text @-mention this user? Asana renders a mention
+    as <a data-asana-gid="..."> with the user's GID."""
+    if not html_text or not user_gid:
+        return False
+    return bool(re.search(r'data-asana-gid="' + re.escape(user_gid) + r'"', html_text))
+
+
+def wakes_bot(task: dict, bot_gid: str, mentioned: bool) -> bool:
+    """An open task wakes the bot when it is assigned to the bot, or when the
+    comment @-mentions the bot. A Review or Done hands a task back to Mark, and
+    his comments on it then wake nothing unless he mentions the bot (his call,
+    2026-11-17)."""
+    if task.get("completed"):
+        return False
+    return task_is_for_bot(task, bot_gid) or mentioned
+
+
 def unanswered(stories: list, trigger_users: set, bot_gid: str, since: str = "") -> bool:
     """Catch-up check: is the latest trigger-user comment newer than the bot's
     latest comment (and newer than `since`, the last time we woke an agent)?"""
