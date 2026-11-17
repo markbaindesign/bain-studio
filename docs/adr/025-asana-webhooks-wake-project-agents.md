@@ -108,3 +108,7 @@ Decided with Mark in a grill session:
   `Review:` or `Done:` reassigns the task to him.
 - **A handed-back task wakes the bot only when Mark @-mentions it.** After a `Review:` or
   `Done:` the task is his, and a plain comment from him is a note to himself or a client.
+- **Runs read the registry and the project's Dropbox folder, read-only.** BSTD-841 stalled
+  because a run could reach neither. Writes there stay with interactive sessions: a Dropbox
+  edit has no branch and no review. Worktrees moved to `$XDG_DATA_HOME/bain-bot-worktrees/`
+  so the registry folder can be denied to edits whole.
