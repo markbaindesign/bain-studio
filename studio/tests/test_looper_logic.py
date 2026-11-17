@@ -15,6 +15,7 @@ from looper_logic import (
     build_queue,
     compute_deadline,
     find_orphans,
+    max_plan_env,
     parse_mirror_tasks,
     parse_state_frontmatter,
     window_summary,
@@ -488,3 +489,9 @@ def test_cli_live_tasks_lists_every_live_session_one_per_line(tmp_path, capsys):
         )
     _cli_live_tasks("SL", str(tmp_path))
     assert sorted(capsys.readouterr().out.split()) == ["SL-001", "SL-002"]
+
+
+def test_max_plan_env_drops_api_auth_and_keeps_the_rest():
+    env = max_plan_env({"ANTHROPIC_API_KEY": "k", "ANTHROPIC_AUTH_TOKEN": "t", "PATH": "/bin"},
+                       LOOPER_RUN_ID="r1")
+    assert env == {"PATH": "/bin", "LOOPER_RUN_ID": "r1"}

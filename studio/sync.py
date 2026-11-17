@@ -348,6 +348,14 @@ LOCATION_RE = re.compile(
 # A "Done" handover with open subtasks must say why each is not needed.
 DONE_RE     = re.compile(r"^done\b", re.IGNORECASE)
 SUBTASKS_RE = re.compile(r"^subtasks\s*:", re.IGNORECASE)
+# Review, Blocked, Done and Answer notes are addressed to Mark by definition,
+# so they carry the mention whether or not their author remembered the @mark
+# token. Forgetting it posted PSK-022 and PSK-030 silently (2026-11-17): a
+# finished decision task he never heard about. Answer is a bot's reply to a
+# question he asked, which he is waiting for. Every other note posts silently.
+HANDOVER_RE = re.compile(r"^(?:review|blocked|done|answer)\b", re.IGNORECASE)
+# Review and Done hand the task back: it leaves the bot's queue for Mark's.
+HAND_BACK_RE = re.compile(r"^(?:review|done)\b", re.IGNORECASE)
 
 
 def split_location(text: str) -> tuple:
@@ -363,9 +371,44 @@ def split_location(text: str) -> tuple:
     where = [s for s in segs if WHERE_RE.match(s)]
     rest  = [s for s in segs if not WHERE_RE.match(s)]
     summary = f" {BLOCK_SEP} ".join(rest)
-    if m and summary:
+    if summary and (m or HANDOVER_RE.match(summary)):
         summary = "@mark " + summary
     return summary, f" {BLOCK_SEP} ".join(where)
+
+
+def hand_back(task_gid: str, summary: str, task: dict = None, dry_run=False) -> bool:
+    """Reassign a bot task to Mark when a Review or Done note goes out on it.
+
+    Only a task assigned to the bot moves: one already with Mark, or with
+    anyone else, is left alone. `task`, when given, is the in-memory task the
+    mirror is rebuilt from later this run; it is updated so the next sync does
+    not push the bot back as assignee. Never raises: the note is already
+    posted, and a failed reassignment must not cost it.
+    """
+    if not USER_GID or not BAINBOT_GID:
+        return False
+    if not HAND_BACK_RE.match(_progress_plain(summary)):
+        return False
+    try:
+        if task is not None:
+            assignee = task.get("assignee") or {}
+        else:
+            data = _get(f"/tasks/{task_gid}", {"opt_fields": "assignee.gid"})["data"]
+            assignee = data.get("assignee") or {}
+        if assignee.get("gid") != BAINBOT_GID:
+            return False
+        if dry_run:
+            log.info(f"    [DRY-RUN] Would reassign {task_gid} to Mark")
+            return True
+        resp = _put(f"/tasks/{task_gid}", {"data": {"assignee": USER_GID}})
+    except Exception as e:
+        log.warning(f"    Posted the note on {task_gid} but could not reassign it to Mark ({e})")
+        return False
+    name = (((resp or {}).get("data") or {}).get("assignee") or {}).get("name") or "Mark"
+    if task is not None:
+        task["assignee"] = {"gid": USER_GID, "name": name}
+    log.info(f"    Reassigned {task_gid} to {name}")
+    return True
 
 
 def validate_where_note(text: str) -> str:
@@ -1444,34 +1487,87 @@ def priorities_table(tasks: list) -> str:
 # tests concluded no API comment could reach it. A probe on SLT-013 on
 # 2026-11-17, posted 37 seconds after the add, reached the filter. See BSTD-878.
 #
-# The wait runs only when the follower was just added; a task Mark already
-# follows posts at once and still counts as a mention. Do not shorten it below
-# 30 seconds until Asana fixes the bug.
+# The 30 seconds run from whenever Mark became a collaborator, not from when
+# this code added him. Creating a task assigned to him, or assigning one, makes
+# him a follower at once; a note posted seconds later finds him already
+# following and still misses the filter (PSK-108, 2026-11-17). So a task he
+# already follows is checked too: if the task was created, or anyone was
+# assigned or added as a collaborator, less than MENTION_FOLLOW_WAIT ago, the
+# note waits out the remainder. Otherwise it posts at once. Do not shorten the
+# wait below 30 seconds until Asana fixes the bug.
 MENTION_FOLLOW_WAIT = 35.0  # seconds, between addFollowers and the story; Asana needs 30+
+
+# Story subtypes that can make someone a collaborator. Matched regardless of
+# who was added: a needless wait costs seconds, a missed mention costs the note.
+FOLLOW_STORY_SUBTYPES = {"assigned", "collaborator_added", "follower_added"}
+
+
+def _asana_age(stamp: str, now: datetime = None):
+    """Seconds since an Asana created_at stamp, or None if it will not parse."""
+    try:
+        when = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    now = now or datetime.now(when.tzinfo)
+    return (now - when).total_seconds()
+
+
+def _recent_follow_wait(task_gid: str, created_at: str = "") -> float:
+    """Seconds still to wait because a follower was added to the task recently.
+
+    Looks at the task's own creation, then its assignment and collaborator
+    stories. Returns 0 when the most recent of them is MENTION_FOLLOW_WAIT old
+    or more. Never raises: a failed lookup returns 0 and the note posts at once.
+    """
+    ages = []
+    age = _asana_age(created_at) if created_at else None
+    if age is not None:
+        ages.append(age)
+    if not ages or min(ages) >= MENTION_FOLLOW_WAIT:
+        try:
+            resp = _get(f"/tasks/{task_gid}/stories",
+                        {"opt_fields": "resource_subtype,created_at"}) or {}
+            stories = resp.get("data")
+            for st in stories if isinstance(stories, list) else []:
+                if (st or {}).get("resource_subtype") in FOLLOW_STORY_SUBTYPES:
+                    a = _asana_age(st.get("created_at"))
+                    if a is not None:
+                        ages.append(a)
+        except Exception as e:
+            log.warning(f"    Could not read stories on {task_gid} ({e}) — posting "
+                        f"without checking for a recent follower")
+    if not ages:
+        return 0.0
+    return max(0.0, MENTION_FOLLOW_WAIT - max(0.0, min(ages)))
 
 
 def _ensure_follower(task_gid: str, user_gid: str):
     """Make `user_gid` follow `task_gid` so an @-mention actually notifies.
 
-    Returns (added, name): `added` True when a follower was just added, meaning
-    the caller should pause before posting and record the new follower. Never
-    raises — a note that cannot be signalled is still worth posting, so a
-    failure warns and carries on.
+    Returns (added, name, wait): `added` True when a follower was just added,
+    meaning the caller should record the new follower; `wait` the seconds to
+    pause before posting. Never raises — a note that cannot be signalled is
+    still worth posting, so a failure warns and carries on.
     """
     try:
-        data = (_get(f"/tasks/{task_gid}", {"opt_fields": "followers.gid"}) or {}).get("data") or {}
+        data = (_get(f"/tasks/{task_gid}", {"opt_fields": "followers.gid,created_at"})
+                or {}).get("data") or {}
         if any((f or {}).get("gid") == user_gid for f in (data.get("followers") or [])):
-            return False, ""
+            wait = _recent_follow_wait(task_gid, data.get("created_at") or "")
+            if wait:
+                log.info(f"    {user_gid} became a follower of {task_gid} under "
+                         f"{MENTION_FOLLOW_WAIT:.0f}s ago; waiting {wait:.0f}s so the @-mention counts")
+            return False, "", wait
         resp = _post(f"/tasks/{task_gid}/addFollowers?opt_fields=followers.gid,followers.name",
                      {"data": {"followers": [user_gid]}})
         fols = ((resp or {}).get("data") or {}).get("followers") or []
         name = next((f.get("name", "") for f in fols if (f or {}).get("gid") == user_gid), "")
         log.info(f"    Added {name or user_gid} as a follower of {task_gid} so the @-mention notifies")
-        return True, name
+        return True, name, MENTION_FOLLOW_WAIT
     except Exception as e:
         log.warning(f"    Could not add {user_gid} as a follower of {task_gid} ({e}) — "
                     f"posting the note anyway, but the mention may not reach the inbox")
-        return False, ""
+        return False, "", 0.0
 
 
 # A @mark note is the "Mark must act" signal. It reaches the Mentioned-filtered
@@ -1545,9 +1641,10 @@ def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
     # an edited story raises nothing, which is why an already-posted note that
     # missed the inbox cannot be rescued by editing it.
     if wants_mention and USER_GID:
-        added, uname = _ensure_follower(task_gid, USER_GID)
+        added, uname, wait = _ensure_follower(task_gid, USER_GID)
+        if wait:
+            time.sleep(wait)
         if added:
-            time.sleep(MENTION_FOLLOW_WAIT)
             # Record the new follower on the in-memory task, which the mirror is
             # rebuilt from later this run. Without this the mirror still shows
             # the pre-mention set, and _push_set_field — which diffs the mirror
@@ -2121,6 +2218,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                         progress_stories[gid] = new_story or edit_story
                         if where_story:
                             where_stories[gid] = where_story
+                    hand_back(gid, summary, task=t, dry_run=dry_run)
                     commented += 1
                     touched_gids.add(gid)
                 except Exception as e:
@@ -2859,6 +2957,7 @@ def main():
         new_story, where_story = post_note(args.task_gid, args.comment_text,
                                            args.story_gid, args.where_story_gid,
                                            dry_run=args.dry_run)
+        hand_back(args.task_gid, summary, dry_run=args.dry_run)
         if where_story and where_story != args.where_story_gid:
             log.info(f"Posted the Where: comment as story {where_story}; to correct it "
                      f"with the summary, also pass --where-story-gid {where_story}.")

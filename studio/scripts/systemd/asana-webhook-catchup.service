@@ -1,0 +1,9 @@
+# Daily safety net for the Asana webhook listener - see docs/utilities/asana-webhook.md
+[Unit]
+Description=Asana webhook daily catch-up (re-register dead webhooks, queue unanswered tasks)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/bain/ops/bain-studio
+Environment=PATH=/home/bain/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 /home/bain/ops/bain-studio/studio/asana_webhook.py catchup

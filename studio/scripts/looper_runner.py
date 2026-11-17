@@ -189,6 +189,7 @@ from looper_logic import (  # noqa: E402  (path set above)
     WINDOW_EXIT_DEADLINE,
     WINDOW_EXIT_MAX_ITERATIONS,
     WINDOW_EXIT_NO_PROGRESS,
+    max_plan_env,
     window_summary,
 )
 
@@ -287,7 +288,7 @@ def run_window(label: str) -> None:
             # fable are the escalation rungs per the skill. LOOPER_RUN_ID keys
             # the shared review branch (one per window, not per iteration) and
             # arms the no-git-push PreToolUse hook.
-            env = dict(os.environ, LOOPER_RUN_ID=run_id)
+            env = max_plan_env(os.environ, LOOPER_RUN_ID=run_id)
             r = subprocess.run(
                 [CLAUDE_BIN, "--dangerously-skip-permissions", "--model", "haiku",
                  "-p", "/studio-looper --yes"],

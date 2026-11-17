@@ -98,6 +98,14 @@ Mark wants it and invisible when he does not. Usage is already in
 A note opening `@mark` reaches Mark's Asana inbox. A note without it is posted and recorded,
 but stays silent. That is the whole signalling mechanism.
 
+**Except a handover.** A note opening `Review`, `Blocked`, `Done` or `Answer` is addressed to Mark by
+definition, so `split_location` gives it the mention whether or not the author wrote `@mark`,
+and it is then held to the same rules: no location in the summary. A `Review` or `Done` note
+on a task assigned to the bot also **reassigns the task to Mark** (`hand_back`), so it leaves
+the bot's queue for his. `Blocked` does not: the work is still the bot's, it only needs an
+answer. Both came in after PSK-022 and PSK-030 were handed over as `Done:` with no token,
+2026-11-17, and reached nobody.
+
 ### What it actually does, and what it does not
 
 `sync.py` sends the documented rich-text mention — `html_text` carrying
@@ -108,7 +116,10 @@ web UI.
 So `leave_progress_comment` first calls `POST /tasks/{gid}/addFollowers` for `ASANA_USER_GID`,
 **waits `MENTION_FOLLOW_WAIT` (35) seconds**, then posts. The note then arrives as a real
 mention: in the inbox filtered to **Mentioned**, in the normal inbox, and as a browser
-notification. If Mark already follows the task there is nothing to add and no wait.
+notification. If Mark already follows the task there is nothing to add, but the note still
+waits out the rest of the 35 seconds when the task was created, or anyone was assigned or added
+as a collaborator, less than 35 seconds ago. Creating a task assigned to Mark makes him a
+follower at that moment, and a note posted straight after misses the filter just the same.
 
 **The wait has to be 30 seconds or more.** Asana does not count a comment as a mention if it
 is posted less than 30 seconds after the user was made a collaborator. Asana's staff confirmed

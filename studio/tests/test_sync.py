@@ -1746,6 +1746,55 @@ def test_mention_skips_add_when_already_following():
     assert [c[0][0] for c in post.call_args_list] == ["/tasks/TASK1/stories"]
 
 
+def _stamp(seconds_ago):
+    from datetime import datetime, timedelta, timezone
+    t = datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)
+    return t.strftime("%Y-%m-%dT%H:%M:%S.") + f"{t.microsecond // 1000:03d}Z"
+
+
+def _fake_get(created_ago, stories):
+    def get(path, params=None):
+        if path.endswith("/stories"):
+            return {"data": [{"resource_subtype": k, "created_at": _stamp(a)} for k, a in stories]}
+        return {"data": {"followers": [{"gid": "507443625075"}],
+                         "created_at": _stamp(created_ago)}}
+    return get
+
+
+def test_mention_waits_when_task_was_just_created_for_mark():
+    # A task created assigned to Mark makes him a follower at once; a note
+    # seconds later finds him following but still misses the Mentioned filter.
+    slept = []
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "_get", side_effect=_fake_get(5, [])), \
+         patch.object(sync.time, "sleep", side_effect=slept.append), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}) as post:
+        sync.leave_progress_comment("TASK1", REVIEW_NOTE)
+    assert len(slept) == 1 and 25 <= slept[0] <= sync.MENTION_FOLLOW_WAIT - 4
+    assert [c[0][0] for c in post.call_args_list] == ["/tasks/TASK1/stories"]
+
+
+def test_mention_waits_when_mark_was_just_assigned():
+    slept = []
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "_get",
+                      side_effect=_fake_get(86400, [("comment_added", 3), ("assigned", 10)])), \
+         patch.object(sync.time, "sleep", side_effect=slept.append), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}):
+        sync.leave_progress_comment("TASK1", REVIEW_NOTE)
+    assert len(slept) == 1 and 20 <= slept[0] <= sync.MENTION_FOLLOW_WAIT - 9
+
+
+def test_mention_posts_at_once_on_a_long_followed_task():
+    slept = []
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "_get", side_effect=_fake_get(86400, [("assigned", 3600)])), \
+         patch.object(sync.time, "sleep", side_effect=slept.append), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}):
+        sync.leave_progress_comment("TASK1", REVIEW_NOTE)
+    assert slept == []
+
+
 def test_follower_failure_still_posts_the_note():
     # A note that cannot be signalled is still worth posting.
     with patch.object(sync, "USER_GID", "507443625075"), \
@@ -1867,3 +1916,71 @@ def test_done_with_open_subtasks_needs_a_subtasks_block():
     assert sync.validate_done_subtasks(ok, ["Add .gitattributes"]) == ""
     assert sync.validate_done_subtasks("@mark Done, Mark complete", []) == ""
     assert sync.validate_done_subtasks("@mark Review: x", ["open"]) == ""
+
+
+# ---------------------------------------------------------------------------
+# Handover notes reach Mark without the token, and hand the task back
+# ---------------------------------------------------------------------------
+
+def test_handover_notes_carry_the_mention_without_the_token():
+    # PSK-030 (2026-11-17): "Done: ..." with no @mark posted silently.
+    for note in ("Done: decision recorded || Where: docs/adr/005.md",
+                 "Review: header fix || Check: || 1. Resize",
+                 "blocked: need the logo files",
+                 "Answer: yes, the header uses the theme's tokens"):
+        summary, _ = sync.split_location(note)
+        assert summary.startswith("@mark "), note
+        html, wants = sync._render_progress(summary)
+        assert wants, note
+
+
+def test_routine_notes_stay_silent():
+    for note in ("Checked 2026-11-17.", "Started on the header", "[Blocked Sweep] still waiting",
+                 "Reviewed the copy, continuing"):
+        summary, _ = sync.split_location(note)
+        assert not summary.startswith("@mark"), note
+
+
+def test_explicit_mention_is_not_doubled():
+    summary, _ = sync.split_location("@mark Done: shipped")
+    assert summary == "@mark Done: shipped"
+
+
+def test_unmentioned_handover_still_refuses_a_location_in_the_summary():
+    assert "names a location" in sync.validate_progress_note("Done: merged feature/x-fix")
+
+
+def test_hand_back_reassigns_a_bot_task_and_updates_the_mirror_copy():
+    task = {"gid": "T1", "assignee": {"gid": "BOT", "name": "DevBot"}}
+    with patch.object(sync, "USER_GID", "MARK"), patch.object(sync, "BAINBOT_GID", "BOT"), \
+         patch.object(sync, "_put", return_value={"data": {"assignee": {"gid": "MARK", "name": "Mark Bain"}}}) as put:
+        assert sync.hand_back("T1", "@mark Done: shipped", task=task)
+    put.assert_called_once_with("/tasks/T1", {"data": {"assignee": "MARK"}})
+    assert task["assignee"] == {"gid": "MARK", "name": "Mark Bain"}
+
+
+def test_hand_back_reads_the_assignee_when_no_task_is_given():
+    with patch.object(sync, "USER_GID", "MARK"), patch.object(sync, "BAINBOT_GID", "BOT"), \
+         patch.object(sync, "_get", return_value={"data": {"assignee": {"gid": "BOT"}}}), \
+         patch.object(sync, "_put", return_value={"data": {}}) as put:
+        assert sync.hand_back("T1", "Review: header fix")
+    put.assert_called_once()
+
+
+def test_hand_back_leaves_other_cases_alone():
+    with patch.object(sync, "USER_GID", "MARK"), patch.object(sync, "BAINBOT_GID", "BOT"), \
+         patch.object(sync, "_put") as put:
+        # Blocked: the bot still owns the work, it only needs an answer.
+        assert not sync.hand_back("T1", "@mark Blocked: need logo", task={"assignee": {"gid": "BOT"}})
+        # Already Mark's, or someone else's.
+        assert not sync.hand_back("T1", "@mark Done: x", task={"assignee": {"gid": "MARK"}})
+        assert not sync.hand_back("T1", "@mark Done: x", task={"assignee": None})
+    put.assert_not_called()
+
+
+def test_hand_back_failure_never_raises():
+    task = {"assignee": {"gid": "BOT"}}
+    with patch.object(sync, "USER_GID", "MARK"), patch.object(sync, "BAINBOT_GID", "BOT"), \
+         patch.object(sync, "_put", side_effect=RuntimeError("403")):
+        assert not sync.hand_back("T1", "Done: x", task=task)
+    assert task["assignee"] == {"gid": "BOT"}

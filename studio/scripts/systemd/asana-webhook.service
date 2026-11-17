@@ -1,0 +1,21 @@
+# Asana webhook listener - see docs/utilities/asana-webhook.md
+# Install: cp studio/scripts/systemd/asana-webhook.* ~/.config/systemd/user/
+#          systemctl --user daemon-reload && systemctl --user enable --now asana-webhook.service asana-webhook-catchup.timer
+# Runs from the ops worktree (ADR 014). Survives reboot because user lingering is on (loginctl enable-linger).
+[Unit]
+Description=Asana webhook listener (wakes project agents)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/bain/ops/bain-studio
+Environment=PATH=/home/bain/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 /home/bain/ops/bain-studio/studio/asana_webhook.py serve
+Restart=on-failure
+RestartSec=10
+# The listener launches agents in their own session; don't kill them with the listener.
+KillMode=process
+
+[Install]
+WantedBy=default.target
