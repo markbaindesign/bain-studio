@@ -1746,6 +1746,55 @@ def test_mention_skips_add_when_already_following():
     assert [c[0][0] for c in post.call_args_list] == ["/tasks/TASK1/stories"]
 
 
+def _stamp(seconds_ago):
+    from datetime import datetime, timedelta, timezone
+    t = datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)
+    return t.strftime("%Y-%m-%dT%H:%M:%S.") + f"{t.microsecond // 1000:03d}Z"
+
+
+def _fake_get(created_ago, stories):
+    def get(path, params=None):
+        if path.endswith("/stories"):
+            return {"data": [{"resource_subtype": k, "created_at": _stamp(a)} for k, a in stories]}
+        return {"data": {"followers": [{"gid": "507443625075"}],
+                         "created_at": _stamp(created_ago)}}
+    return get
+
+
+def test_mention_waits_when_task_was_just_created_for_mark():
+    # A task created assigned to Mark makes him a follower at once; a note
+    # seconds later finds him following but still misses the Mentioned filter.
+    slept = []
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "_get", side_effect=_fake_get(5, [])), \
+         patch.object(sync.time, "sleep", side_effect=slept.append), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}) as post:
+        sync.leave_progress_comment("TASK1", REVIEW_NOTE)
+    assert len(slept) == 1 and 25 <= slept[0] <= sync.MENTION_FOLLOW_WAIT - 4
+    assert [c[0][0] for c in post.call_args_list] == ["/tasks/TASK1/stories"]
+
+
+def test_mention_waits_when_mark_was_just_assigned():
+    slept = []
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "_get",
+                      side_effect=_fake_get(86400, [("comment_added", 3), ("assigned", 10)])), \
+         patch.object(sync.time, "sleep", side_effect=slept.append), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}):
+        sync.leave_progress_comment("TASK1", REVIEW_NOTE)
+    assert len(slept) == 1 and 20 <= slept[0] <= sync.MENTION_FOLLOW_WAIT - 9
+
+
+def test_mention_posts_at_once_on_a_long_followed_task():
+    slept = []
+    with patch.object(sync, "USER_GID", "507443625075"), \
+         patch.object(sync, "_get", side_effect=_fake_get(86400, [("assigned", 3600)])), \
+         patch.object(sync.time, "sleep", side_effect=slept.append), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "NEW1"}}):
+        sync.leave_progress_comment("TASK1", REVIEW_NOTE)
+    assert slept == []
+
+
 def test_follower_failure_still_posts_the_note():
     # A note that cannot be signalled is still worth posting.
     with patch.object(sync, "USER_GID", "507443625075"), \
