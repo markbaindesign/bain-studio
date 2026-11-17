@@ -326,9 +326,78 @@ def _unlink_task_urls(text: str) -> str:
 # catch a wall of text, not a slightly long note. A note that trips one is NOT
 # posted — the audit trail for a fix is not the review instructions for it, and
 # posting it anyway puts Mark back where he started.
-NOTE_MAX_CHARS  = 900   # whole note
-BLOCK_MAX_CHARS = 200   # any one || block
-NOTE_MAX_BLOCKS = 8     # Review + Where + Check: + 5 checks is 8
+# The limits apply to the SUMMARY: the Where: block is split off first and
+# posted as its own comment (split_location), so it never counts here.
+NOTE_MAX_CHARS  = 500   # whole summary
+BLOCK_MAX_CHARS = 150   # any one || block
+NOTE_MAX_BLOCKS = 6     # Review + Check: + 3 checks + Gaps is 6
+WHERE_MAX_CHARS = 300   # the separate location comment
+
+# Mark reads the @mark summary to decide what to do; where the work lives is a
+# separate, silent comment posted right under it. So a Where: block is pulled
+# out of the note (split_location), and the rest of an @mark note may not carry
+# a commit, branch, path or URL. Mark's call, 2026-11-17.
+WHERE_RE    = re.compile(r"^where\s*:", re.IGNORECASE)
+LOCATION_RE = re.compile(
+    r"https?://\S+"                                            # URL
+    r"|\b(?:feature|release|hotfix|bugfix|looper)/[\w.-]+"      # git-flow branch
+    r"|(?<![\w/])(?:~|\.{1,2})?/[\w.-]+/[\w./-]*"               # absolute or ~/ path
+    r"|\b[\w.-]+/[\w.-]+\.[A-Za-z]{1,5}\b"                     # relative file path
+    r"|\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b"     # commit SHA
+)
+# A "Done" handover with open subtasks must say why each is not needed.
+DONE_RE     = re.compile(r"^done\b", re.IGNORECASE)
+SUBTASKS_RE = re.compile(r"^subtasks\s*:", re.IGNORECASE)
+
+
+def split_location(text: str) -> tuple:
+    """Split a note into (summary, where): the Where: block(s) become their own note.
+
+    The summary keeps a leading @mark; the where note never carries one, so it
+    posts silently. Either part may be "".
+    """
+    raw = (text or "").strip()
+    m = MENTION_RE.match(raw)
+    body = raw[m.end():] if m else raw
+    segs = [s.strip() for s in body.split(BLOCK_SEP) if s.strip()]
+    where = [s for s in segs if WHERE_RE.match(s)]
+    rest  = [s for s in segs if not WHERE_RE.match(s)]
+    summary = f" {BLOCK_SEP} ".join(rest)
+    if m and summary:
+        summary = "@mark " + summary
+    return summary, f" {BLOCK_SEP} ".join(where)
+
+
+def validate_where_note(text: str) -> str:
+    plain = _progress_plain(text)
+    if len(plain) > WHERE_MAX_CHARS:
+        return (f"the Where: comment runs to {len(plain)} chars, over the "
+                f"{WHERE_MAX_CHARS}-char limit: name the branch, commit and path, nothing else")
+    return ""
+
+
+def validate_done_subtasks(text: str, open_subtasks: list) -> str:
+    """Why a "Done" note may not go out while subtasks are open, or ""."""
+    plain = _progress_plain(text)
+    if not open_subtasks or not DONE_RE.match(plain):
+        return ""
+    if any(SUBTASKS_RE.match(b) for b in plain.split("\n")):
+        return ""
+    names = ", ".join(repr(n) for n in open_subtasks[:5])
+    return (f"it says Done but {len(open_subtasks)} subtask(s) are open ({names}). "
+            f"Add a 'Subtasks:' block saying, for each, that it is done and Mark can "
+            f"tick it, or why it is not required")
+
+
+def open_subtask_names(task_gid: str) -> list:
+    """Names of a task's incomplete subtasks; [] when it has none or the call fails."""
+    try:
+        data = _get(f"/tasks/{task_gid}/subtasks",
+                    {"opt_fields": "name,completed"}).get("data") or []
+    except Exception as e:
+        log.warning(f"    Could not read subtasks of {task_gid} ({e})")
+        return []
+    return [s.get("name") or "?" for s in data if not s.get("completed")]
 
 
 def validate_progress_note(text: str) -> str:
@@ -338,12 +407,20 @@ def validate_progress_note(text: str) -> str:
     whatever its shape, so notes written by tools with their own formats
     (studio-delivery-gate, feature, end-session) keep working.
     """
-    plain = _progress_plain(text)
+    summary, where = split_location(text)
+    plain = _progress_plain(summary)
+    if where and (bad := validate_where_note(where)):
+        return bad
     if not plain:
         return ""
     if PLAIN_CHECK.match(plain):      # "Checked {date}." — a heartbeat, not a note
         return ""
     blocks = plain.split("\n")
+    if MENTION_RE.match(summary):
+        loc = next((m for m in map(LOCATION_RE.search, blocks) if m), None)
+        if loc:
+            return (f"the summary names a location ({loc.group(0)!r}) — branches, commits, "
+                    f"paths and URLs go in the Where: block, which posts as its own comment")
     if len(plain) > NOTE_MAX_CHARS:
         return (f"{len(plain)} chars exceeds the {NOTE_MAX_CHARS}-char limit — "
                 f"the reasoning belongs in the commit message, not the comment")
@@ -1492,6 +1569,34 @@ def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
     return new_story
 
 
+def post_note(task_gid: str, mirror_text: str, story_gid: str = "",
+              where_story_gid: str = "", dry_run=False, task: dict = None,
+              bot_stories: list = None) -> tuple:
+    """Post a note as two comments: the summary, then its Where: block, silently.
+
+    Returns (summary_story_gid, where_story_gid). The where comment is edited in
+    place when the summary was, skipped when an identical bainbot comment is
+    already on the task, and otherwise posted fresh under the summary.
+    """
+    summary, where = split_location(mirror_text)
+    new_story = (leave_progress_comment(task_gid, summary, story_gid, dry_run, task=task)
+                 if summary else story_gid)
+    if not where:
+        return new_story, where_story_gid
+    want = _progress_plain(where)
+    dup = next((b for b in (bot_stories or [])
+                if _comment_matches(b.get("text", ""), want)), None)
+    if dup:
+        return new_story, dup["gid"]
+    edit = where_story_gid if story_gid else ""
+    try:
+        where_story = leave_progress_comment(task_gid, where, edit, dry_run, task=task)
+    except Exception as e:
+        log.warning(f"    Posted the summary on {task_gid} but not its Where: comment ({e})")
+        return new_story, where_story_gid
+    return new_story, where_story or edit
+
+
 # ---------------------------------------------------------------------------
 # Push helpers
 # ---------------------------------------------------------------------------
@@ -1926,6 +2031,8 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         # test true on every run, so it posted the note a second time as raw
         # text — literal "@mark" and "||" — and overwrote the GID.
         progress_stories = state.get("progress_stories", {})
+        # The silent Where: comment posted under each summary (split_location).
+        where_stories = state.get("progress_where_stories", {})
         commented = 0
 
         # Guard: if the same non-trivial progress text appears on more than 2 tasks,
@@ -1969,7 +2076,15 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                               f"Rewrite the Progress line in the mirror; task state still synced.")
                     continue
 
-                want = _progress_plain(curr_p)
+                summary, _where = split_location(curr_p)
+                if DONE_RE.match(_progress_plain(summary)):
+                    bad = validate_done_subtasks(summary, open_subtask_names(gid))
+                    if bad:
+                        log.error(f"  [{proj.prefix}] NOT posting the note on {local_id} — {bad}. "
+                                  f"Rewrite the Progress line in the mirror; task state still synced.")
+                        continue
+
+                want = _progress_plain(summary)
                 bot_stories = t.get("_bot_stories") or []
                 dup = next((b for b in bot_stories
                             if _comment_matches(b["text"], want)), None)
@@ -1998,10 +2113,14 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                 try:
                     verb = "Editing" if edit_story else "Posting"
                     log.info(f"  [{proj.prefix}] {verb} progress comment for {local_id}...")
-                    new_story = leave_progress_comment(gid, curr_p, edit_story, dry_run, task=t)
+                    new_story, where_story = post_note(
+                        gid, curr_p, edit_story, where_stories.get(gid, ""),
+                        dry_run, task=t, bot_stories=bot_stories)
                     if not dry_run:
                         posted_progress[gid]  = curr_p
                         progress_stories[gid] = new_story or edit_story
+                        if where_story:
+                            where_stories[gid] = where_story
                     commented += 1
                     touched_gids.add(gid)
                 except Exception as e:
@@ -2009,6 +2128,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
 
         state["posted_progress"]  = posted_progress
         state["progress_stories"] = progress_stories
+        state["progress_where_stories"] = where_stories
 
         # Stamp Last Synced on tasks we actually wrote to this run (pushes +
         # comments), plus tasks seen for the first time so the field is never
@@ -2207,13 +2327,18 @@ def create_subtasks(parent_gid: str, names: list, dry_run: bool = False) -> list
 
 def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT UP",
                      notes: str = "", due: str = "", assignee: str = "",
-                     depends_on: str = "", dry_run: bool = False) -> str:
+                     depends_on: str = "", follow_up_of: tuple = None,
+                     dry_run: bool = False) -> str:
     """
     Create a task in Asana, assign a local ID, place it in the correct section,
     and append it to the local mirror. Returns the local ID (e.g. NORE-042).
 
     assignee defaults to BainBot. depends_on is the GID of a task the new one
     blocks; if linking it fails, the task exists but this raises.
+
+    follow_up_of is (gid, label) of the task this one follows up. The new
+    task's description then opens "Follow-up to {label}." with the label linked
+    to that task, as Asana's own "Create follow-up task" does.
     """
     from datetime import datetime
 
@@ -2239,7 +2364,16 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
             "assignee": assignee_gid,
         }
     }
-    if notes:
+    if follow_up_of:
+        # html_notes, not notes: only rich text can carry a task link. The link
+        # markup matches _link_task_ids, so the label stays visible as the ID.
+        fu_gid, fu_label = follow_up_of
+        lead = (f'Follow-up to <a data-asana-gid="{fu_gid}" data-asana-dynamic="false">'
+                f'{html_escape(fu_label, quote=False)}</a>.')
+        body = lead + (f"\n\n{html_escape(notes, quote=False)}" if notes else "")
+        payload["data"]["html_notes"] = f"<body>{body}</body>"
+        notes = f"Follow-up to {fu_label}." + (f" {notes}" if notes else "")
+    elif notes:
         payload["data"]["notes"] = notes
     if due:
         payload["data"]["due_on"] = due
@@ -2247,7 +2381,8 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
     if dry_run:
         log.info(f"  [DRY-RUN] Would create task: {name!r} in {proj.prefix}/{section_name_upper}, "
                  f"assigned to {assignee_gid}"
-                 + (f", blocking {depends_on}" if depends_on else ""))
+                 + (f", blocking {depends_on}" if depends_on else "")
+                 + (f", following up {follow_up_of[1]}" if follow_up_of else ""))
         return f"{proj.prefix}-DRY"
 
     resp = _post("/tasks", payload)
@@ -2281,6 +2416,18 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
             raise RuntimeError(f"Created {lid} ({new_gid}) but could not make it block "
                                f"{depends_on}: {e}") from e
 
+    # 6. Point the original task at its follow-up. A link in a description
+    # leaves no trace on the task it names (checked 2026-11-17), so without
+    # this the original has no way to reach the follow-up. Silent: no @mark.
+    if follow_up_of:
+        try:
+            _post(f"/tasks/{follow_up_of[0]}/stories", {"data": {"html_text":
+                  f'<body>Follow-up: <a data-asana-gid="{new_gid}" '
+                  f'data-asana-dynamic="false">{lid}</a></body>'}})
+            log.info(f"  Linked from {follow_up_of[1]}")
+        except Exception as e:
+            log.warning(f"  Created {lid} but could not comment on {follow_up_of[1]}: {e}")
+
     if assignee_gid == BAINBOT_GID:
         assignee_name = ASSIGNEE_NAME
     else:
@@ -2289,7 +2436,7 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
         except Exception:
             assignee_name = assignee_gid
 
-    # 6. Append to mirror
+    # 7. Append to mirror
     today = date.today().isoformat()
     now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     permalink = f"https://app.asana.com/1/{WORKSPACE_GID}/project/{proj.gid}/task/{new_gid}"
@@ -2630,6 +2777,10 @@ def main():
                              "Use 'me' for ASANA_USER_GID")
     parser.add_argument("--task-depends-on", metavar="GID", default="",
                         help="GID of the task this new task unblocks (optional)")
+    parser.add_argument("--follow-up-of", metavar="TASK", default="",
+                        help="With --create-task: the task this one follows up (local ID, "
+                             "GID or URL). Its description opens with a link to that task, "
+                             "and --project defaults to that task's project")
     parser.add_argument("--update-task", action="store_true",
                         help="Update an existing task's name and/or notes "
                              "(requires --task-gid; notes cannot be pushed "
@@ -2647,6 +2798,9 @@ def main():
     parser.add_argument("--story-gid", metavar="GID", default="",
                         help="With --comment: edit this existing bainbot comment in place "
                              "instead of posting a second one (how a note is corrected)")
+    parser.add_argument("--where-story-gid", metavar="GID", default="",
+                        help="With --comment and --story-gid: the note's separate Where: "
+                             "comment, edited in place alongside the summary")
     parser.add_argument("--comment-text", metavar="TEXT", default="",
                         help="Comment text to post (required with --comment). "
                              "Supports the review-note format: a leading @mark "
@@ -2696,8 +2850,18 @@ def main():
         # note it posted last time: without --story-gid it always posts afresh,
         # leaving the old note above the new one. Correcting a note means passing
         # the story GID this run prints.
-        new_story = leave_progress_comment(args.task_gid, args.comment_text,
-                                           args.story_gid, dry_run=args.dry_run)
+        summary, _where = split_location(args.comment_text)
+        if DONE_RE.match(_progress_plain(summary)):
+            bad = validate_done_subtasks(summary, open_subtask_names(args.task_gid))
+            if bad:
+                log.error(f"Not posting: {bad}")
+                sys.exit(1)
+        new_story, where_story = post_note(args.task_gid, args.comment_text,
+                                           args.story_gid, args.where_story_gid,
+                                           dry_run=args.dry_run)
+        if where_story and where_story != args.where_story_gid:
+            log.info(f"Posted the Where: comment as story {where_story}; to correct it "
+                     f"with the summary, also pass --where-story-gid {where_story}.")
         if args.story_gid:
             log.info(f"Edited comment {args.story_gid} on task {args.task_gid}.")
         elif not new_story:
@@ -2737,6 +2901,16 @@ def main():
     if args.create_task:
         if not args.task_name:
             parser.error("--create-task requires --task-name")
+        follow_up_of = None
+        if args.follow_up_of:
+            gid_to_lid, lid_to_gid = _local_id_maps()
+            fu_gid = resolve_task_ref(args.follow_up_of, lid_to_gid)
+            if not fu_gid:
+                parser.error(f"--follow-up-of: cannot resolve {args.follow_up_of!r} to a task")
+            fu_lid = gid_to_lid.get(fu_gid)
+            follow_up_of = (fu_gid, fu_lid or fu_gid)
+            if not args.project and fu_lid:
+                args.project = re.sub(r"-\d+$", "", fu_lid)
         if not args.project:
             parser.error("--create-task requires --project (the task prefix, e.g. BD)")
         projects = discover_projects(filter_prefix=args.project)
@@ -2758,6 +2932,7 @@ def main():
                 due=args.task_due,
                 assignee=assignee,
                 depends_on=args.task_depends_on,
+                follow_up_of=follow_up_of,
                 dry_run=args.dry_run,
             )
         except ValueError as e:

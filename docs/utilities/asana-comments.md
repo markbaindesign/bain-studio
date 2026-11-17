@@ -40,19 +40,33 @@ continuation line starting `- **X:**` is misparsed as another field. `||` separa
 and is expanded to newlines at post time by `_progress_plain`.
 
 ```
-**Progress:** @mark Review: {what changed, one line} || Where: {branch} · {commits} · {URL or path} || Check: || 1. {imperative} || 2. {imperative} || Gaps: {known, not fixed}
+**Progress:** @mark Review: {what changed, one line} || Check: || 1. {imperative} || 2. {imperative} || Gaps: {known, not fixed} || Where: {branch} · {commits} · {URL or path}
 ```
+
+`split_location` pulls every `Where:` block out of the note. `post_note` posts the rest as the
+summary (with the `@mark` mention), then the `Where:` block as a separate silent comment under
+it. Its story GID is kept in the state file's `progress_where_stories`; it is edited in place
+when the summary is, and skipped when an identical bainbot comment is already on the task. With
+`--comment`, pass `--where-story-gid` alongside `--story-gid` to correct both.
+
+An `@mark` summary may not contain a URL, git-flow branch, path, file name or commit SHA
+(`LOCATION_RE`): those are what Mark looks up, not what he reads to decide.
 
 | Block | Holds | Limit |
 |---|---|---|
-| `Review:` / `Blocked:` | What changed, or the question | One line, no date: Asana stamps the comment, and the looper's duplicate-work guard reads that stamp. Asana truncates at "See more", so the action lives here or nowhere. |
-| `Where:` | Branch, commits, URL or file path | One line. For a research task, the output file path instead. |
-| `Check:` | What Mark does to verify | Max 5, one line each, imperative. More than 5 means the task should have been split. |
+| `Review:` / `Blocked:` / `Done:` | What changed, the question, or the outcome | One line, no date: Asana stamps the comment, and the looper's duplicate-work guard reads that stamp. Asana truncates at "See more", so the action lives here or nowhere. |
+| `Check:` | What Mark does to verify | Max 3, one short line each, imperative, no locations. More means the task should have been split. |
 | `Gaps:` | Work knowingly left undone | Omit entirely when there is none. Never a hedge. Anything meant to be done later is a task, cited by ID. |
+| `Subtasks:` | Each open subtask: done, or why not needed | Required on a `Done` note while subtasks are open (`validate_done_subtasks`). |
+| `Where:` | Branch, commits, URL or file path | Its own silent comment. For a research or decision task, the file the output or decision is recorded in. Max 300 chars. |
+
+Limits on the summary: 500 chars, 150 per block, 6 blocks. A `Done` note on a task with open
+subtasks and no `Subtasks:` block is refused, read live via `open_subtask_names`. A decision task
+is done only once the decision is written into a project doc and that file is named in `Where:`.
 
 **A follow-up is a task, not a sentence.** Before a comment names further work — a follow-up,
 a next step, a `Gaps:` item that someone is meant to pick up — create it with
-`sync.py --create-task` and cite its local ID. Work mentioned only in a comment is lost.
+`sync.py --create-task --follow-up-of {this task's ID}` and cite its local ID. Work mentioned only in a comment is lost.
 
 **Cite related tasks by local ID** (`BSTD-856`). `sync.py` turns every ID that resolves in a
 registered project's `asana-ids.json` into a link to that task, so Mark can jump to it. Write
@@ -240,11 +254,14 @@ still syncs, so the work still appears in Mark's task list. `--comment` exits 1.
 
 | Limit | Value | Catches |
 |---|---|---|
-| Whole note | 900 chars | The narrative dump |
-| Any one block | 200 chars | A paragraph where a line belongs |
-| Block count | 8 | More than 5 `Check:` items |
+| Summary | 500 chars | The narrative dump |
+| Any one block | 150 chars | A paragraph where a line belongs |
+| Block count | 6 | More than 3 `Check:` items |
+| Location in an `@mark` summary | none | A path, branch, commit or URL outside `Where:` |
+| `Where:` comment | 300 chars | Detail dressed up as a location |
+| `Done` with open subtasks | needs `Subtasks:` | Completion recommended over unfinished steps |
 
-Set loose on purpose: these catch a wall of text, not a slightly long note. A note under every
+Tightened 2026-11-17 at Mark's request: the 900/200/8 limits let wordy notes through. A note under every
 limit passes whatever its shape, so skills with their own short formats keep working. A
 `Checked {date}.` heartbeat is exempt.
 
