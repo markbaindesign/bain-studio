@@ -4,13 +4,21 @@ from pathlib import Path
 
 from asana_webhook_logic import (
     body_length_error,
-    busy_sessions,
     candidate_events,
     config_dir_from_envrc,
+    GIT_WRITE_DENIES,
+    activity_from,
+    denylist_hits,
     git_config_parameters,
+    hit_usage_limit,
+    idle_expired,
+    launchable,
     over_rate_limit,
     prefix_from_path,
+    project_edit_deny,
     protected_path_denies,
+    run_allow_rules,
+    run_name,
     secret_read_denies,
     should_reregister,
     story_triggers,
@@ -144,25 +152,54 @@ def test_not_unanswered_if_already_woken_since():
 
 
 # ---------------------------------------------------------------------------
-# busy_sessions
+# Watching and run limits
 # ---------------------------------------------------------------------------
 
-def test_busy_when_session_open_in_project_or_subfolder(tmp_path):
-    root = tmp_path / "proj"
-    (root / "sub").mkdir(parents=True)
-    sessions = [{"pid": 1, "cwd": str(root / "sub"), "name": "a"},
-                {"pid": 2, "cwd": str(tmp_path), "name": "outside"},
-                {"pid": 3, "cwd": str(root), "name": "dead"}]
-    busy = busy_sessions(sessions, root, pid_alive=lambda pid: pid != 3)
-    assert [s["name"] for s in busy] == ["a"]
+def test_idle_expiry_counts_from_last_activity_or_start():
+    assert not idle_expired({"since": 0, "last_activity": 1000}, 1000 + 1799, 1800)
+    assert idle_expired({"since": 0, "last_activity": 1000}, 1000 + 1800, 1800)
+    assert idle_expired({"since": 100}, 100 + 1800, 1800)
+    assert not idle_expired({"since": 100}, 100 + 60, 1800)
 
 
-def test_sibling_folder_with_shared_prefix_is_not_busy(tmp_path):
-    root = tmp_path / "kf-21"
-    root.mkdir()
-    (tmp_path / "kf-21-old").mkdir()
-    sessions = [{"pid": 1, "cwd": str(tmp_path / "kf-21-old")}]
-    assert busy_sessions(sessions, root, pid_alive=lambda pid: True) == []
+def test_launchable_one_run_per_task():
+    # A task already running waits; its new comments are handled by one run after.
+    assert launchable(["T1", "T2"], {"T1": "BD"}, {"T1": "BD", "T2": "BD"}, 2, 3) == ["T2"]
+
+
+def test_launchable_caps_per_project_and_total():
+    prefix_of = {"A1": "A", "A2": "A", "A3": "A", "B1": "B", "C1": "C"}
+    assert launchable(["A1", "A2", "A3", "B1", "C1"], {}, prefix_of, 2, 3) == ["A1", "A2", "B1"]
+    assert launchable(["B1", "C1"], {"A1": "A", "A2": "A", "X": "B"}, prefix_of, 2, 3) == []
+    assert launchable(["A3", "B1"], {"A1": "A", "A2": "A"}, prefix_of, 2, 3) == ["B1"]
+
+
+def test_run_name_prefers_local_id_and_is_branch_safe():
+    assert run_name("123", {"123": "KF-WEB-42"}) == "KF-WEB-42"
+    assert run_name("456", {}) == "456"
+    assert run_name("7", {"7": "odd id/x"}) == "odd-id-x"
+
+
+def test_run_allow_rules_edit_only_in_the_worktree():
+    rules = run_allow_rules(Path("/data/wt/BD/BD-1"), Path("/ops/studio/sync.py"))
+    assert "Edit(//data/wt/BD/BD-1/**)" in rules
+    assert "Edit" not in rules and "Write" not in rules
+    # One task read and one comment; never a project sync over Mark's mirror.
+    assert "Bash(python3 /ops/studio/sync.py --get-task *)" in rules
+    assert "Bash(python3 /ops/studio/sync.py --comment *)" in rules
+    assert not any(r == "Bash(python3 /ops/studio/sync.py *)" for r in rules)
+    # No branch switching or deleting from a worktree: it acts on the whole repo.
+    assert not any("git branch" in r or "checkout" in r or "git flow" in r for r in rules)
+
+
+def test_project_edit_deny_covers_the_whole_checkout():
+    assert project_edit_deny(Path("/media/proj")) == ["Edit(//media/proj/**)"]
+
+
+def test_usage_limit_detection():
+    assert hit_usage_limit("Claude AI usage limit reached|1763400000")
+    assert hit_usage_limit("You've hit your limit · resets at 6pm")
+    assert not hit_usage_limit("Posted the Answer: comment. Done.")
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +262,8 @@ def test_git_config_parameters_disables_hooks_and_appends():
 def test_protected_path_denies_are_absolute_edit_rules():
     # Edit(path) covers Write too; Claude Code ignores Write(path) rules.
     assert protected_path_denies(Path("/srv/proj/")) == [
-        "Edit(//srv/proj/.git/**)", "Edit(//srv/proj/.claude/**)", "Edit(//srv/proj/.envrc)"]
+        "Edit(//srv/proj/.git)", "Edit(//srv/proj/.git/**)", "Edit(//srv/proj/.claude/**)",
+        "Edit(//srv/proj/.envrc)"]
 
 
 def test_secret_read_denies_cover_root_and_nested_env_and_wp_config():
@@ -235,3 +273,104 @@ def test_secret_read_denies_cover_root_and_nested_env_and_wp_config():
         assert r in rules
     assert all(r.startswith("Read(//srv/proj/") for r in rules)
 
+
+
+# ---------------------------------------------------------------------------
+# Per-task worktrees (real git, temp repo)
+# ---------------------------------------------------------------------------
+
+import subprocess  # noqa: E402
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture
+def repo(tmp_path, monkeypatch):
+    import asana_webhook as aw
+    root = tmp_path / "proj"
+    root.mkdir()
+    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
+           "GIT_CONFIG_PARAMETERS": "'core.hooksPath=/dev/null'"}
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    run = lambda *a, cwd=root: subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True)
+    run("init", "-q")
+    run("checkout", "-q", "-b", "main")
+    (root / "f.txt").write_text("x")
+    run("add", ".")
+    run("commit", "-qm", "init")
+    run("branch", "develop")
+    monkeypatch.setattr(aw, "WORKTREES", tmp_path / "wts")
+
+    class P:
+        prefix = "BD"
+    P.root = root
+    return aw, P, run
+
+
+def test_worktree_is_outside_the_project_on_a_bot_branch_from_develop(repo):
+    aw, proj, run = repo
+    wt, branch = aw.ensure_worktree(proj, "BD-7")
+    assert branch == "bot/BD-7"
+    assert not str(wt).startswith(str(proj.root))
+    assert (wt / "f.txt").exists()
+    # Reused by the next run on the same task.
+    assert aw.ensure_worktree(proj, "BD-7") == (wt, branch)
+
+
+def test_an_answer_leaves_nothing_behind(repo):
+    aw, proj, run = repo
+    wt, branch = aw.ensure_worktree(proj, "BD-8")
+    assert aw.tidy_worktree(proj, wt, branch) == "removed (no changes)"
+    assert not wt.exists()
+    assert b"bot/BD-8" not in subprocess.run(["git", "branch"], cwd=proj.root,
+                                             capture_output=True).stdout
+
+
+def test_work_is_kept_for_review(repo):
+    aw, proj, run = repo
+    wt, branch = aw.ensure_worktree(proj, "BD-9")
+    (wt / "g.txt").write_text("y")
+    assert aw.tidy_worktree(proj, wt, branch) == "kept (uncommitted changes)"
+    run("add", ".", cwd=wt)
+    run("commit", "-qm", "work", cwd=wt)
+    assert aw.tidy_worktree(proj, wt, branch) == "kept (1 commit(s) on bot/BD-9)"
+    assert wt.exists()
+
+
+def test_idle_project_waits_for_its_runs_then_stops(tmp_path, monkeypatch):
+    import asana_webhook as aw
+    monkeypatch.setattr(aw, "STATE", tmp_path)
+    monkeypatch.setattr(aw, "WATCH", tmp_path / "watch.json")
+    monkeypatch.setattr(aw, "LOG", tmp_path / "log")
+    sent = []
+    monkeypatch.setattr(aw, "_notify", lambda msg, prefix: sent.append(prefix))
+    aw._locked_json(aw.WATCH, lambda d: d.update(BD={"since": 0, "last_activity": 0}))
+    w = aw.Worker()
+    w.pending = {"T2": {"prefix": "BD", "last": 0}}
+    w.running = {"T1": {"prefix": "BD"}}
+    w._expire(aw.watched())
+    assert "BD" in aw.watched() and sent == []
+    w.running = {}
+    w._expire(aw.watched())
+    assert "BD" not in aw.watched() and w.pending == {} and sent == ["BD"]
+
+
+def test_only_marks_activity_keeps_a_project_watched():
+    ev = lambda user: {"events": [{"user": {"gid": user}}], "source": "webhook"}
+    assert activity_from(ev(MARK), MARK)
+    assert not activity_from(ev(PMBOT), MARK)
+    assert activity_from({"tasks": ["T1"], "source": "watch"}, MARK)
+
+
+def test_denylist_hits_whole_words_only():
+    terms = ["Acme", "acme.example", ""]
+    assert denylist_hits("fix for ACME header", terms) == ["Acme"]
+    assert denylist_hits("see acme.example/x", terms) == ["Acme", "acme.example"]
+    assert denylist_hits("acmeish", terms) == []
+
+
+def test_worktree_git_file_and_output_flag_are_denied():
+    assert "Edit(//wt/BD-1/.git)" in protected_path_denies(Path("/wt/BD-1"))
+    assert "Bash(git * --output*)" in GIT_WRITE_DENIES

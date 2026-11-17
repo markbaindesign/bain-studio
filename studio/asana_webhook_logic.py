@@ -9,9 +9,10 @@ Covers:
   - X-Hook-Signature verification
   - Cheap pre-filtering of raw webhook events (no API calls)
   - Deciding whether a fetched story/task should wake an agent
-  - Detecting open Claude sessions in a project folder (the "never two
-    sessions on one project" rule)
+  - Watching: the 30-minute idle rule, and which queued tasks may start under
+    the per-project and global run limits
   - Per-task rate capping, to stop PmBot <-> DevBot ping-pong
+  - Per-run worktree naming and the allow/deny rules that keep a run inside it
   - Reading a project's CLAUDE_CONFIG_DIR from its .envrc (ADR 017)
   - Run hardening: request size cap, catch-up re-registration rule, git hook
     override, protected-path deny rules
@@ -114,28 +115,82 @@ def unanswered(stories: list, trigger_users: set, bot_gid: str, since: str = "")
 # Concurrency and rate limits
 # ---------------------------------------------------------------------------
 
-def _inside(child: str, root: Path) -> bool:
-    try:
-        Path(child).resolve().relative_to(root.resolve())
-        return True
-    except (ValueError, OSError):
-        return False
+def idle_expired(entry: dict, now: float, idle_s: int) -> bool:
+    """A watched project stops being watched `idle_s` after Mark's last activity
+    on its bot tasks. `last_activity` falls back to when watching started."""
+    last = (entry or {}).get("last_activity") or (entry or {}).get("since") or 0
+    return now - last >= idle_s
 
 
-def busy_sessions(sessions: list, project_root: Path, pid_alive) -> list:
-    """Open Claude sessions whose working directory is inside `project_root`.
+def launchable(pending: list, running: dict, prefix_of: dict,
+               per_project: int, total: int) -> list:
+    """Which pending task GIDs may start now, oldest first.
 
-    `sessions` are the parsed ~/.claude*/sessions/*.json records; `pid_alive` is
-    a callable so tests don't need real processes. Interactive sessions count:
-    an idle session left open on a project still owns it.
+    `pending` is task GIDs in arrival order, `running` maps a running task GID to
+    its prefix, `prefix_of` maps a pending GID to its prefix. A task already
+    running waits: what arrives meanwhile is handled by one run after it ends.
+    At most `per_project` runs per project and `total` across all of them, so a
+    burst of comments cannot use up the Max window Mark is working in.
     """
+    counts: dict = {}
+    for prefix in running.values():
+        counts[prefix] = counts.get(prefix, 0) + 1
+    n = len(running)
     out = []
-    for s in sessions:
-        cwd = s.get("cwd") or ""
-        pid = s.get("pid")
-        if cwd and pid and pid_alive(pid) and _inside(cwd, project_root):
-            out.append(s)
+    for gid in pending:
+        if n >= total:
+            break
+        prefix = prefix_of.get(gid)
+        if gid in running or counts.get(prefix, 0) >= per_project:
+            continue
+        out.append(gid)
+        counts[prefix] = counts.get(prefix, 0) + 1
+        n += 1
     return out
+
+
+def run_name(task_gid: str, local_ids: dict) -> str:
+    """Branch and worktree name for a task: its local ID when the project's
+    asana-ids.json knows it (bot/BSTD-842), else the GID."""
+    lid = (local_ids or {}).get(task_gid) or task_gid
+    return re.sub(r"[^A-Za-z0-9._-]", "-", lid)
+
+
+def run_allow_rules(worktree: Path, sync_py: Path) -> list:
+    """The whole allow-list for a run (runs are --restricted, so nothing is
+    inherited). Reads anywhere, subject to the secret denies; edits only inside
+    the run's own worktree, which sits outside the project, so the checkout Mark
+    is working in is never touched. Git is limited to inspecting and committing
+    on the branch the worktree already has: no checkout, no branch commands
+    (`git branch -D develop` from a worktree deletes it for the whole repo)."""
+    wt = "/" + str(worktree).rstrip("/")
+    return [
+        "Read", "Glob", "Grep",
+        f"Edit({wt}/**)",
+        # Read one task, post one comment. Not a project sync: that rewrites the
+        # mirror Mark may be editing in his own session.
+        f"Bash(python3 {sync_py} --get-task *)",
+        f"Bash(python3 {sync_py} --comment *)",
+        "Bash(git status *)", "Bash(git status)", "Bash(git diff *)", "Bash(git diff)",
+        "Bash(git log *)", "Bash(git log)", "Bash(git show *)",
+        "Bash(git add *)", "Bash(git commit *)",
+    ]
+
+
+def project_edit_deny(root: Path) -> list:
+    """Deny every edit inside the project checkout. Deny beats allow, and the
+    run's worktree is outside the root, so this costs the run nothing."""
+    return [f"Edit(/{str(root).rstrip('/')}/**)"]
+
+
+USAGE_LIMIT_RE = re.compile(
+    r"usage limit|limit reached|rate[ _-]?limit(?:ed)?|you've hit your limit|resets at",
+    re.IGNORECASE)
+
+
+def hit_usage_limit(output_tail: str) -> bool:
+    """Did a run stop because the Max window ran out? Read from the end of its log."""
+    return bool(USAGE_LIMIT_RE.search(output_tail or ""))
 
 
 def over_rate_limit(history: list, now: float, max_runs: int, window_s: int = 3600) -> bool:
@@ -204,7 +259,34 @@ def protected_path_denies(root: Path) -> list:
     from. `//` marks an absolute path. Edit(path) rules cover every file-editing
     tool, Write included; Claude Code ignores Write(path) rules."""
     base = "/" + str(root).rstrip("/")
-    return [f"Edit({base}/.git/**)", f"Edit({base}/.claude/**)", f"Edit({base}/.envrc)"]
+    # .git is a directory in a checkout but a one-line file in a worktree.
+    return [f"Edit({base}/.git)", f"Edit({base}/.git/**)", f"Edit({base}/.claude/**)",
+            f"Edit({base}/.envrc)"]
+
+
+# `git log/diff/show --output=<path>` writes a file anywhere, past the Edit rules.
+GIT_WRITE_DENIES = ["Bash(git * --output*)", "Bash(git * -o *)"]
+
+
+def activity_from(item: dict, user_gid: str) -> bool:
+    """Does a queue item count as Mark's activity, keeping the project watched?
+    His own events and the sweep `watch` does count; PmBot's do not (Mark's
+    call, 2026-11-17: the timer measures whether he is still at work)."""
+    if item.get("source") == "watch":
+        return True
+    return any(((e.get("user") or {}).get("gid")) == user_gid for e in item.get("events") or [])
+
+
+def denylist_hits(text: str, terms: list) -> list:
+    """Client-data terms found as whole words in `text`, case-insensitively: the
+    check the public repos' commit hook makes, which a bot run's commit skips
+    because runs switch hooks off."""
+    out = []
+    for t in terms:
+        t = t.strip()
+        if t and re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", text or "", re.IGNORECASE):
+            out.append(t)
+    return out
 
 
 SECRET_FILES = (".env", ".env.*", "wp-config.php", "deploy.config.sh", "*.pem")

@@ -7,7 +7,7 @@ description: Project agents are woken by Asana webhooks through Tailscale Funnel
 # ADR 025 — Asana webhooks wake project agents
 
 Date: 2026-10-22
-Status: Proposed
+Status: Accepted, amended 2026-11-17 (see the addendum)
 Related: [ADR 003](003-multi-agent-studio-architecture.md) (revisits its "autonomous trigger"
 condition), [ADR 014](014-ops-worktree-for-scheduled-jobs.md),
 [ADR 017](017-per-client-looper-queues.md), [ADR 021](021-studio-state-and-registry-leave-the-repo.md)
@@ -80,3 +80,29 @@ matching project folder.
   unsigned or unexpected.
 - Client comments still need a person to start a session. Widening the trigger list is a
   deliberate decision for a later ADR, not a config tweak.
+
+## Addendum 2026-11-17: watched projects, per-task worktrees, Opus
+
+Tested once on 2026-10-22 and never deployed. The one live event was held back by rule 3: Mark
+had a session open on the project, which is exactly when he wants an answer. He works
+interactively, hands tasks to DevBot and comments on them, and wants replies while he works.
+Decided with Mark in a grill session:
+
+- **Rule 3 is replaced.** Runs no longer wait for open sessions. Each task's run gets its own
+  git worktree outside the project (`bot-worktrees/{PREFIX}/{LOCAL-ID}`, branch
+  `bot/{LOCAL-ID}` from `develop`), may edit only there, and is denied every edit in the
+  project checkout. An answer leaves nothing behind; work stays on its branch for review.
+- **Opt-in watching.** Only watched projects get runs (`/project-watcher PREFIX`, or
+  `asana_webhook.py watch`). Watching stops 30 minutes after Mark's or PmBot's last activity on
+  the project's bot tasks, once its runs finish, with a Slack line. `ASANA_WEBHOOK_PROJECTS` is
+  gone: any registered project can be watched, and watching registers its webhook.
+- **The daily catch-up only repairs webhooks.** It no longer queues runs, so an unwatched
+  project gets no unannounced session. `watch` does the unanswered-comment sweep instead.
+- **Limits:** one run per task at a time (comments arriving meanwhile are batched into the next
+  run), 2 per project, 3 in all, and the existing 3 per task per hour.
+- **Model: Opus**, not Sonnet. Runs are on Mark's Max plan, not API credits, and volume is low;
+  the cost is the shared usage window, which the limits above protect. A run that hits the
+  limit posts nothing and Slack says so.
+- **Replies always reach Mark.** A run posts one note at the end: `Answer:`, `Review:` or
+  `Blocked:`. `sync.py` mentions Mark on those (and `Done:`) without the `@mark` token, and a
+  `Review:` or `Done:` reassigns the task to him.

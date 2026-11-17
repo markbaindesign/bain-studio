@@ -1,5 +1,5 @@
 [Unit]
-Description=Run the Asana webhook catch-up daily
+Description=Repair Asana webhooks daily
 
 [Timer]
 OnCalendar=*-*-* 07:45
