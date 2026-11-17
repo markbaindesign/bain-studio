@@ -108,7 +108,10 @@ web UI.
 So `leave_progress_comment` first calls `POST /tasks/{gid}/addFollowers` for `ASANA_USER_GID`,
 **waits `MENTION_FOLLOW_WAIT` (35) seconds**, then posts. The note then arrives as a real
 mention: in the inbox filtered to **Mentioned**, in the normal inbox, and as a browser
-notification. If Mark already follows the task there is nothing to add and no wait.
+notification. If Mark already follows the task there is nothing to add, but the note still
+waits out the rest of the 35 seconds when the task was created, or anyone was assigned or added
+as a collaborator, less than 35 seconds ago. Creating a task assigned to Mark makes him a
+follower at that moment, and a note posted straight after misses the filter just the same.
 
 **The wait has to be 30 seconds or more.** Asana does not count a comment as a mention if it
 is posted less than 30 seconds after the user was made a collaborator. Asana's staff confirmed
