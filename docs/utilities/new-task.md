@@ -64,6 +64,9 @@ The task is live in Asana and visible in the mirror immediately - no sync run ne
 
 Sections vary by project. Common ones: `DOING`, `NEXT UP`, `TO DO`, `STALLED`, `SOMEDAY/MAYBE`.
 
+A task created for work Claude is doing in the current session goes in `DOING`; a follow-up
+or anything for later keeps the default, `NEXT UP`.
+
 To see sections for a project, check its mirror or Asana board. The `--task-section` value must match exactly (case-insensitive).
 
 ## Description length is enforced

@@ -273,9 +273,53 @@ def _render_progress(text: str) -> tuple:
     # put a literal "&#x27;" in the comment (verified against SLT-001,
     # 2026-11-05). quote=False escapes & < > only; body text needs no more.
     body = "\n".join(html_escape(l, quote=False) for l in lines)
+    body = _link_task_ids(body)
     if wants_mention and USER_GID:
         body = f'<a data-asana-gid="{USER_GID}"/> {body}'
     return f"<body>{body}</body>", wants_mention
+
+
+# A local task ID in a note ("see BSTD-856") becomes a link to that task, so
+# Mark can jump to it from the comment. Only IDs that resolve through some
+# registered project's asana-ids.json are linked; anything else stays text.
+#
+# data-asana-dynamic="false" keeps the ID as the visible link text. Without it
+# Asana turns any link to a task, href or data-asana-gid alike, into a mention
+# that shows the task's title and drops the ID (verified 2026-11-17 on SLT-001).
+#
+# The lookarounds keep IDs inside a branch name or path (feature/BSTD-878-x)
+# and inside URLs as they are.
+TASK_ID_IN_TEXT = re.compile(r"(?<![\w/=#.-])([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-\d+)(?![\w/-])")
+# How Asana renders a task link in a story's plain `text`: its URL, not the ID.
+TASK_URL_IN_TEXT = re.compile(r"https://app\.asana\.com/0/0/(\d+)/f/?")
+_LINK_MAPS = None   # (gid_to_lid, lid_to_gid), read once per run
+
+
+def _link_maps() -> tuple:
+    global _LINK_MAPS
+    if _LINK_MAPS is None:
+        _LINK_MAPS = _local_id_maps()
+    return _LINK_MAPS
+
+
+def _link_task_ids(body: str) -> str:
+    """Wrap every resolvable local task ID in `body` (already escaped) in a task link."""
+    lid_to_gid = _link_maps()[1]
+    if not lid_to_gid:
+        return body
+
+    def link(m):
+        gid = lid_to_gid.get(m.group(1))
+        if not gid:
+            return m.group(0)
+        return f'<a data-asana-gid="{gid}" data-asana-dynamic="false">{m.group(1)}</a>'
+    return TASK_ID_IN_TEXT.sub(link, body)
+
+
+def _unlink_task_urls(text: str) -> str:
+    """Turn the task URLs Asana stores for a linked ID back into the ID, for comparison."""
+    gid_to_lid = _link_maps()[0]
+    return TASK_URL_IN_TEXT.sub(lambda m: gid_to_lid.get(m.group(1), m.group(0)), text or "")
 
 
 # Limits on a note that becomes an Asana comment. Set loose on purpose: these
@@ -366,10 +410,11 @@ def _comment_matches(story_text: str, want_plain: str) -> bool:
     real words after the name, so compare by suffix instead: no name parsing,
     and a note posted without a mention still matches exactly.
     """
-    want = _normalise_comment(want_plain)
+    want = _normalise_comment(_unlink_task_urls(want_plain))
     if not want:
         return False
-    have = _normalise_comment(story_text)
+    # A linked task ID comes back as the task's URL; map it back to the ID.
+    have = _normalise_comment(_unlink_task_urls(story_text))
     if not have.endswith(want):
         return False
     # Only a rendered mention may precede the body. Without this cap, a short
