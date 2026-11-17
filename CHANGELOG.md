@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-17
+
+### Added
+- **DevBot answers on watched projects within about a minute.** `/project-watcher PREFIX` (or `asana_webhook.py watch`) turns on the Asana webhook listener for a project; a comment from Mark or PmBot, or a task assigned to DevBot, starts a Claude run on that task. Watching stops 30 minutes after Mark's last activity. Each task runs in its own git worktree on `bot/{LOCAL-ID}`, so the checkout Mark is working in is never touched; answers leave nothing behind, work stays on its branch for review. Opus by default; one run per task, 2 per project, 3 in all (BSTD-842, ADR 025).
+- **An @mention of DevBot wakes it on a task it handed back**, which plain comments no longer do.
+
+### Changed
+- **`Review`, `Blocked`, `Done` and `Answer` notes always mention Mark**, with or without the `@mark` token, and are held to the same no-location rule. A `Review` or `Done` note on a bot task reassigns it to Mark.
+
+### Fixed
+- **Looper and webhook sessions run on the Max plan.** The API key `studio/.env` loads for the Hermes collectors outranked the claude.ai login and billed every looper session to API credits; it is now removed from their environment.
+- **An `@mark` note on a task Mark recently started following** now waits out Asana's 30-second window too, not only a follow `sync.py` added itself.
+
 ## [2.2.0] - 2026-11-17
 
 ### Added
