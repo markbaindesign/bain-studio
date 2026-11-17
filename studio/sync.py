@@ -348,6 +348,13 @@ LOCATION_RE = re.compile(
 # A "Done" handover with open subtasks must say why each is not needed.
 DONE_RE     = re.compile(r"^done\b", re.IGNORECASE)
 SUBTASKS_RE = re.compile(r"^subtasks\s*:", re.IGNORECASE)
+# Review, Blocked and Done notes are addressed to Mark by definition, so they
+# carry the mention whether or not their author remembered the @mark token.
+# Forgetting it posted PSK-022 and PSK-030 silently (2026-11-17): a finished
+# decision task he never heard about. Every other note still posts silently.
+HANDOVER_RE = re.compile(r"^(?:review|blocked|done)\b", re.IGNORECASE)
+# Review and Done hand the task back: it leaves the bot's queue for Mark's.
+HAND_BACK_RE = re.compile(r"^(?:review|done)\b", re.IGNORECASE)
 
 
 def split_location(text: str) -> tuple:
@@ -363,9 +370,44 @@ def split_location(text: str) -> tuple:
     where = [s for s in segs if WHERE_RE.match(s)]
     rest  = [s for s in segs if not WHERE_RE.match(s)]
     summary = f" {BLOCK_SEP} ".join(rest)
-    if m and summary:
+    if summary and (m or HANDOVER_RE.match(summary)):
         summary = "@mark " + summary
     return summary, f" {BLOCK_SEP} ".join(where)
+
+
+def hand_back(task_gid: str, summary: str, task: dict = None, dry_run=False) -> bool:
+    """Reassign a bot task to Mark when a Review or Done note goes out on it.
+
+    Only a task assigned to the bot moves: one already with Mark, or with
+    anyone else, is left alone. `task`, when given, is the in-memory task the
+    mirror is rebuilt from later this run; it is updated so the next sync does
+    not push the bot back as assignee. Never raises: the note is already
+    posted, and a failed reassignment must not cost it.
+    """
+    if not USER_GID or not BAINBOT_GID:
+        return False
+    if not HAND_BACK_RE.match(_progress_plain(summary)):
+        return False
+    try:
+        if task is not None:
+            assignee = task.get("assignee") or {}
+        else:
+            data = _get(f"/tasks/{task_gid}", {"opt_fields": "assignee.gid"})["data"]
+            assignee = data.get("assignee") or {}
+        if assignee.get("gid") != BAINBOT_GID:
+            return False
+        if dry_run:
+            log.info(f"    [DRY-RUN] Would reassign {task_gid} to Mark")
+            return True
+        resp = _put(f"/tasks/{task_gid}", {"data": {"assignee": USER_GID}})
+    except Exception as e:
+        log.warning(f"    Posted the note on {task_gid} but could not reassign it to Mark ({e})")
+        return False
+    name = (((resp or {}).get("data") or {}).get("assignee") or {}).get("name") or "Mark"
+    if task is not None:
+        task["assignee"] = {"gid": USER_GID, "name": name}
+    log.info(f"    Reassigned {task_gid} to {name}")
+    return True
 
 
 def validate_where_note(text: str) -> str:
@@ -2121,6 +2163,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                         progress_stories[gid] = new_story or edit_story
                         if where_story:
                             where_stories[gid] = where_story
+                    hand_back(gid, summary, task=t, dry_run=dry_run)
                     commented += 1
                     touched_gids.add(gid)
                 except Exception as e:
@@ -2859,6 +2902,7 @@ def main():
         new_story, where_story = post_note(args.task_gid, args.comment_text,
                                            args.story_gid, args.where_story_gid,
                                            dry_run=args.dry_run)
+        hand_back(args.task_gid, summary, dry_run=args.dry_run)
         if where_story and where_story != args.where_story_gid:
             log.info(f"Posted the Where: comment as story {where_story}; to correct it "
                      f"with the summary, also pass --where-story-gid {where_story}.")

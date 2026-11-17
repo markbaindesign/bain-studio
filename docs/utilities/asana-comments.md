@@ -98,6 +98,14 @@ Mark wants it and invisible when he does not. Usage is already in
 A note opening `@mark` reaches Mark's Asana inbox. A note without it is posted and recorded,
 but stays silent. That is the whole signalling mechanism.
 
+**Except a handover.** A note opening `Review`, `Blocked` or `Done` is addressed to Mark by
+definition, so `split_location` gives it the mention whether or not the author wrote `@mark`,
+and it is then held to the same rules: no location in the summary. A `Review` or `Done` note
+on a task assigned to the bot also **reassigns the task to Mark** (`hand_back`), so it leaves
+the bot's queue for his. `Blocked` does not: the work is still the bot's, it only needs an
+answer. Both came in after PSK-022 and PSK-030 were handed over as `Done:` with no token,
+2026-11-17, and reached nobody.
+
 ### What it actually does, and what it does not
 
 `sync.py` sends the documented rich-text mention — `html_text` carrying
