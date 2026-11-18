@@ -68,7 +68,7 @@ task as it stands, still assigned to you. To hand the whole task back, assign it
 ## What a run does
 
 Each task gets its own run, in its own git worktree outside the project:
-`$XDG_DATA_HOME/bain-studio/bot-worktrees/{PREFIX}/{LOCAL-ID}`, on branch `bot/{LOCAL-ID}`,
+`$XDG_DATA_HOME/bain-bot-worktrees/{PREFIX}/{LOCAL-ID}`, on branch `bot/{LOCAL-ID}`,
 taken from `develop` (or `main`). Later runs on the same task reuse it. The checkout you work in
 is readable but never editable.
 
@@ -95,6 +95,12 @@ The deny-list is the voice agent's `OUTWARD_TOOLS`, the whole Asana MCP, `WebFet
 `WebSearch`, every edit inside the project checkout, edits to `.git/**`, `.claude/**` and
 `.envrc`, and reads of credential files (`SECRET_FILES`). Git hooks are off
 (`GIT_CONFIG_PARAMETERS='core.hooksPath=/dev/null'`). Never `--dangerously-skip-permissions`.
+Runs can **read, not write**, the studio registry (`$XDG_DATA_HOME/bain-studio/`) and the
+project's Dropbox folder (the `DROPBOX_FOLDER:` line in its `CLAUDE.md`): each is added with
+`--add-dir` and given an `Edit` deny and the credential-file `Read` denies. A Dropbox edit has
+no branch to review, so a task that needs one ends in a `Blocked:` saying what to write. The
+worktrees sit outside `bain-studio/` for this reason: a deny on the registry folder would
+otherwise also deny the worktrees inside it.
 A project whose `.envrc` exports `CLAUDE_CONFIG_DIR` (KF) runs on that account
 ([ADR 017](../adr/017-per-client-looper-queues.md)).
 

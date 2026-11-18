@@ -327,3 +327,26 @@ def prefix_from_path(path: str) -> str:
     (tailscale serve may or may not strip its mount path)."""
     seg = [p for p in (path or "").split("?")[0].split("/") if p]
     return seg[-1].upper() if seg else ""
+
+
+def dropbox_folder(claude_md: str) -> str:
+    """The project's Dropbox folder, from the DROPBOX_FOLDER: line its CLAUDE.md
+    already carries for the restrict-to-project hook. "" when there is none."""
+    m = re.search(r"^DROPBOX_FOLDER:\s*(\S.*?)\s*$", claude_md or "", re.MULTILINE)
+    return m.group(1) if m else ""
+
+
+def read_only_dirs(dirs: list) -> tuple:
+    """(--add-dir args, deny rules) giving a run read access to `dirs` and no
+    more. Restricted mode confines file tools to the working directories, so a
+    folder outside the worktree must be added to be read at all; adding it also
+    opens it to edits, which the Edit deny closes. Credential files stay denied.
+    Mark's call, 2026-11-17: the bot may read the registry and the project's
+    Dropbox, but a Dropbox write has no branch to review, so it asks instead."""
+    add, deny = [], []
+    for d in dirs:
+        if not d:
+            continue
+        add += ["--add-dir", str(d)]
+        deny += [f"Edit(/{str(d).rstrip('/')}/**)", *secret_read_denies(Path(d))]
+    return add, deny

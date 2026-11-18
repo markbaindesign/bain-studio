@@ -388,3 +388,22 @@ def test_handed_back_task_wakes_the_bot_only_when_mentioned():
     assert wakes_bot(mine, BOT, mentioned=True)
     assert wakes_bot({"completed": False, "assignee": {"gid": BOT}}, BOT, mentioned=False)
     assert not wakes_bot({"completed": True, "assignee": {"gid": BOT}}, BOT, mentioned=True)
+
+
+def test_dropbox_folder_from_claude_md():
+    from asana_webhook_logic import dropbox_folder
+    assert dropbox_folder("x\nDROPBOX_FOLDER: /media/d/Work\ny") == "/media/d/Work"
+    assert dropbox_folder("no folder here") == ""
+
+
+def test_read_only_dirs_add_then_deny_edits_and_secrets():
+    from asana_webhook_logic import read_only_dirs
+    add, deny = read_only_dirs([Path("/data/reg"), "/drop/Work", ""])
+    assert add == ["--add-dir", "/data/reg", "--add-dir", "/drop/Work"]
+    assert "Edit(//data/reg/**)" in deny and "Edit(//drop/Work/**)" in deny
+    assert "Read(//drop/Work/**/.env)" in deny
+
+
+def test_worktrees_are_not_under_the_read_only_registry_dir():
+    import asana_webhook as aw
+    assert aw.REGISTRY_DIR not in aw.WORKTREES.parents
