@@ -437,11 +437,11 @@ commits.
 
 ### 4c. Work
 
-**Escalation ladder.** Headless runs start on the cheapest model (haiku). Escalate only as far
-as needed:
+**Escalation ladder.** Headless runs use Opus (`LOOPER_MODEL` in the runner). Escalate only as
+far as needed:
 1. Routine execution (clear task, clear repo, mechanical change) — just do the work.
 2. Real judgment needed (architecture choices, ambiguous scope, unfamiliar stack, wrong-repo
-   risk) — consult the **advisor tool** (configured as sonnet) if available in the session.
+   risk) — consult the **advisor tool** if available in the session.
 3. Advisor can't settle it and the decision is genuinely high-stakes — one-shot fable consult:
    ```bash
    claude --model fable -p "Concise question with the relevant context pasted in"

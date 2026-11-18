@@ -143,7 +143,8 @@ signal. A session must not weigh `ps`, `pgrep`, `runner.lock`, or `Session start
 run. The model was left on `haiku` — chosen deliberately on cost in commit `7aef8e1` ("looper runs on
 cheapest model with advisor escalation ladder"), and recorded in ADR-009's invocation. Note that
 haiku had in fact been told the right thing: Step 1a already said "no output — no conflict, proceed
-normally", and it did the opposite. This is being treated as a signal problem first because a
+normally", and it did the opposite. (Moved to Opus on 2026-11-18, once runs billed to the Max
+plan rather than API credits; see ADR 009.) This is being treated as a signal problem first because a
 positive `CLEAR` line is cheaper than a nightly model upgrade and the same iteration completed its
 code task correctly. If it misjudges again after this change, move the runner to sonnet.
 
