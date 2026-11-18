@@ -345,6 +345,26 @@ LOCATION_RE = re.compile(
     r"|\b[\w.-]+/[\w.-]+\.[A-Za-z]{1,5}\b"                     # relative file path
     r"|\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b"     # commit SHA
 )
+# A Where: block must name something Mark can open: a URL, path, branch, commit,
+# file name, task ID, quoted title (a Gmail thread or draft), version or
+# identifier. "Where: Harvest, Acme project" names a service, not a
+# place, and sent Mark looking (EBIZG-088, 2026-11-18). Checked against the
+# 38 Where: blocks in the mirrors on that date, all of which pass.
+WHERE_REF_RE = re.compile(
+    LOCATION_RE.pattern +
+    r"|\b[\w-]+\.[A-Za-z][A-Za-z0-9]{1,4}\b"                    # file name or host
+    r"|\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-\d+\b"                    # task ID
+    r"|[\"'“‘][^\"'”’]{3,}[\"'”’]"  # quoted title
+    r"|\b\w+/\w+"                                               # folder path
+    r"|\b[a-z0-9]+_[a-z0-9_]+\b"                                 # identifier
+    r"|\b\d+\.\d+(?:\.\d+)?\b"                                  # version or tag
+    r"|#?\b\d{3,}\b"                                              # invoice, order or post number
+)
+# Asana stamps every comment, so a handover carries no date of its own.
+DATED_HANDOVER_RE = re.compile(
+    r"^(review|blocked|done|answer)\s*[(,:-]?\s*"
+    r"(\d{4}-\d{2}-\d{2}|\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b)",
+    re.IGNORECASE)
 # A "Done" handover with open subtasks must say why each is not needed.
 DONE_RE     = re.compile(r"^done\b", re.IGNORECASE)
 SUBTASKS_RE = re.compile(r"^subtasks\s*:", re.IGNORECASE)
@@ -416,6 +436,9 @@ def validate_where_note(text: str) -> str:
     if len(plain) > WHERE_MAX_CHARS:
         return (f"the Where: comment runs to {len(plain)} chars, over the "
                 f"{WHERE_MAX_CHARS}-char limit: name the branch, commit and path, nothing else")
+    if not WHERE_REF_RE.search(WHERE_RE.sub("", plain, count=1)):
+        return (f"the Where: block names no place Mark can open ({plain[:60]!r}): give the "
+                f"URL, path, branch, commit, file, task ID or quoted thread or draft title")
     return ""
 
 
@@ -459,6 +482,9 @@ def validate_progress_note(text: str) -> str:
     if PLAIN_CHECK.match(plain):      # "Checked {date}." — a heartbeat, not a note
         return ""
     blocks = plain.split("\n")
+    if m := DATED_HANDOVER_RE.match(plain):
+        return (f"the note is dated ({m.group(0)!r}): Asana stamps every comment, so "
+                f"write '{m.group(1).capitalize()}:' with no date")
     if MENTION_RE.match(summary):
         loc = next((m for m in map(LOCATION_RE.search, blocks) if m), None)
         if loc:

@@ -13,6 +13,7 @@ and tracks payment. The script only creates **drafts**, and only with `--create`
 ```
 SCRIPT=/media/data/dev/bain-studio/studio/tools/raise-invoice/raise_invoice.py
 python3 $SCRIPT uninvoiced [--all]
+python3 $SCRIPT invoices [CLIENT] [--from YYYY-MM-DD] [--to YYYY-MM-DD]   # read-only: issued, sent, paid, recurring
 python3 $SCRIPT hours PROJECT [--from YYYY-MM-DD --to YYYY-MM-DD] [--type T] [--create]
 python3 $SCRIPT milestone PROJECT --amount N --description TEXT [--type T] [--create]
 ```
