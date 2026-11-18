@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-11-18
+
+### Changed
+- **Nightly looper runs use Opus**, not Haiku. Haiku was picked on API cost; looper runs now bill to the Max plan. `LOOPER_MODEL` overrides it.
+
 ## [2.4.0] - 2026-11-18
 
 ### Added

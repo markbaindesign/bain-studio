@@ -52,7 +52,6 @@ Invoke in Claude Code with `/skill-name [args]`.
 
 | Skill | Invoke | What it does |
 |-------|--------|--------------|
-| `focus` | `/focus MCF` | Mid-day context switch — runs recap from studio dir |
 | `recap` | `/recap` | Re-entry brief for the current project directory |
 | `project-status` | `/project-status` | View or set project status in projects.json |
 | `onboard-audit` | `/onboard-audit` | Audit all active projects against onboarding checklist |
