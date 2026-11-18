@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-11-18
+
+### Added
+- **`raise_invoice.py invoices` lists invoices already raised**: issue date, sent, paid, owed, and whether a recurring schedule created it, per client and date range. Read-only; it loads the Harvest token itself, so no session needs to read `studio/.env` to check that an invoice went out.
+- **Webhook runs can read the studio registry and the project's Dropbox folder**, but not change them. A task that needs a file written there ends in a `Blocked:` saying exactly what to write.
+
+### Changed
+- **`sync.py` refuses a dated handover** (`Blocked 2026-11-18:`, `Review 18 Nov:`). Asana stamps every comment.
+- **`sync.py` refuses a `Where:` block that names no place to open**: it needs a URL, path, branch, commit, file, task ID, quoted title, version or number.
+- **Bot worktrees moved** to `~/.local/share/bain-bot-worktrees/`, outside the registry folder that runs can now only read.
+
 ## [2.3.0] - 2026-11-17
 
 ### Added
