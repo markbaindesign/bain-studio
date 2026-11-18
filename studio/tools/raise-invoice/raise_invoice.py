@@ -11,8 +11,9 @@ sends it from there (the Law of the Gate).
     invoices     Invoices already raised: issued, sent, paid, recurring. Read-only.
     hours        Draft invoice importing a project's uninvoiced time.
     milestone    Draft invoice with one fixed-price line Mark specifies.
+    expense      Log a reimbursable expense on a project, receipt attached.
 
-`hours` and `milestone` print a preview and stop. Add --create to make the draft.
+`hours`, `milestone` and `expense` print a preview and stop. Add --create to make the draft.
 Importing time onto a draft takes those hours off the uninvoiced report until
 the draft is deleted, so --create is never a dry run.
 
@@ -31,8 +32,9 @@ Usage:
     python3 studio/tools/raise-invoice/raise_invoice.py invoices [CLIENT] [--from D] [--to D] [--state S]
     python3 studio/tools/raise-invoice/raise_invoice.py hours PROJECT [--from D --to D] [--type T] [--create]
     python3 studio/tools/raise-invoice/raise_invoice.py milestone PROJECT --amount N --description TEXT [--type T] [--create]
+    python3 studio/tools/raise-invoice/raise_invoice.py expense PROJECT --amount N --category C --notes TEXT [--date D] [--receipt FILE] [--create]
 
-PROJECT is a Harvest project ID or a fragment of an active project's (or client's) name.
+PROJECT is a Harvest project ID, an active project's code, or a fragment of its (or its client's) name.
 """
 
 import argparse
@@ -40,7 +42,7 @@ import os
 import re
 import sys
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import requests
@@ -79,8 +81,10 @@ class InvoiceClient(HarvestClient):
         if str(ref).isdigit():
             return self._get(f"/projects/{ref}")
         needle = ref.lower()
-        matches = [p for p in self._get("/projects", {"is_active": "true", "per_page": 2000})["projects"]
-                   if needle in p["name"].lower() or needle in p["client"]["name"].lower()]
+        projects = self._get("/projects", {"is_active": "true", "per_page": 2000})["projects"]
+        coded = [p for p in projects if (p.get("code") or "").lower() == needle]
+        matches = coded or [p for p in projects
+                            if needle in p["name"].lower() or needle in p["client"]["name"].lower()]
         if len(matches) != 1:
             names = "\n".join(f"  {p['id']}  {p['client']['name']} / {p['name']}" for p in matches) or "  (none)"
             raise SystemExit(f"'{ref}' matches {len(matches)} active projects — pass the ID:\n{names}")
@@ -118,6 +122,26 @@ class InvoiceClient(HarvestClient):
 
     def update_invoice(self, invoice_id, payload):
         return self._send("PATCH", f"/invoices/{invoice_id}", payload)
+
+    def expense_categories(self):
+        return self._get("/expense_categories", {"is_active": "true", "per_page": 2000})["expense_categories"]
+
+    def expenses(self, **params):
+        return self._get("/expenses", {"per_page": 2000, **params})["expenses"]
+
+    def create_expense(self, fields, receipt=None):
+        """POST /expenses. A receipt makes it multipart, so drop the JSON content type."""
+        if receipt is None:
+            return self._send("POST", "/expenses", fields)
+        headers = {k: v for k, v in self.headers.items() if k.lower() != "content-type"}
+        with open(receipt, "rb") as f:
+            r = requests.post(f"{BASE}/expenses", headers=headers, timeout=60,
+                              data={k: str(v).lower() if isinstance(v, bool) else v
+                                    for k, v in fields.items()},
+                              files={"receipt": (Path(receipt).name, f, receipt_type(receipt))})
+        if not r.ok:
+            raise SystemExit(f"Harvest POST /expenses failed: {r.status_code} {r.text}")
+        return r.json()
 
 
 # ── Pure helpers (tested in studio/tests/test_raise_invoice.py) ──────────────
@@ -266,6 +290,49 @@ def invoice_line(inv):
             f"{(inv.get('client') or {}).get('name', '?')[:28]:<28} "
             f"{inv.get('currency', '')} {inv.get('amount') or 0:>9.2f}  {inv.get('state', '?'):<6} "
             f"sent {day(inv.get('sent_at'))}  paid {day(inv.get('paid_at'))}{owed}{recur}")
+
+
+RECEIPT_TYPES = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",
+                 ".jpeg": "image/jpeg", ".gif": "image/gif"}
+
+
+def receipt_type(path):
+    """Media type Harvest accepts for a receipt, or refuse the file."""
+    ext = Path(path).suffix.lower()
+    if ext not in RECEIPT_TYPES:
+        raise SystemExit(f"Receipt must be one of {', '.join(RECEIPT_TYPES)}: {path}")
+    return RECEIPT_TYPES[ext]
+
+
+def match_category(categories, needle):
+    """The one active expense category whose name contains `needle`, or whose ID it is."""
+    if str(needle).isdigit():
+        found = [c for c in categories if str(c["id"]) == str(needle)]
+    else:
+        n = needle.lower()
+        exact = [c for c in categories if c["name"].lower() == n]
+        found = exact or [c for c in categories if n in c["name"].lower()]
+    if len(found) != 1:
+        names = "\n".join(f"  {c['id']}  {c['name']}" for c in (found or categories))
+        raise SystemExit(f"'{needle}' matches {len(found)} expense categories — pick one:\n{names}")
+    return found[0]
+
+
+def possible_duplicates(existing, amount, spent_date, notes):
+    """Expenses already on the project that look like this one: same amount on the same day,
+    or the same amount with notes that share their first word (last year's renewal is not a
+    duplicate, so callers pass only a window around the date)."""
+    word = (notes.split() or [""])[0].lower()
+    return [e for e in existing
+            if abs((e.get("total_cost") or 0) - amount) < 0.005
+            and (e.get("spent_date") == spent_date
+                 or (word and (e.get("notes") or "").lower().startswith(word)))]
+
+
+def expense_line(e):
+    return (f"  {e.get('spent_date')}  {(e.get('expense_category') or {}).get('name', '?'):<16} "
+            f"{e.get('total_cost') or 0:>9.2f}  {'billable' if e.get('billable') else 'non-billable'}  "
+            f"{e.get('notes') or ''}{'  [receipt]' if e.get('receipt') else ''}")
 
 
 # ── Commands ─────────────────────────────────────────────────────────────────
@@ -427,6 +494,51 @@ def cmd_milestone(api, args):
     finish(api, args, payload)
 
 
+def cmd_expense(api, args):
+    if args.amount <= 0:
+        raise SystemExit("--amount must be positive.")
+    try:
+        date.fromisoformat(args.date)
+    except ValueError:
+        raise SystemExit(f"--date must be YYYY-MM-DD, not {args.date}")
+    if args.receipt:
+        receipt_type(args.receipt)
+        if not Path(args.receipt).is_file():
+            raise SystemExit(f"No such receipt file: {args.receipt}")
+    project = api.project(args.project)
+    category = match_category(api.expense_categories(), args.category)
+    client = api.client_record(project["client"]["id"])
+    spent = date.fromisoformat(args.date)
+    nearby = api.expenses(project_id=project["id"],
+                          **{"from": (spent - timedelta(days=60)).isoformat(),
+                             "to": (spent + timedelta(days=60)).isoformat()})
+    dupes = possible_duplicates(nearby, args.amount, args.date, args.notes)
+
+    print(f"Project:   {project['client']['name']} / {project['name']} ({project['id']})")
+    print(f"Category:  {category['name']}")
+    print(f"Date:      {args.date}")
+    print(f"Amount:    {args.amount:.2f}  (Harvest records it in the client's currency, "
+          f"{client.get('currency', '?')}; convert first if the receipt is in another)")
+    print(f"Billable:  {'no' if args.non_billable else 'yes'}")
+    print(f"Notes:     {args.notes}")
+    print(f"Receipt:   {args.receipt or 'none'}")
+    for e in dupes:
+        print(f"WARNING: possible duplicate already on the project:\n{expense_line(e)}")
+
+    if not args.create:
+        print("\nPreview only. Re-run with --create to log the expense.")
+        return
+    if dupes and not args.allow_duplicate:
+        raise SystemExit("\nRefusing: a matching expense exists. Pass --allow-duplicate if it is a second one.")
+    fields = {"project_id": project["id"], "expense_category_id": category["id"],
+              "spent_date": args.date, "total_cost": round(args.amount, 2),
+              "billable": not args.non_billable, "notes": args.notes}
+    e = api.create_expense(fields, args.receipt)
+    print(f"\nExpense {e['id']} logged:\n{expense_line(e)}")
+    print(f"It goes on the client's next invoice when Harvest imports expenses: "
+          f"{api.base_uri()}/expenses")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0].strip())
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -459,6 +571,17 @@ def main(argv=None):
             s.add_argument("--description", required=True, help="line description, as the client sees it")
             s.set_defaults(from_date=None, to_date=None)
 
+    x = sub.add_parser("expense", help="log a reimbursable expense on a project")
+    x.add_argument("project", help="Harvest project ID or name fragment")
+    x.add_argument("--amount", type=float, required=True, help="total cost, in the client's currency")
+    x.add_argument("--category", required=True, help="expense category ID or name fragment")
+    x.add_argument("--notes", required=True, help="what was bought, as the client sees it")
+    x.add_argument("--date", default=date.today().isoformat(), help="spent date, YYYY-MM-DD")
+    x.add_argument("--receipt", help="receipt file (.pdf, .png, .jpg, .gif) to attach")
+    x.add_argument("--non-billable", action="store_true", help="not to be rebilled to the client")
+    x.add_argument("--allow-duplicate", action="store_true", help="create despite a matching expense")
+    x.add_argument("--create", action="store_true", help="log the expense (default: preview)")
+
     args = p.parse_args(argv)
     if args.cmd == "hours" and bool(args.from_date) != bool(args.to_date):
         p.error("--from and --to go together")
@@ -467,7 +590,8 @@ def main(argv=None):
     if not token or not account:
         raise SystemExit("HARVEST_TOKEN and HARVEST_ACCOUNT_ID must be set in studio/.env")
     api = InvoiceClient(token, account)
-    {"uninvoiced": cmd_uninvoiced, "invoices": cmd_invoices, "hours": cmd_hours, "milestone": cmd_milestone}[args.cmd](api, args)
+    {"uninvoiced": cmd_uninvoiced, "invoices": cmd_invoices, "hours": cmd_hours, "milestone": cmd_milestone,
+     "expense": cmd_expense}[args.cmd](api, args)
 
 
 if __name__ == "__main__":
