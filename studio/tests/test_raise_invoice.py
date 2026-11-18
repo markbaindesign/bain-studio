@@ -115,3 +115,26 @@ def test_bucket_uninvoiced():
     assert [r["project_id"] for r in credits] == [5]
     ready, *_ = bucket_uninvoiced(rows, fixed_fee_ids={4}, include_small=True)
     assert 7 in [r["project_id"] for r in ready]
+
+
+def test_match_clients_by_fragment_or_id():
+    from raise_invoice import match_clients
+    clients = [{"id": 1, "name": "Acme Global"}, {"id": 2, "name": "Acme Japan"}, {"id": 3, "name": "Zeta"}]
+    assert [c["id"] for c in match_clients(clients, "acme")] == [1, 2]
+    assert [c["id"] for c in match_clients(clients, "global")] == [1]
+    assert [c["id"] for c in match_clients(clients, "3")] == [3]
+    assert match_clients(clients, "nobody") == []
+
+
+def test_invoice_line_shows_sent_paid_and_recurring():
+    from raise_invoice import invoice_line
+    inv = {"number": "0042", "issue_date": "2026-10-15", "client": {"name": "Acme Global"},
+           "currency": "EUR", "amount": 90.0, "due_amount": 0, "state": "paid",
+           "sent_at": "2026-10-15T07:00:00Z", "paid_at": "2026-10-20T09:00:00Z",
+           "recurring_invoice_id": 7}
+    line = invoice_line(inv)
+    assert "0042" in line and "issued 2026-10-15" in line
+    assert "sent 2026-10-15" in line and "paid 2026-10-20" in line and "recurring" in line
+    unsent = invoice_line({**inv, "state": "open", "sent_at": None, "paid_at": None,
+                           "due_amount": 90.0, "recurring_invoice_id": None})
+    assert "sent -" in unsent and "owes 90.00" in unsent and "recurring" not in unsent

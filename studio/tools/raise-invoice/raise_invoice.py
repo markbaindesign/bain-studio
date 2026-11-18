@@ -8,6 +8,7 @@ endpoint and never marks an invoice sent — Mark reviews the draft in Harvest a
 sends it from there (the Law of the Gate).
 
     uninvoiced   Projects with billable hours not yet on an invoice.
+    invoices     Invoices already raised: issued, sent, paid, recurring. Read-only.
     hours        Draft invoice importing a project's uninvoiced time.
     milestone    Draft invoice with one fixed-price line Mark specifies.
 
@@ -27,6 +28,7 @@ refuses to --create until it is given.
 
 Usage:
     python3 studio/tools/raise-invoice/raise_invoice.py uninvoiced [--all]
+    python3 studio/tools/raise-invoice/raise_invoice.py invoices [CLIENT] [--from D] [--to D] [--state S]
     python3 studio/tools/raise-invoice/raise_invoice.py hours PROJECT [--from D --to D] [--type T] [--create]
     python3 studio/tools/raise-invoice/raise_invoice.py milestone PROJECT --amount N --description TEXT [--type T] [--create]
 
@@ -83,6 +85,9 @@ class InvoiceClient(HarvestClient):
             names = "\n".join(f"  {p['id']}  {p['client']['name']} / {p['name']}" for p in matches) or "  (none)"
             raise SystemExit(f"'{ref}' matches {len(matches)} active projects — pass the ID:\n{names}")
         return matches[0]
+
+    def clients(self):
+        return self._get("/clients", {"per_page": 2000})["clients"]
 
     def client_record(self, client_id):
         return self._get(f"/clients/{client_id}")
@@ -243,6 +248,26 @@ def bucket_uninvoiced(rows, fixed_fee_ids=(), include_small=False):
     return sorted(ready, key=key), sorted(partial, key=key), sorted(fixed, key=key), credits
 
 
+def match_clients(clients, needle):
+    """Clients whose name contains `needle` (case-insensitive), or the one with that ID."""
+    if str(needle).isdigit():
+        return [c for c in clients if str(c["id"]) == str(needle)]
+    n = needle.lower()
+    return [c for c in clients if n in c["name"].lower()]
+
+
+def invoice_line(inv):
+    """One invoice as a line: number, issue date, client, amount, state, sent, paid, recurring."""
+    day = lambda ts: (ts or "")[:10] or "-"
+    due = inv.get("due_amount") or 0
+    owed = f"  owes {due:.2f}" if due and inv.get("state") != "draft" else ""
+    recur = "  recurring" if inv.get("recurring_invoice_id") else ""
+    return (f"  {inv.get('number') or '-':<10} issued {inv.get('issue_date') or '-'}  "
+            f"{(inv.get('client') or {}).get('name', '?')[:28]:<28} "
+            f"{inv.get('currency', '')} {inv.get('amount') or 0:>9.2f}  {inv.get('state', '?'):<6} "
+            f"sent {day(inv.get('sent_at'))}  paid {day(inv.get('paid_at'))}{owed}{recur}")
+
+
 # ── Commands ─────────────────────────────────────────────────────────────────
 
 def fmt_row(r):
@@ -264,6 +289,20 @@ def cmd_uninvoiced(api, args):
         print("\n".join(fmt_row(r) for r in credits))
     if not args.all:
         print(f"\nRows under {MIN_HOURS} h hidden; --all shows them.")
+
+
+def cmd_invoices(api, args):
+    params = {k: v for k, v in (("from", args.from_date), ("to", args.to_date),
+                                ("state", args.state)) if v}
+    if args.client:
+        found = match_clients(api.clients(), args.client)
+        if len(found) != 1:
+            names = "\n".join(f"  {c['id']}  {c['name']}" for c in found) or "  (none)"
+            raise SystemExit(f"'{args.client}' matches {len(found)} clients — pass the ID:\n{names}")
+        params["client_id"] = found[0]["id"]
+    rows = sorted(api.invoices(**params), key=lambda i: i.get("issue_date") or "")
+    print("\n".join(invoice_line(i) for i in rows) or "  no invoices")
+    print(f"\n{len(rows)} invoice(s). 'recurring' marks one a recurring schedule generated.")
 
 
 def resolve(api, args):
@@ -395,6 +434,12 @@ def main(argv=None):
     u = sub.add_parser("uninvoiced", help="list uninvoiced billable hours")
     u.add_argument("--all", action="store_true", help=f"include rows under {MIN_HOURS} h")
 
+    i = sub.add_parser("invoices", help="list invoices already raised (read-only)")
+    i.add_argument("client", nargs="?", help="Harvest client ID or name fragment")
+    i.add_argument("--from", dest="from_date", help="issued on or after, YYYY-MM-DD")
+    i.add_argument("--to", dest="to_date", help="issued on or before, YYYY-MM-DD")
+    i.add_argument("--state", choices=("draft", "open", "paid", "closed"))
+
     for name in ("hours", "milestone"):
         s = sub.add_parser(name)
         s.add_argument("project", help="Harvest project ID or name fragment")
@@ -422,7 +467,7 @@ def main(argv=None):
     if not token or not account:
         raise SystemExit("HARVEST_TOKEN and HARVEST_ACCOUNT_ID must be set in studio/.env")
     api = InvoiceClient(token, account)
-    {"uninvoiced": cmd_uninvoiced, "hours": cmd_hours, "milestone": cmd_milestone}[args.cmd](api, args)
+    {"uninvoiced": cmd_uninvoiced, "invoices": cmd_invoices, "hours": cmd_hours, "milestone": cmd_milestone}[args.cmd](api, args)
 
 
 if __name__ == "__main__":

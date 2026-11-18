@@ -270,6 +270,8 @@ still syncs, so the work still appears in Mark's task list. `--comment` exits 1.
 | Block count | 6 | More than 3 `Check:` items |
 | Location in an `@mark` summary | none | A path, branch, commit or URL outside `Where:` |
 | `Where:` comment | 300 chars | Detail dressed up as a location |
+| `Where:` names a place | required | A service named instead of a place (`Where: Harvest, the client's project`). A URL, path, branch, commit, file, task ID, quoted thread or draft title, version or identifier passes |
+| Date on a handover | none | `Blocked 2026-11-18:`, `Review (18 Nov):`. Asana stamps every comment |
 | `Done` with open subtasks | needs `Subtasks:` | Completion recommended over unfinished steps |
 
 Tightened 2026-11-17 at Mark's request: the 900/200/8 limits let wordy notes through. A note under every
