@@ -1,6 +1,6 @@
 ---
 description: Check uninvoiced Harvest hours and raise Harvest draft invoices from hours or as a milestone
-command: python3 studio/tools/raise-invoice/raise_invoice.py {uninvoiced|hours|milestone}
+command: python3 studio/tools/raise-invoice/raise_invoice.py {uninvoiced|invoices|hours|milestone}
 invoke: /raise-invoice
 god: financial-review
 role: Finance
@@ -19,6 +19,7 @@ numbering, PDF, sending and payment tracking. The tool never sends an invoice or
 
 ```bash
 python3 studio/tools/raise-invoice/raise_invoice.py uninvoiced [--all]
+python3 studio/tools/raise-invoice/raise_invoice.py invoices [CLIENT] [--from D] [--to D] [--state S]
 python3 studio/tools/raise-invoice/raise_invoice.py hours PROJECT [--from D --to D] [--type T] [--create]
 python3 studio/tools/raise-invoice/raise_invoice.py milestone PROJECT --amount N --description TEXT [--type T] [--create]
 
@@ -35,6 +36,11 @@ Needs `HARVEST_TOKEN` and `HARVEST_ACCOUNT_ID` in `studio/.env`. Reuses
 - **uninvoiced** — the Harvest uninvoiced report for the last year, split into hourly ready to
   bill, hourly partly invoiced, fixed fee (the amount is the unbilled part of the fee) and credits
   (deposits or overpayments to offset). Rows under 0.25 h are hidden unless `--all`.
+- **invoices** — invoices already raised, oldest first: number, issue date, client, amount,
+  state, the dates sent and paid, what is still owed, and `recurring` when a recurring schedule
+  generated it. `CLIENT` is a Harvest client ID or name fragment; `--from`/`--to` filter on issue
+  date. Read-only. This is how an agent checks that an invoice went out: the token stays in
+  `studio/.env`, which no session reads directly.
 - **hours** — previews a draft that imports the project's unbilled time, grouped by task
   (`--summary` changes that). Warns about credits, fixed-fee projects and zero-rate entries.
 - **milestone** — previews a draft with one line for `--amount` (net, before tax) and

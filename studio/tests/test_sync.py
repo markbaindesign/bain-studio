@@ -1296,7 +1296,7 @@ def test_validate_passes_heartbeats_and_short_free_form_notes():
     assert sync.validate_progress_note("Checked 2026-11-05.") == ""
     assert sync.validate_progress_note("") == ""
     assert sync.validate_progress_note(
-        "Blocked 2026-11-05. Gravity Forms licence key missing.") == ""
+        "Blocked: Gravity Forms licence key missing.") == ""
 
 
 def test_validate_rejects_too_many_blocks():
@@ -1984,3 +1984,33 @@ def test_hand_back_failure_never_raises():
          patch.object(sync, "_put", side_effect=RuntimeError("403")):
         assert not sync.hand_back("T1", "Done: x", task=task)
     assert task["assignee"] == {"gid": "BOT"}
+
+
+# ---------------------------------------------------------------------------
+# A handover carries no date; a Where: block names a place Mark can open
+# ---------------------------------------------------------------------------
+
+def test_validate_rejects_a_dated_handover():
+    for note in ("@mark Blocked 2026-11-18: no access", "Review 2026-11-05: done",
+                 "@mark Review (18 Nov): done", "Done - 5 November: shipped"):
+        assert "is dated" in sync.validate_progress_note(note), note
+
+
+def test_validate_allows_numbers_that_are_not_dates():
+    for note in ("Done: 3 Pages fixed", "Done: 1.5 h logged", "Review: 12 templates updated",
+                 "Checked 2026-11-05."):
+        assert sync.validate_progress_note(note) == "", note
+
+
+def test_validate_rejects_a_where_block_that_names_no_place():
+    note = "@mark Blocked: cannot confirm the invoices || Where: Harvest, Acme project"
+    assert "names no place" in sync.validate_progress_note(note)
+
+
+def test_validate_accepts_where_blocks_that_name_a_place():
+    for where in ("looper/a3f2c1 · 2252ad1", "https://ex.test/a", "ACME-012",
+                  'Gmail draft "Acme retainer report"', "Gmail thread “Translation questions”",
+                  "tag 2.24.2 on master", "php-sweep-prod.txt in Acme/Dev Ops",
+                  "Dropbox Work/internal/reviews/", "theme option options_footer_left",
+                  "Harvest invoice 0042"):
+        assert sync.validate_progress_note(f"Review: x || Where: {where}") == "", where
