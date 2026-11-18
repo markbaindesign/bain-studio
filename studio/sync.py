@@ -2449,6 +2449,25 @@ def create_subtasks(parent_gid: str, names: list, dry_run: bool = False) -> list
     return gids
 
 
+def add_to_project(task_gid: str, proj: "ProjectConfig", dry_run: bool = False) -> bool:
+    """Add an existing task to a second project (multi-home it), via bainbot.
+
+    This is how a task joins the Studio Looper queue: it keeps its home project
+    and local ID, and the next sync of SL gives it a Looper Status of Queue.
+    Returns False when the task is already in that project.
+    """
+    task = _get(f"/tasks/{task_gid}", {"opt_fields": "name,memberships.project.gid"})["data"]
+    if any((m.get("project") or {}).get("gid") == proj.gid for m in task.get("memberships") or []):
+        log.info(f"  {task.get('name', task_gid)!r} is already in {proj.prefix}")
+        return False
+    if dry_run:
+        log.info(f"  [DRY-RUN] Would add {task.get('name', task_gid)!r} to {proj.prefix}")
+        return True
+    _post(f"/tasks/{task_gid}/addProject", {"data": {"project": proj.gid}})
+    log.info(f"  Added {task.get('name', task_gid)!r} to {proj.prefix}")
+    return True
+
+
 def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT UP",
                      notes: str = "", due: str = "", assignee: str = "",
                      depends_on: str = "", follow_up_of: tuple = None,
@@ -2905,6 +2924,11 @@ def main():
                         help="With --create-task: the task this one follows up (local ID, "
                              "GID or URL). Its description opens with a link to that task, "
                              "and --project defaults to that task's project")
+    parser.add_argument("--add-to-project", metavar="PREFIX", default="",
+                        help="Add the task(s) given with --task-gid to another project, "
+                             "keeping their home project: --add-to-project SL queues them "
+                             "for the looper. --task-gid takes local IDs, GIDs or URLs, "
+                             "comma-separated")
     parser.add_argument("--update-task", action="store_true",
                         help="Update an existing task's name and/or notes "
                              "(requires --task-gid; notes cannot be pushed "
@@ -2944,6 +2968,25 @@ def main():
 
     if args.get_task:
         sys.exit(get_task(args.get_task))
+
+    if args.add_to_project:
+        refs = [r for r in (args.task_gid or "").split(",") if r.strip()]
+        if not refs:
+            parser.error("--add-to-project requires --task-gid (a local ID, GID or URL)")
+        projects = discover_projects(filter_prefix=args.add_to_project.upper(), quiet=True)
+        if not projects:
+            log.error(f"No project found with prefix '{args.add_to_project}'.")
+            sys.exit(1)
+        lid_to_gid = _local_id_maps()[1]
+        failed = False
+        for ref in refs:
+            gid = resolve_task_ref(ref, lid_to_gid)
+            if not gid:
+                log.error(f"Cannot resolve {ref!r} to a task")
+                failed = True
+                continue
+            add_to_project(gid, projects[0], dry_run=args.dry_run)
+        sys.exit(1 if failed else 0)
 
     if args.update_task:
         if not args.task_gid:

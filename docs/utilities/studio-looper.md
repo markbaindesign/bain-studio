@@ -30,7 +30,8 @@ Must be invoked from `/media/data/dev/bain-studio`.
 ## How it works
 
 1. Mark multi-homes tasks from any project (MCF, NORE, BSTD, UAP…) into the **Studio Looper**
-   Asana project, Queue section. Drag order = execution priority.
+   Asana project, Queue section. Drag order = execution priority. From a session:
+   `python3 studio/sync.py --add-to-project SL --task-gid BSTD-893,BSTD-894`.
 2. `/studio-looper` syncs the SL project, reads the Queue, and presents the list for
    confirmation before starting.
 3. BainBot works each task in the correct project directory (derived from the task's prefix —
