@@ -23,7 +23,13 @@ python3 studio/sync.py --create \               # scaffold a new Asana project
     --prefix ACME \
     --path /home/bain/code/vvv/clients/www/acme-corp \
     --yes
+python3 studio/sync.py --add-to-project SL \     # multi-home tasks into another project
+    --task-gid ACME-012,ACME-013                # (SL: queue them for the looper)
 ```
+
+`--add-to-project` keeps each task in its home project with its local ID. Into SL, the next
+sync gives it a Looper Status of Queue. A task already in the project is left alone, and
+`--dry-run` previews.
 
 ## Attachments
 
