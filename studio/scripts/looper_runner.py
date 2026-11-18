@@ -96,6 +96,9 @@ TASK_LOG = Path.home() / "logs/task-looper.log"
 # cron's PATH doesn't include ~/.local/bin, where `claude` actually lives, so a
 # bare "claude" in subprocess.run silently FileNotFoundErrors every run. Resolve
 # it explicitly at import time, falling back to the known install path.
+# Opus since 2026-11-18: runs bill to the Max plan, not API credits, so the
+# cost case for haiku (commit 7aef8e1) is gone. LOOPER_MODEL overrides it.
+LOOPER_MODEL = os.getenv("LOOPER_MODEL", "opus")
 CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
 
@@ -284,13 +287,13 @@ def run_window(label: str) -> None:
         log(f"window {label}: iteration {i} — output -> {run_log.name}")
 
         with run_log.open("w") as out:
-            # Cheapest model works the task; advisor (sonnet) and one-shot
-            # fable are the escalation rungs per the skill. LOOPER_RUN_ID keys
+            # LOOPER_MODEL works the task; the advisor and a one-shot fable
+            # consult are the escalation rungs per the skill. LOOPER_RUN_ID keys
             # the shared review branch (one per window, not per iteration) and
             # arms the no-git-push PreToolUse hook.
             env = max_plan_env(os.environ, LOOPER_RUN_ID=run_id)
             r = subprocess.run(
-                [CLAUDE_BIN, "--dangerously-skip-permissions", "--model", "haiku",
+                [CLAUDE_BIN, "--dangerously-skip-permissions", "--model", LOOPER_MODEL,
                  "-p", "/studio-looper --yes"],
                 cwd=STUDIO, stdout=out, stderr=subprocess.STDOUT, env=env,
             )

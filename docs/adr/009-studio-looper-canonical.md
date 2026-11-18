@@ -53,6 +53,10 @@ happened. The hook (now versioned at `.claude/hooks/looper-no-push.sh`, symlinke
 in `/tmp/studio-looper/` - written at Step 3 of every looper run, manual or scheduled -
 so all looper sessions are enforced and interactive sessions remain unaffected.
 
+**2026-11-18:** the runner now starts `--model opus` (`LOOPER_MODEL` overrides it). Haiku was
+chosen on API cost; since 2.3.0 looper runs bill to the Max plan, so that reason is gone, and the
+haiku run that misread a live concurrency state (2026-07-22) was the cost of keeping it.
+
 ## Consequences
 
 - One queue, one set of rules, one place to harden.
