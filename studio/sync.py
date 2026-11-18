@@ -2468,10 +2468,79 @@ def add_to_project(task_gid: str, proj: "ProjectConfig", dry_run: bool = False) 
     return True
 
 
+def resolve_task_fields(proj: ProjectConfig, specs: list) -> tuple:
+    """Turn --task-field "Name=Value" strings into a custom_fields payload.
+
+    Returns ({field_gid: value}, ["Name: label", ...]). Read-only, so it runs in
+    a dry run too: a field or option that does not resolve is refused before
+    anything is created, never discovered after.
+
+    enum takes an option name (case-insensitive); reference takes a task as a
+    local ID, GID or URL, and the task must exist; text and number take the
+    value as given. Any other type is refused.
+    """
+    if not specs:
+        return {}, []
+    settings = _get(f"/projects/{proj.gid}/custom_field_settings", {
+        "opt_fields": "custom_field.gid,custom_field.name,custom_field.resource_subtype,"
+                      "custom_field.type,custom_field.enum_options.name,"
+                      "custom_field.enum_options.enabled",
+    })["data"]
+    by_name = {(s["custom_field"].get("name") or "").strip().lower(): s["custom_field"]
+               for s in settings}
+
+    payload, labels = {}, []
+    for spec in specs:
+        if "=" not in spec:
+            raise ValueError(f"--task-field {spec!r}: expected Name=Value")
+        fname, value = (part.strip() for part in spec.split("=", 1))
+        cf = by_name.get(fname.lower())
+        if not cf:
+            raise ValueError(f"--task-field: {proj.prefix} has no custom field {fname!r}. "
+                             f"Fields: {', '.join(sorted(c['name'] for c in by_name.values()))}")
+        ftype = _cf_type(cf)
+        if ftype == "enum":
+            # A disabled option is listed by the API but refused on write, so
+            # it is treated as absent here and caught before anything is created.
+            enabled = dict(cf, enum_options=[o for o in cf.get("enum_options") or []
+                                             if o.get("enabled", True)])
+            opt = _enum_option_gid(enabled, value)
+            if not opt:
+                names = ", ".join(o["name"] for o in enabled["enum_options"])
+                raise ValueError(f"--task-field: {cf['name']} has no option {value!r}. "
+                                 f"Options: {names}")
+            payload[cf["gid"]] = opt
+            labels.append(f"{cf['name']}: {value}")
+        elif ftype == "reference":
+            ref_gid = resolve_task_ref(value)
+            if not ref_gid:
+                raise ValueError(f"--task-field: cannot resolve {value!r} to a task for {cf['name']}")
+            try:
+                ref = _get(f"/tasks/{ref_gid}", {"opt_fields": "name,resource_subtype"})["data"]
+            except Exception as e:
+                raise ValueError(f"--task-field: {cf['name']} target {value!r} "
+                                 f"({ref_gid}) cannot be read: {e}") from e
+            payload[cf["gid"]] = [ref_gid]
+            labels.append(f"{cf['name']}: {ref.get('name')} ({ref.get('resource_subtype')})")
+        elif ftype == "text":
+            payload[cf["gid"]] = value
+            labels.append(f"{cf['name']}: {value}")
+        elif ftype == "number":
+            try:
+                payload[cf["gid"]] = float(value)
+            except ValueError:
+                raise ValueError(f"--task-field: {cf['name']} is a number, got {value!r}")
+            labels.append(f"{cf['name']}: {value}")
+        else:
+            raise ValueError(f"--task-field: {cf['name']} is a {ftype} field, which "
+                             f"--create-task does not set")
+    return payload, labels
+
+
 def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT UP",
                      notes: str = "", due: str = "", assignee: str = "",
                      depends_on: str = "", follow_up_of: tuple = None,
-                     dry_run: bool = False) -> str:
+                     fields: list = None, dry_run: bool = False) -> str:
     """
     Create a task in Asana, assign a local ID, place it in the correct section,
     and append it to the local mirror. Returns the local ID (e.g. NORE-042).
@@ -2520,17 +2589,25 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
         payload["data"]["notes"] = notes
     if due:
         payload["data"]["due_on"] = due
+    # Set in the create call itself, so a field Asana rejects means no task,
+    # not a task missing its fields.
+    field_payload, field_labels = resolve_task_fields(proj, fields or [])
+    if field_payload:
+        payload["data"]["custom_fields"] = field_payload
 
     if dry_run:
         log.info(f"  [DRY-RUN] Would create task: {name!r} in {proj.prefix}/{section_name_upper}, "
                  f"assigned to {assignee_gid}"
                  + (f", blocking {depends_on}" if depends_on else "")
-                 + (f", following up {follow_up_of[1]}" if follow_up_of else ""))
+                 + (f", following up {follow_up_of[1]}" if follow_up_of else "")
+                 + (f", with {'; '.join(field_labels)}" if field_labels else ""))
         return f"{proj.prefix}-DRY"
 
     resp = _post("/tasks", payload)
     new_gid = resp["data"]["gid"]
     log.info(f"  Task created in Asana: {name!r} ({new_gid})")
+    for label in field_labels:
+        log.info(f"  Field set: {label}")
 
     # 3. Move to section
     _post(f"/sections/{section_gid}/addTask", {"data": {"task": new_gid}})
@@ -2920,6 +2997,11 @@ def main():
                              "Use 'me' for ASANA_USER_GID")
     parser.add_argument("--task-depends-on", metavar="GID", default="",
                         help="GID of the task this new task unblocks (optional)")
+    parser.add_argument("--task-field", metavar="NAME=VALUE", action="append", default=[],
+                        help="With --create-task: set a custom field on the new task. "
+                             "Repeatable. Enum takes an option name, reference a task "
+                             "(local ID, GID or URL), text and number the value. "
+                             "Refused before creating if it does not resolve")
     parser.add_argument("--follow-up-of", metavar="TASK", default="",
                         help="With --create-task: the task this one follows up (local ID, "
                              "GID or URL). Its description opens with a link to that task, "
@@ -3101,6 +3183,7 @@ def main():
                 assignee=assignee,
                 depends_on=args.task_depends_on,
                 follow_up_of=follow_up_of,
+                fields=args.task_field,
                 dry_run=args.dry_run,
             )
         except ValueError as e:
