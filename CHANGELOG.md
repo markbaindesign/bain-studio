@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-11-18
+
+### Added
+- **`sync.py --create-task --task-field "Name=Value"`** sets custom fields on the new task, repeatable. Enum takes an option name (a disabled option is refused, since Asana lists it but rejects it on write), reference takes a task as a local ID, GID or URL, text and number the value. Checked before anything is created, dry runs included, and sent in the create call, so a rejected field means no task rather than a task missing its fields.
+
 ## [2.5.0] - 2026-11-18
 
 ### Added
