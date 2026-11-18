@@ -2014,3 +2014,37 @@ def test_validate_accepts_where_blocks_that_name_a_place():
                   "Dropbox Work/internal/reviews/", "theme option options_footer_left",
                   "Harvest invoice 0042"):
         assert sync.validate_progress_note(f"Review: x || Where: {where}") == "", where
+
+
+# ---------------------------------------------------------------------------
+# --add-to-project multi-homes a task (how a task joins the SL queue)
+# ---------------------------------------------------------------------------
+
+def _proj(prefix="SL", gid="P2"):
+    p = MagicMock()
+    p.prefix, p.gid = prefix, gid
+    return p
+
+
+def test_add_to_project_posts_add_project():
+    task = {"data": {"name": "Fix header", "memberships": [{"project": {"gid": "P1"}}]}}
+    with patch.object(sync, "_get", return_value=task), \
+         patch.object(sync, "_post") as post:
+        assert sync.add_to_project("T1", _proj()) is True
+    post.assert_called_once_with("/tasks/T1/addProject", {"data": {"project": "P2"}})
+
+
+def test_add_to_project_skips_a_task_already_there():
+    task = {"data": {"name": "Fix header", "memberships": [{"project": {"gid": "P2"}}]}}
+    with patch.object(sync, "_get", return_value=task), \
+         patch.object(sync, "_post") as post:
+        assert sync.add_to_project("T1", _proj()) is False
+    post.assert_not_called()
+
+
+def test_add_to_project_dry_run_posts_nothing():
+    task = {"data": {"name": "Fix header", "memberships": []}}
+    with patch.object(sync, "_get", return_value=task), \
+         patch.object(sync, "_post") as post:
+        assert sync.add_to_project("T1", _proj(), dry_run=True) is True
+    post.assert_not_called()

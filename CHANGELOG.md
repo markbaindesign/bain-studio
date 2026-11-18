@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-11-18
+
+### Added
+- **`sync.py --add-to-project PREFIX --task-gid REF[,REF]`** adds tasks to a second project through bainbot, keeping their home project and local ID. `--add-to-project SL` queues them for the looper.
+
+### Removed
+- **The `/focus` skill.** Its name collided with Claude Code's built-in focus view; `/recap` or `/open` covers it. (Shipped in 2.4.1 without a changelog entry.)
+
 ## [2.4.1] - 2026-11-18
 
 ### Changed
