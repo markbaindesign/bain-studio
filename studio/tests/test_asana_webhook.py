@@ -407,3 +407,63 @@ def test_read_only_dirs_add_then_deny_edits_and_secrets():
 def test_worktrees_are_not_under_the_read_only_registry_dir():
     import asana_webhook as aw
     assert aw.REGISTRY_DIR not in aw.WORKTREES.parents
+
+
+# ---------------------------------------------------------------------------
+# Inbox poll
+# ---------------------------------------------------------------------------
+
+from asana_webhook_logic import home_prefix, inbox_cursor, inbox_wakes, newly_assigned  # noqa: E402
+
+IBOT, IMARK, IPMBOT = "b", "m", "p"
+ITRIG = {IMARK, IPMBOT}
+
+
+def _s(sub, who, at):
+    return {"resource_subtype": sub, "created_by": {"gid": who}, "created_at": at}
+
+
+def _task(assignee=IBOT, completed=False, created_by=IMARK, created_at="2026-11-19T09:00:00Z"):
+    return {"assignee": {"gid": assignee}, "completed": completed,
+            "created_by": {"gid": created_by}, "created_at": created_at}
+
+
+def test_newly_assigned_by_reassignment_story():
+    stories = [_s("comment_added", IBOT, "2026-11-19T09:05:00Z"), _s("assigned", IMARK, "2026-11-19T10:00:00Z")]
+    assert newly_assigned(_task(created_by=IBOT), stories, ITRIG, IBOT)
+    assert not newly_assigned(_task(created_by=IBOT), stories, ITRIG, IBOT, since="2026-11-19T10:01:00Z")
+
+
+def test_newly_assigned_when_created_assigned_and_bot_silent():
+    assert newly_assigned(_task(created_by=IPMBOT), [], ITRIG, IBOT)
+    later_reply = [_s("comment_added", IBOT, "2026-11-19T09:30:00Z")]
+    assert not newly_assigned(_task(created_by=IPMBOT), later_reply, ITRIG, IBOT)
+
+
+def test_newly_assigned_ignores_bot_created_and_other_assignees():
+    assert not newly_assigned(_task(created_by=IBOT), [], ITRIG, IBOT)
+    assert not newly_assigned(_task(assignee=IMARK), [], ITRIG, IBOT)
+    assert not newly_assigned(_task(completed=True), [], ITRIG, IBOT)
+
+
+def test_inbox_wakes_on_unanswered_comment_or_new_assignment_only():
+    replied = [_s("comment_added", IBOT, "2026-11-19T09:05:00Z")]
+    t = _task(created_by=IBOT)
+    assert not inbox_wakes(t, replied, ITRIG, IBOT)
+    assert inbox_wakes(t, replied + [_s("comment_added", IMARK, "2026-11-19T09:10:00Z")], ITRIG, IBOT)
+    assert not inbox_wakes(t, replied + [_s("comment_added", IMARK, "2026-11-19T09:10:00Z")], ITRIG, IBOT,
+                           since="2026-11-19T09:11:00Z")
+    assert not inbox_wakes(_task(assignee=IMARK), [_s("comment_added", IMARK, "2026-11-19T09:10:00Z")], ITRIG, IBOT)
+
+
+def test_home_prefix_skips_queues_and_unregistered():
+    gids = {"1": "SL", "2": "AW"}
+    task = {"memberships": [{"project": {"gid": "1"}}, {"project": {"gid": "9"}}, {"project": {"gid": "2"}}]}
+    assert home_prefix(task, gids, {"SL", "SLT"}) == "AW"
+    assert home_prefix({"memberships": [{"project": {"gid": "1"}}]}, gids, {"SL"}) == ""
+    assert home_prefix({"memberships": [{"section": {}}]}, gids) == ""
+
+
+def test_inbox_cursor_overlaps_previous_poll():
+    assert inbox_cursor("2026-11-19T10:00:00Z", "2026-11-19T10:03:00Z", 600, 3600) == "2026-11-19T09:50:00Z"
+    assert inbox_cursor("", "2026-11-19T10:00:00Z", 600, 3600) == "2026-11-19T09:00:00Z"

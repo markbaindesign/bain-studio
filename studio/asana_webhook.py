@@ -9,6 +9,7 @@
     python3 studio/asana_webhook.py list                  # webhook health per project
     python3 studio/asana_webhook.py unregister --project BD
     python3 studio/asana_webhook.py catchup               # daily webhook repair (systemd timer)
+    python3 studio/asana_webhook.py inbox on|off|once     # poll DevBot's tasks in every project
 
 Flow: Asana -> Tailscale Funnel -> 127.0.0.1:$ASANA_WEBHOOK_PORT/asana/{PREFIX}.
 The HTTP handler only verifies the signature, drops irrelevant events and writes a
@@ -54,6 +55,9 @@ from asana_webhook_logic import (  # noqa: E402
     dropbox_folder,
     git_config_parameters,
     hit_usage_limit,
+    home_prefix,
+    inbox_cursor,
+    inbox_wakes,
     idle_expired,
     mentions_user,
     wakes_bot,
@@ -103,6 +107,11 @@ RUNS = STATE / "runs"
 SECRETS = STATE / "secrets.json"
 HISTORY = STATE / "history.json"
 WATCH = STATE / "watch.json"
+INBOX = STATE / "inbox.json"
+INBOX_INTERVAL_S = 180     # how often the inbox poll looks at DevBot's tasks
+INBOX_OVERLAP_S = 600      # search lags behind writes; each poll reaches back this far
+INBOX_FIRST_S = 3600       # the first poll after switching on looks back an hour
+QUEUES = {"SL", "SLT"}     # cross-project queues: a task there is worked in its home project
 DATA_HOME = Path(os.getenv("XDG_DATA_HOME", Path.home() / ".local/share"))
 # Not under bain-studio/: that folder holds the registry, which runs may read but
 # never edit, and a deny on it would also deny the worktrees inside it.
@@ -418,12 +427,15 @@ class Worker:
                 f.unlink(missing_ok=True)
                 continue
             prefix = item.get("prefix")
-            tasks = resolve(item) if prefix in watch and prefix in project_map() else set()
+            inbox = item.get("source") == "inbox"
+            allowed = (prefix in watch or inbox) and prefix in project_map()
+            tasks = resolve(item) if allowed else set()
             f.unlink(missing_ok=True)
             if tasks:
                 now = time.time()
                 for gid in tasks:
-                    self.pending[gid] = {"prefix": prefix, "last": now}
+                    self.pending[gid] = {"prefix": prefix, "last": now,
+                                         "inbox": inbox or self.pending.get(gid, {}).get("inbox", False)}
                 # Only Mark's own activity keeps the project watched. The bot's
                 # comments never get this far (candidate_events drops them).
                 if activity_from(item, sync.USER_GID or ""):
@@ -436,7 +448,7 @@ class Worker:
 
         now = time.time()
         settled = [g for g, p in sorted(self.pending.items(), key=lambda kv: kv[1]["last"])
-                   if now - p["last"] >= DEBOUNCE_S and p["prefix"] in watch]
+                   if now - p["last"] >= DEBOUNCE_S and (p["prefix"] in watch or p.get("inbox"))]
         running = {g: r["prefix"] for g, r in self.running.items()}
         for gid in launchable(settled, running, {g: self.pending[g]["prefix"] for g in settled},
                               MAX_RUNS_PER_PROJECT, MAX_RUNS_TOTAL):
@@ -457,7 +469,8 @@ class Worker:
             if any(r["prefix"] == prefix for r in self.running.values()):
                 continue
             _locked_json(WATCH, lambda d: d.pop(prefix, None))
-            for gid in [g for g, p in self.pending.items() if p["prefix"] == prefix]:
+            for gid in [g for g, p in self.pending.items()
+                        if p["prefix"] == prefix and not p.get("inbox")]:
                 del self.pending[gid]
             log(f"UNWATCHED {prefix} idle {IDLE_S // 60}m")
             _notify(f"Stopped watching {prefix}: no activity for {IDLE_S // 60} minutes. "
@@ -584,6 +597,7 @@ def serve() -> None:
         sys.exit("ASANA_BAINBOT_GID and ASANA_WEBHOOK_TRIGGER_USERS must be set in studio/.env")
     worker = Worker()
     threading.Thread(target=worker.loop, daemon=True).start()
+    threading.Thread(target=inbox_loop, daemon=True).start()
     log(f"START listening on 127.0.0.1:{PORT}, watching {sorted(watched())}")
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
 
@@ -759,6 +773,82 @@ def watch(prefix: str) -> bool:
     return True
 
 
+# ---------------------------------------------------------------------------
+# Inbox poll: every project at once, no watch needed
+# ---------------------------------------------------------------------------
+
+def _utc_now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def workable(proj) -> bool:
+    """A project a bot run can work in: the root of its own git repository."""
+    top = _git(proj.root, "rev-parse", "--show-toplevel").stdout.strip()
+    return bool(top) and Path(top).resolve() == Path(proj.root).resolve()
+
+
+def inbox_poll() -> list:
+    """One pass over DevBot's open tasks changed since the last poll, in every
+    registered project. Queues each task with an unanswered comment from Mark or
+    PmBot, or newly assigned to DevBot, for the worker. Returns (prefix, gid) pairs."""
+    state = _locked_json(INBOX)
+    now = _utc_now()
+    after = inbox_cursor(state.get("last_poll", ""), now, INBOX_OVERLAP_S, INBOX_FIRST_S)
+    projects = project_map()
+    prefix_of_gid = {p.gid: prefix for prefix, p in projects.items()}
+    history = _locked_json(HISTORY)
+    params = {"assignee.any": BOT_GID, "modified_at.after": after, "completed": "false",
+              "sort_by": "modified_at", "limit": 100,
+              "opt_fields": "name,completed,assignee.gid,created_at,created_by.gid,memberships.project.gid"}
+    tasks = sync._get(f"/workspaces/{sync.WORKSPACE_GID}/tasks/search", params).get("data") or []
+    found = []
+    for t in tasks:
+        prefix = home_prefix(t, prefix_of_gid, QUEUES)
+        if not prefix or not workable(projects[prefix]):
+            continue
+        stories = sync._get(f"/tasks/{t['gid']}/stories",
+                            {"opt_fields": "resource_subtype,created_by.gid,created_at"}).get("data") or []
+        # Only what happened inside this poll's window counts: a comment or assignment
+        # from before it was seen by an earlier poll, or predates switching the poll on.
+        # Without this floor every backlog task PmBot ever assigned would wake at once.
+        since = max(history.get(t["gid"], {}).get("last_wake", ""), after)
+        if inbox_wakes(t, stories, TRIGGER_USERS, BOT_GID, since):
+            found.append((prefix, t["gid"]))
+    for prefix in sorted({p for p, _ in found}):
+        enqueue({"prefix": prefix, "tasks": [g for p, g in found if p == prefix], "source": "inbox"})
+    _locked_json(INBOX, lambda d: d.update(last_poll=now))
+    log(f"INBOX polled since={after} tasks={len(tasks)} queued={found}")
+    return found
+
+
+def inbox_on() -> bool:
+    return bool(_locked_json(INBOX).get("on"))
+
+
+def inbox_loop() -> None:
+    while True:
+        if inbox_on():
+            try:
+                inbox_poll()
+            except Exception as ex:
+                log(f"INBOX poll failed: {ex!r}")
+        time.sleep(INBOX_INTERVAL_S)
+
+
+def inbox_cmd(action: str) -> None:
+    if action in ("on", "off"):
+        _locked_json(INBOX, lambda d: d.update(on=action == "on"))
+        log(f"INBOX {action}")
+    if action == "once":
+        found = inbox_poll()
+        print(f"Queued {len(found)} task(s): " + (", ".join(f"{p} {g}" for p, g in found) or "none")
+              + ("" if listener_up() else ". The listener is down, so nothing will start until it is up."))
+        return
+    state = _locked_json(INBOX)
+    print(f"Inbox poll: {'on' if state.get('on') else 'off'}, every {INBOX_INTERVAL_S // 60} min, "
+          f"last poll {state.get('last_poll') or 'never'}")
+
+
 def unwatch(prefix: str) -> None:
     removed = {}
     _locked_json(WATCH, lambda d: removed.update(x=d.pop(prefix, None)))
@@ -777,6 +867,7 @@ def status() -> None:
     for prefix, e in sorted(w.items()):
         left = max(0, IDLE_S - (now - (e.get("last_activity") or e.get("since") or now)))
         print(f"{prefix}: watched, stops in {left / 60:.0f}m without activity")
+    print(f"Inbox poll: {'on' if inbox_on() else 'off'} (every project, every {INBOX_INTERVAL_S // 60} min)")
     print(f"Listener: {'up' if listener_up() else 'DOWN'}")
     for wt in sorted(WORKTREES.glob("*/*")) if WORKTREES.exists() else []:
         print(f"Worktree: {wt}")
@@ -793,6 +884,8 @@ def main() -> None:
         sub.add_parser(name).add_argument("--project", required=True, metavar="PREFIX")
     sub.add_parser("list")
     sub.add_parser("catchup")
+    sub.add_parser("inbox").add_argument("action", nargs="?", default="status",
+                                         choices=("on", "off", "once", "status"))
     args = ap.parse_args()
 
     if args.cmd == "serve":
@@ -811,6 +904,8 @@ def main() -> None:
         list_hooks()
     elif args.cmd == "catchup":
         catchup()
+    elif args.cmd == "inbox":
+        inbox_cmd(args.action)
 
 
 if __name__ == "__main__":
