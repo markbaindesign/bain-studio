@@ -180,6 +180,7 @@ class MirrorTask:
     looper_status: str
     order: int  # position in the mirror, for stable tiebreak
     in_done_section: bool = False
+    asana_id: str = ""
 
 
 _TASK_HEADER_RE = re.compile(r"^###\s*(.+)$", re.MULTILINE)
@@ -208,10 +209,12 @@ def parse_mirror_tasks(mirror_text: str) -> list[MirrorTask]:
         status_m = re.search(r"\*\*Looper Status:\*\*\s*(.+)", block)
         looper_status = status_m.group(1).strip() if status_m else ""
         in_done = done_idx != -1 and block_start > done_idx
+        gid_m = re.search(r"\*\*Asana ID:\*\*\s*(\d+)", block)
 
         tasks.append(MirrorTask(
             local_id=local_id, title=header_line, priority=priority,
             looper_status=looper_status, order=order, in_done_section=in_done,
+            asana_id=gid_m.group(1) if gid_m else "",
         ))
     return tasks
 
@@ -235,6 +238,55 @@ def find_orphans(tasks: list[MirrorTask], live_current_tasks: set[str]) -> list[
         and t.looper_status.strip().lower() == "in progress"
         and t.local_id not in live_current_tasks
     ]
+
+
+def set_task_fields(mirror_text: str, local_id: str, fields: dict) -> str:
+    """Rewrite `- **Name:** value` lines inside one task's block of a mirror.
+
+    The runner moves a task's Looper Status (and assignee) this way and lets
+    sync.py push it, as the skill always did by hand. Only the named task's block
+    is touched, and only lines that already exist: a field missing from the block
+    raises rather than being appended somewhere sync.py would not read it.
+    """
+    blocks = re.split(r"(\n(?=### ))", mirror_text)
+    hit = False
+    for i, block in enumerate(blocks):
+        if not block.startswith("### "):
+            continue
+        lid = re.search(r"\*\*Local ID:\*\*\s*(\S+)", block)
+        if not lid or lid.group(1) != local_id:
+            continue
+        for name, value in fields.items():
+            pat = re.compile(r"^(- \*\*" + re.escape(name) + r":\*\*) .*$", re.MULTILINE)
+            if not pat.search(block):
+                raise KeyError(f"{local_id} has no '{name}' line in the mirror")
+            block = pat.sub(lambda m: f"{m.group(1)} {value}", block, count=1)
+        blocks[i] = block
+        hit = True
+    if not hit:
+        raise KeyError(f"{local_id} is not in the mirror")
+    return "".join(blocks)
+
+
+OUTCOME_COMPLETE = "COMPLETE"
+OUTCOME_BLOCKED = "BLOCKED"
+
+
+def parse_outcome(output: str, local_id: str) -> str:
+    """COMPLETE, BLOCKED or "" from a confined run's output: the last
+    `<promise>{ID}_COMPLETE|BLOCKED</promise>` naming this task. A promise for
+    another task (quoted from a comment, say) does not count."""
+    found = re.findall(r"<promise>" + re.escape(local_id) + r"_(COMPLETE|BLOCKED)</promise>",
+                       output or "")
+    return found[-1] if found else ""
+
+
+def looper_names(run_id: str, local_id: str) -> tuple[str, str]:
+    """(worktree folder name, branch) for one task in one run. One branch per
+    task: git checks a branch out in only one worktree, and tidy_worktree counts
+    a branch's own commits to decide whether to keep it."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "-", local_id)
+    return f"looper-{run_id}-{safe}", f"looper/{run_id}/{safe}"
 
 
 # ---------------------------------------------------------------------------

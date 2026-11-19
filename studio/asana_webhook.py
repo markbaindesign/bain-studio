@@ -44,15 +44,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import sync  # noqa: E402  (loads studio/.env, Asana helpers, project discovery)
+import bot_worktree  # noqa: E402
+from bot_worktree import DISALLOWED, REGISTRY_DIR, WORKTREES  # noqa: E402
 from asana_webhook_logic import (  # noqa: E402
     body_length_error,
     candidate_events,
-    config_dir_from_envrc,
-    GIT_WRITE_DENIES,
     activity_from,
-    denylist_hits,
     dropbox_folder,
-    git_config_parameters,
     hit_usage_limit,
     idle_expired,
     mentions_user,
@@ -60,12 +58,7 @@ from asana_webhook_logic import (  # noqa: E402
     launchable,
     over_rate_limit,
     prefix_from_path,
-    project_edit_deny,
-    read_only_dirs,
-    protected_path_denies,
-    run_allow_rules,
     run_name,
-    secret_read_denies,
     should_reregister,
     story_triggers,
     task_gid_for,
@@ -73,7 +66,6 @@ from asana_webhook_logic import (  # noqa: E402
     unanswered,
     verify_signature,
 )
-from voice.tasks import OUTWARD_TOOLS  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Config
@@ -103,31 +95,13 @@ RUNS = STATE / "runs"
 SECRETS = STATE / "secrets.json"
 HISTORY = STATE / "history.json"
 WATCH = STATE / "watch.json"
-DATA_HOME = Path(os.getenv("XDG_DATA_HOME", Path.home() / ".local/share"))
-# Not under bain-studio/: that folder holds the registry, which runs may read but
-# never edit, and a deny on it would also deny the worktrees inside it.
-WORKTREES = DATA_HOME / "bain-bot-worktrees"
-REGISTRY_DIR = DATA_HOME / "bain-studio"
 LOG = STATE / "webhook.log"
 
 # systemd's PATH lacks ~/.local/bin (ADR 014's 90 silent FileNotFoundErrors).
 CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
 
-DISALLOWED = OUTWARD_TOOLS + [
-    "mcp__claude_ai_Asana",          # every Asana MCP tool: mutations go through sync.py
-    "mcp__claude_ai_Gmail__create_draft",
-    "WebFetch", "WebSearch",         # no network egress for a run that reads Asana comments
-    "Bash(git flow * publish *)",
-]
-
 STUDIO_ROOT = Path(__file__).resolve().parents[1]
 SYNC_PY = STUDIO_ROOT / "studio" / "sync.py"
-
-# Runs use --restricted (ADR 025): user, project and local settings files are ignored,
-# so run_allow_rules() is the whole allow-list rather than an addition to the project's
-# own. Only the tools in RUN_TOOLS exist; anything not allowed is denied and the agent
-# asks in Asana.
-RUN_TOOLS = "Read,Glob,Grep,Edit,Write,Bash"
 
 AGENT_PROMPT = """An Asana webhook woke you. Mark or PmBot has new activity on task {lid} in project {prefix}, assigned to DevBot or mentioning it:
 - {gid}: {name}
@@ -320,73 +294,21 @@ def resolve(item: dict) -> set:
     return out
 
 
-def _git(cwd: Path, *args) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
-
-
-def base_branch(root: Path) -> str:
-    """develop under git flow, else whatever the checkout's default branch is."""
-    for name in ("develop", "main", "master"):
-        if _git(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}").returncode == 0:
-            return name
-    return "HEAD"
-
-
 def ensure_worktree(proj, name: str) -> tuple:
     """(worktree path, branch) for a task, created from the base branch on first
     use and reused by every later run on the same task."""
-    wt = WORKTREES / proj.prefix / name
-    branch = f"bot/{name}"
-    if (wt / ".git").exists():
-        return wt, branch
-    wt.parent.mkdir(parents=True, exist_ok=True)
-    _git(proj.root, "worktree", "prune")
-    if _git(proj.root, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}").returncode == 0:
-        r = _git(proj.root, "worktree", "add", str(wt), branch)
-    else:
-        r = _git(proj.root, "worktree", "add", "-b", branch, str(wt), base_branch(proj.root))
-    if r.returncode != 0:
-        raise RuntimeError(f"git worktree add failed: {r.stderr.strip()}")
-    return wt, branch
+    return bot_worktree.ensure_worktree(proj.root, WORKTREES / proj.prefix / name, f"bot/{name}")
 
 
 def tidy_worktree(proj, wt: Path, branch: str) -> str:
     """Remove a run's worktree and branch when it changed nothing (an answer, not
-    work). Anything committed or left uncommitted stays for Mark. Returns what
-    was done, for the log."""
-    if _git(wt, "status", "--porcelain").stdout.strip():
-        return "kept (uncommitted changes)"
-    base = base_branch(proj.root)
-    ahead = _git(proj.root, "rev-list", "--count", f"{base}..{branch}").stdout.strip()
-    if ahead not in ("", "0"):
-        hits = guard_hits(proj, base, branch)
-        if hits:
-            _notify(f"Bot branch {branch} in {proj.prefix} carries client data "
-                    f"({', '.join(hits[:5])}). Do not merge it as it is.", proj.prefix)
-            return f"kept ({ahead} commit(s) on {branch}, CLIENT DATA: {hits[:5]})"
-        return f"kept ({ahead} commit(s) on {branch})"
-    _git(proj.root, "worktree", "remove", str(wt))
-    _git(proj.root, "branch", "-d", branch)
-    return "removed (no changes)"
-
-
-DENYLIST_PY = STUDIO_ROOT / "studio" / "scripts" / "gen-denylist.py"
-
-
-def guard_hits(proj, base: str, branch: str) -> list:
-    """Run the client-data check on a bot branch of a repo that has the commit
-    guard installed (the public tooling repos). Runs commit with hooks off, so
-    the guard itself never saw these commits. [] for any other repo: a client's
-    own repo legitimately names its client."""
-    if not _git(proj.root, "config", "core.hooksPath").stdout.strip():
-        return []
-    terms = subprocess.run([sys.executable, str(DENYLIST_PY)], capture_output=True, text=True)
-    if terms.returncode != 0:
-        return ["(denylist unavailable: check the branch by hand)"]
-    added = "\n".join(l[1:] for l in _git(proj.root, "diff", f"{base}..{branch}").stdout.splitlines()
-                      if l.startswith("+") and not l.startswith("+++"))
-    msgs = _git(proj.root, "log", "--format=%B", f"{base}..{branch}").stdout
-    return denylist_hits(added + "\n" + msgs, terms.stdout.splitlines())
+    work). Anything committed or left uncommitted stays for Mark, and a kept
+    branch carrying client data is reported. Returns what was done, for the log."""
+    result, hits = bot_worktree.tidy_worktree(proj.root, wt, branch)
+    if hits:
+        _notify(f"Bot branch {branch} in {proj.prefix} carries client data "
+                f"({', '.join(hits[:5])}). Do not merge it as it is.", proj.prefix)
+    return result
 
 
 def _tail(path: Path, n: int = 4000) -> str:
@@ -492,35 +414,19 @@ class Worker:
             title = "(name unavailable)"
         claude_md = proj.root / "CLAUDE.md"
         dropbox = dropbox_folder(claude_md.read_text() if claude_md.exists() else "")
-        add_dirs, ro_denies = read_only_dirs([REGISTRY_DIR, dropbox])
         prompt = AGENT_PROMPT.format(prefix=prefix, gid=gid, lid=name, name=title, worktree=wt,
                                      branch=branch, root=proj.root, sync=SYNC_PY,
                                      registry=REGISTRY_DIR, dropbox=dropbox or "none")
 
-        env = dict(os.environ)
-        # sync.py loads studio/.env, which carries an API key for the Hermes
-        # collectors. Left in, it outranks the claude.ai login and bills every run
-        # to API credits instead of Mark's Max plan (seen in the first live run).
-        for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
-            env.pop(key, None)
-        env["PATH"] = f"{Path.home() / '.local/bin'}:{env.get('PATH', '/usr/bin:/bin')}"
-        envrc = proj.root / ".envrc"
-        cfg = config_dir_from_envrc(envrc.read_text() if envrc.exists() else "", Path.home())
-        if cfg:
-            env["CLAUDE_CONFIG_DIR"] = cfg
-        # A run can write files and `git commit`; with hooks off, a hook it wrote can't run.
-        env["GIT_CONFIG_PARAMETERS"] = git_config_parameters(env.get("GIT_CONFIG_PARAMETERS", ""))
+        env = bot_worktree.run_env(os.environ, proj.root)
+        cfg = env.get("CLAUDE_CONFIG_DIR", "")
 
         RUNS.mkdir(parents=True, exist_ok=True)
         run_log = RUNS / f"{prefix}-{name}-{datetime.datetime.now():%Y%m%d-%H%M%S}.log"
         out = run_log.open("w")
         proc = subprocess.Popen(
-            [CLAUDE_BIN, "-p", prompt, "--model", MODEL,
-             "--restricted", "--strict-mcp-config", "--tools", RUN_TOOLS, *add_dirs,
-             "--allowedTools", *run_allow_rules(wt, SYNC_PY),
-             "--disallowedTools", *DISALLOWED, *GIT_WRITE_DENIES, *project_edit_deny(proj.root),
-             *protected_path_denies(proj.root), *protected_path_denies(wt),
-             *secret_read_denies(proj.root), *secret_read_denies(wt), *ro_denies],
+            bot_worktree.confined_argv(CLAUDE_BIN, prompt, MODEL, proj.root, wt, SYNC_PY,
+                                       [REGISTRY_DIR, dropbox]),
             cwd=wt, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
             start_new_session=True)
         self.running[gid] = {"proc": proc, "started": time.time(), "out": out, "log": run_log,
@@ -731,7 +637,7 @@ def watch(prefix: str) -> bool:
     if not proj:
         print(f"{prefix} has no registry entry.")
         return False
-    top = _git(proj.root, "rev-parse", "--show-toplevel").stdout.strip()
+    top = bot_worktree._git(proj.root, "rev-parse", "--show-toplevel").stdout.strip()
     if not top or Path(top).resolve() != Path(proj.root).resolve():
         print(f"{prefix} is not the root of its own git repository ({proj.root}), so a bot "
               "run has nowhere safe to work. SL and SLT are queues inside bain-studio.")
