@@ -1,12 +1,13 @@
 ---
 name: project-watcher
-description: Watch a project so DevBot answers Mark's Asana comments and assignments on its bot tasks within about a minute. Stops by itself after 30 minutes of no activity. Usage /project-watcher PREFIX, /project-watcher stop PREFIX, /project-watcher status.
+description: Watch a project so DevBot answers Mark's Asana comments and assignments on its bot tasks within about a minute. A Claude session in the project watches it already; this is the manual switch. Usage /project-watcher PREFIX, /project-watcher stop PREFIX, /project-watcher status.
 ---
 
 # /project-watcher
 
 A shortcut for the webhook listener's watch commands. All logic is in the script; this skill
-only runs it.
+only runs it. Opening a Claude session in a project already watches it (session hooks), so this
+is for watching one you are not in, or stopping a watch.
 
 | Mark types | Run |
 |---|---|

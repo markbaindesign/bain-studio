@@ -112,3 +112,30 @@ Decided with Mark in a grill session:
   because a run could reach neither. Writes there stay with interactive sessions: a Dropbox
   edit has no branch and no review. Worktrees moved to `$XDG_DATA_HOME/bain-bot-worktrees/`
   so the registry folder can be denied to edits whole.
+
+## Addendum 2026-11-19: a Claude session holds the watch (BSTD-894)
+
+Watching only started when Mark remembered `/project-watcher`, and it lapsed after 30 quiet
+minutes in Asana even while he was still working in the project. A comment after that was
+logged `IGNORED` and dropped with no reply and no Slack line.
+
+- **Opening a Claude session in a registered project watches it.** A `SessionStart` hook
+  (`asana_webhook.py session-start`) maps the session's directory to the deepest registered
+  project root and records the session. Starting a watch, which may register the webhook and
+  runs the sweep, is left to the listener's worker so the hook stays fast. It is async, prints
+  nothing and always exits 0.
+- **An open session holds the watch.** The watch ends 30 minutes after the last session in
+  the project closes or Mark's last activity, whichever is later. `SessionEnd` records the
+  close. Because it does not fire on a crash or kill, the worker also checks each recorded
+  Claude pid in `/proc` and treats a session that has gone as closing then.
+- **A lapsed watch restarts on Mark's comment.** When a watch lapses the project goes into
+  `lapsed.json`. A later comment from Mark (not PmBot) on a bot task there watches the
+  project again, queues that task and says so on Slack. It does not sweep. `unwatch` is a
+  deliberate stop and clears the lapse, so its comments stay ignored, as do comments on
+  projects never watched.
+- **Bot sessions never start or extend a watch.** Webhook runs carry `BAIN_BOT_RUN=1`, looper
+  sessions carry `LOOPER_RUN_ID`, and any session in a bot worktree is skipped. Runs use
+  `--restricted` and load no hooks anyway; this does not depend on that.
+- **Hooks are installed by script, not by hand:** `studio/scripts/install-watch-hooks.py
+  --apply`, run from the checkout the listener runs from, covering `~/.claude` and
+  `~/.claude-kf`.
