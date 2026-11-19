@@ -16,9 +16,14 @@ python3 $SCRIPT uninvoiced [--all]
 python3 $SCRIPT invoices [CLIENT] [--from YYYY-MM-DD] [--to YYYY-MM-DD]   # read-only: issued, sent, paid, recurring
 python3 $SCRIPT hours PROJECT [--from YYYY-MM-DD --to YYYY-MM-DD] [--type T] [--create]
 python3 $SCRIPT milestone PROJECT --amount N --description TEXT [--type T] [--create]
+python3 $SCRIPT expense PROJECT --amount N --category C --notes TEXT [--date YYYY-MM-DD] [--receipt FILE] [--create]
 ```
 
-`PROJECT` is a Harvest project ID or a fragment of an active project's or client's name (the
+`expense` logs a reimbursable expense (licence, hosting) with its receipt, for rebilling. It
+previews first, and `--create` refuses on a likely duplicate unless `--allow-duplicate`. The
+amount is in the client's currency, which the preview names.
+
+`PROJECT` is a Harvest project ID, project code or a fragment of an active project's or client's name (the
 skill arg, if given). `--type` is `es`, `eu`, `intl` or `upwork`. Run `--help` on a subcommand
 for the rest (`--currency`, `--customer-vat`, `--issue-date`, `--allow-draft`, `--summary`).
 

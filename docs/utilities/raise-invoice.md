@@ -1,6 +1,6 @@
 ---
 description: Check uninvoiced Harvest hours and raise Harvest draft invoices from hours or as a milestone
-command: python3 studio/tools/raise-invoice/raise_invoice.py {uninvoiced|invoices|hours|milestone}
+command: python3 studio/tools/raise-invoice/raise_invoice.py {uninvoiced|invoices|hours|milestone|expense}
 invoke: /raise-invoice
 god: financial-review
 role: Finance
@@ -22,12 +22,14 @@ python3 studio/tools/raise-invoice/raise_invoice.py uninvoiced [--all]
 python3 studio/tools/raise-invoice/raise_invoice.py invoices [CLIENT] [--from D] [--to D] [--state S]
 python3 studio/tools/raise-invoice/raise_invoice.py hours PROJECT [--from D --to D] [--type T] [--create]
 python3 studio/tools/raise-invoice/raise_invoice.py milestone PROJECT --amount N --description TEXT [--type T] [--create]
+python3 studio/tools/raise-invoice/raise_invoice.py expense PROJECT --amount N --category C --notes TEXT [--date D] [--receipt FILE] [--create]
 
 # As a skill (walks the preview → confirm → create gate)
 /raise-invoice [project]
 ```
 
-`PROJECT` is a Harvest project ID or a fragment of an active project's or client's name.
+`PROJECT` is a Harvest project ID, an active project's code (`KFX`), or a fragment of an active
+project's or client's name. A code match wins over a name fragment.
 Needs `HARVEST_TOKEN` and `HARVEST_ACCOUNT_ID` in `studio/.env`. Reuses
 `studio/dashboard/harvest_client.py`.
 
@@ -46,7 +48,16 @@ Needs `HARVEST_TOKEN` and `HARVEST_ACCOUNT_ID` in `studio/.env`. Reuses
 - **milestone** — previews a draft with one line for `--amount` (net, before tax) and
   `--description`.
 
-`hours` and `milestone` only preview. `--create` makes the draft, and needs an explicit `--type`.
+- **expense** — logs a reimbursable expense (a plugin licence, hosting, stock images) on a
+  project, so it lands on the client's next invoice. `--category` is an expense category ID or
+  name fragment (`plugin` for Premium Plugin); `--receipt` attaches a PDF or image; `--date`
+  defaults to today; `--non-billable` keeps it off the invoice. The preview shows the client's
+  currency, which is the currency Harvest records the amount in: convert a receipt in another
+  currency first. It warns about an expense already on the project within 60 days with the
+  same amount on the same day, or the same amount and the same first word in the notes, and
+  `--create` refuses on one unless `--allow-duplicate`.
+
+`hours`, `milestone` and `expense` only preview. For invoices `--create` makes the draft, and needs an explicit `--type`.
 It refuses if the client already has a draft unless `--allow-draft`.
 
 **`--create` is never a dry run.** Importing time onto a draft marks those hours invoiced in

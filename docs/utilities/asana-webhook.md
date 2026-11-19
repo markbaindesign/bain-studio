@@ -46,6 +46,28 @@ is still going, watching stops when it finishes. Slack says when it stops.
 
 Events for an unwatched project are dropped, not saved: `watch` picks them up with its sweep.
 
+## Inbox poll: every project at once
+
+```
+python3 studio/asana_webhook.py inbox on       # poll every 3 minutes, from the listener
+python3 studio/asana_webhook.py inbox off
+python3 studio/asana_webhook.py inbox once     # one poll now
+python3 studio/asana_webhook.py inbox          # on or off, and when it last ran
+```
+
+Asana has no API for a user's Inbox, so this is the substitute. While it is on, the listener
+searches the workspace every 3 minutes for open tasks assigned to DevBot that changed since the
+last poll (reaching back 10 minutes, because search lags behind writes), in **every** registered
+project, watched or not and with or without a webhook. A task is queued when, inside that
+window, Mark or PmBot commented with no DevBot reply since, or assigned it to DevBot (or created
+it already assigned). Anything older was seen by an earlier poll, or predates switching it on,
+so backlog tasks never wake in a burst. The first poll looks back one hour.
+
+A task in SL or SLT is worked in its home project. A task whose project is not the root of its
+own git repository is skipped. Queued tasks go through the same worker as webhook events: the
+same run limits, rate cap, worktrees and permissions. The poll never expires: it runs until
+switched off. Use it, or `watch`, not both for the same reason; they do not conflict.
+
 ## What wakes the bot
 
 All three need the event to be authored by a user in `ASANA_WEBHOOK_TRIGGER_USERS` (Mark and
@@ -157,6 +179,7 @@ State lives outside the repo, under `$XDG_STATE_HOME/bain-studio/asana-webhook/`
 | `webhook.log` | handshakes, rejections, watch changes, queues, launches, exits |
 | `runs/{PREFIX}-{LOCAL-ID}-{stamp}.log` | full output of each run |
 | `watch.json` | watched projects and their last activity |
+| `inbox.json` | whether the inbox poll is on, and when it last ran |
 | `secrets.json` (0600) | per-project webhook secret and webhook GID |
 | `history.json` | per-task run timestamps (rate cap) and last wake time (sweep) |
 | `queue/` | events waiting for the worker |
