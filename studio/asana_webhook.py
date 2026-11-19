@@ -9,6 +9,7 @@
     python3 studio/asana_webhook.py list                  # webhook health per project
     python3 studio/asana_webhook.py unregister --project BD
     python3 studio/asana_webhook.py catchup               # daily webhook repair (systemd timer)
+    python3 studio/asana_webhook.py nightly [--dry-run]   # answer unwatched projects (systemd timer)
 
 Flow: Asana -> Tailscale Funnel -> 127.0.0.1:$ASANA_WEBHOOK_PORT/asana/{PREFIX}.
 The HTTP handler only verifies the signature, drops irrelevant events and writes a
@@ -74,6 +75,7 @@ from asana_webhook_logic import (  # noqa: E402
     verify_signature,
 )
 from voice.tasks import OUTWARD_TOOLS  # noqa: E402
+from asana_webhook_logic import looper_claimed, nightly_wakes  # noqa: E402  (nightly sweep)
 
 # ---------------------------------------------------------------------------
 # Config
@@ -677,10 +679,11 @@ def list_hooks() -> None:
                   f"\n    target={h.get('target')}")
 
 
-def open_tasks(proj) -> list:
+def open_tasks(proj, extra_fields: str = "") -> list:
     """Every incomplete task in the project, following next_page."""
+    fields = "assignee.gid,completed" + (f",{extra_fields}" if extra_fields else "")
     params = {"project": proj.gid, "completed_since": "now",
-              "opt_fields": "assignee.gid,completed", "limit": 100}
+              "opt_fields": fields, "limit": 100}
     out = []
     while True:
         page = sync._get("/tasks", params)
@@ -708,6 +711,125 @@ def catchup() -> None:
                 register(prefix)
         except Exception as ex:
             log(f"CATCHUP {prefix} failed: {ex}")
+
+
+# ---------------------------------------------------------------------------
+# Nightly sweep: unwatched projects (BSTD-895)
+# ---------------------------------------------------------------------------
+
+# The looper runner's lock (studio/scripts/looper_runner.py). Read, never written:
+# a runner that finds it held exits, and the 02:00 window would be lost.
+LOOPER_LOCK = Path("/tmp/studio-looper/runner.lock")
+# Only triggers from the last week count, so a stale thread is not revived.
+NIGHTLY_LOOKBACK_DAYS = 7
+# A ceiling on Opus runs per night, on top of the listener's own limits.
+NIGHTLY_MAX_RUNS = 6
+# How long to wait for a looper window still running at start time.
+NIGHTLY_WAIT_FOR_LOOPER_S = 2 * 60 * 60
+
+
+def looper_running() -> bool:
+    """Is a looper runner alive? A lock whose pid is dead is stale."""
+    try:
+        pid = int(LOOPER_LOCK.read_text().strip())
+    except (OSError, ValueError):
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def nightly_candidates() -> list:
+    """(prefix, gid, local id) for every task the listener would have woken the bot
+    on, in projects that are not watched. Watched projects are the listener's;
+    looper-queued tasks are the looper's."""
+    if not (BOT_GID and TRIGGER_USERS):
+        sys.exit("ASANA_BAINBOT_GID and ASANA_WEBHOOK_TRIGGER_USERS must be set in studio/.env")
+    watch = watched()
+    history = _locked_json(HISTORY)
+    cutoff = (datetime.datetime.now(datetime.timezone.utc)
+              - datetime.timedelta(days=NIGHTLY_LOOKBACK_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
+    out = []
+    for prefix, proj in sorted(project_map().items()):
+        if prefix in watch:
+            continue
+        top = subprocess.run(["git", "-C", str(proj.root), "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True).stdout.strip()
+        if not top or Path(top).resolve() != Path(proj.root).resolve():
+            continue   # SL, SLT and anything else with no repo of its own
+        try:
+            tasks = open_tasks(proj, "custom_fields.name,custom_fields.display_value")
+        except Exception as ex:
+            log(f"NIGHTLY {prefix} task list failed: {ex}")
+            continue
+        ids = None
+        for t in tasks:
+            if looper_claimed(t):
+                continue
+            try:
+                stories = sync._get(f"/tasks/{t['gid']}/stories",
+                                    {"opt_fields": "resource_subtype,created_by.gid,created_at,html_text"})["data"]
+            except Exception as ex:
+                log(f"NIGHTLY {prefix} {t['gid']} stories failed: {ex}")
+                continue
+            since = history.get(t["gid"], {}).get("last_wake", "")
+            if nightly_wakes(t, stories, TRIGGER_USERS, BOT_GID, since, cutoff):
+                ids = local_ids(proj) if ids is None else ids
+                out.append((prefix, t["gid"], run_name(t["gid"], ids)))
+    return out
+
+
+def nightly(dry_run: bool = False) -> None:
+    """Answer what was said on bot tasks in projects nobody was watching. Each task
+    gets a run exactly as the listener would launch it (own worktree, one closing
+    comment, same limits), never while the looper runs. See ADR 025."""
+    waited = 0
+    while looper_running() and not dry_run:
+        if waited >= NIGHTLY_WAIT_FOR_LOOPER_S:
+            log("NIGHTLY skipped: the looper was still running")
+            _notify("The nightly bot sweep did not run: the looper window was still going.", "BSTD")
+            return
+        time.sleep(60)
+        waited += 60
+    picks = nightly_candidates()
+    over = picks[NIGHTLY_MAX_RUNS:]
+    picks = picks[:NIGHTLY_MAX_RUNS]
+    if dry_run:
+        for prefix, gid, lid in picks:
+            print(f"would run: {prefix} {lid} ({gid})")
+        for prefix, gid, lid in over:
+            print(f"over the nightly limit: {prefix} {lid} ({gid})")
+        print(f"{len(picks)} run(s), {len(over)} left for tomorrow.")
+        return
+    log(f"NIGHTLY start runs={[lid for _, _, lid in picks]} over_limit={[lid for _, _, lid in over]}")
+    worker = Worker()
+    pending = {gid: prefix for prefix, gid, _ in picks}
+    while pending or worker.running:
+        worker._reap()
+        if pending and looper_running():
+            log(f"NIGHTLY the looper started: {len(pending)} task(s) not launched")
+            pending.clear()
+        # Mark may start watching a project as his day begins: the listener owns it then.
+        now_watched = watched()
+        for gid in [g for g, p in pending.items() if p in now_watched]:
+            log(f"NIGHTLY {pending.pop(gid)} {gid} skipped: the project is now watched")
+        running = {g: r["prefix"] for g, r in worker.running.items()}
+        for gid in launchable(list(pending), running, pending, MAX_RUNS_PER_PROJECT, MAX_RUNS_TOTAL):
+            prefix = pending.pop(gid)
+            try:
+                worker._launch(prefix, gid)
+            except Exception as ex:
+                log(f"NIGHTLY LAUNCH {prefix} {gid} failed: {ex!r}")
+                _notify(f"Could not start the bot on a {prefix} task: {ex}", prefix)
+        time.sleep(5)
+    log("NIGHTLY done")
+    if over:
+        _notify(f"Nightly bot sweep: {len(over)} task(s) over the limit of {NIGHTLY_MAX_RUNS}, "
+                f"left for tomorrow: {', '.join(lid for _, _, lid in over)}", "BSTD")
 
 
 def sweep(prefix: str, proj) -> list:
@@ -793,6 +915,8 @@ def main() -> None:
         sub.add_parser(name).add_argument("--project", required=True, metavar="PREFIX")
     sub.add_parser("list")
     sub.add_parser("catchup")
+    sub.add_parser("nightly").add_argument("--dry-run", action="store_true",
+                                           help="list the runs it would start and exit")
     args = ap.parse_args()
 
     if args.cmd == "serve":
@@ -811,6 +935,8 @@ def main() -> None:
         list_hooks()
     elif args.cmd == "catchup":
         catchup()
+    elif args.cmd == "nightly":
+        nightly(args.dry_run)
 
 
 if __name__ == "__main__":

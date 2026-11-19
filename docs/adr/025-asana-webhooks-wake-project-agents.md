@@ -112,3 +112,21 @@ Decided with Mark in a grill session:
   because a run could reach neither. Writes there stay with interactive sessions: a Dropbox
   edit has no branch and no review. Worktrees moved to `$XDG_DATA_HOME/bain-bot-worktrees/`
   so the registry folder can be denied to edits whole.
+
+## Addendum 2026-11-19: nightly sweep of unwatched projects (BSTD-895)
+
+Opt-in watching left a gap: a comment on a bot task in a project nobody watched waited for a
+session, or for the looper if the task happened to be queued in SL. The addendum above made the
+daily catch-up start nothing, so that an unwatched project got no unannounced session. That
+stays true of `catchup`; a separate, scheduled `nightly` command now closes the gap.
+
+- **Same triggers and limits as the listener.** Assignment to the bot, an unanswered comment on
+  a bot task, and an @-mention of the bot on a handed-back task. Each run is launched by the
+  listener's own `Worker._launch`, so it gets the same worktree, permissions, closing comment
+  and per-task rate limit.
+- **Bounded.** Only triggers from the last 7 days, at most 6 runs a night, watched projects
+  skipped (they are the listener's), and tasks the looper has queued skipped (Looper Status
+  `Queue` or `In Progress`, read from Asana, not the SL mirror).
+- **Never alongside the looper.** It runs at 07:15, after the 02:00 window's 5-hour ceiling,
+  waits while the runner's lock is held by a live process, and stops launching if a window
+  starts. It reads the lock and never takes it: the runner exits when it finds the lock held.
