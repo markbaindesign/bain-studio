@@ -350,3 +350,63 @@ def read_only_dirs(dirs: list) -> tuple:
         add += ["--add-dir", str(d)]
         deny += [f"Edit(/{str(d).rstrip('/')}/**)", *secret_read_denies(Path(d))]
     return add, deny
+
+
+# ---------------------------------------------------------------------------
+# Inbox poll: DevBot's tasks across every project, without a watch
+# ---------------------------------------------------------------------------
+
+def newly_assigned(task: dict, stories: list, trigger_users: set, bot_gid: str,
+                   since: str = "") -> bool:
+    """Was this task handed to the bot by Mark or PmBot since the bot last spoke on
+    it and since it was last woken? Covers both a reassignment (an `assigned`
+    story) and a task created already assigned to the bot (no such story)."""
+    if not task_is_for_bot(task, bot_gid):
+        return False
+    last_bot = ""
+    last_assign = ""
+    for s in stories or []:
+        at = s.get("created_at") or ""
+        who = (s.get("created_by") or {}).get("gid")
+        if who == bot_gid and s.get("resource_subtype") == "comment_added":
+            last_bot = max(last_bot, at)
+        elif who in trigger_users and s.get("resource_subtype") == "assigned":
+            last_assign = max(last_assign, at)
+    if not last_assign and (task.get("created_by") or {}).get("gid") in trigger_users:
+        last_assign = task.get("created_at") or ""
+    return bool(last_assign) and last_assign > last_bot and last_assign > (since or "")
+
+
+def inbox_wakes(task: dict, stories: list, trigger_users: set, bot_gid: str,
+                since: str = "") -> bool:
+    """An inbox poll wakes the bot on an open bot task with an unanswered comment
+    from Mark or PmBot, or one newly assigned to it. `since` is the task's
+    last_wake, so a task already handled is not woken twice."""
+    if not task_is_for_bot(task, bot_gid):
+        return False
+    return (unanswered(stories, trigger_users, bot_gid, since)
+            or newly_assigned(task, stories, trigger_users, bot_gid, since))
+
+
+def home_prefix(task: dict, prefix_of_gid: dict, skip: set = frozenset()) -> str:
+    """The registered project a task belongs to, by its memberships. A task
+    multi-homed into a queue (SL) is worked in its home project, so queues in
+    `skip` never win. Empty when no registered project holds it."""
+    for m in task.get("memberships") or []:
+        prefix = prefix_of_gid.get(((m or {}).get("project") or {}).get("gid"))
+        if prefix and prefix not in skip:
+            return prefix
+    return ""
+
+
+def inbox_cursor(last_poll: str, now_iso: str, overlap_s: int, first_s: int) -> str:
+    """Lower bound for `modified_at.after`. Search results lag behind writes, so
+    each poll reaches back `overlap_s` before the previous one; the first poll
+    reaches back `first_s`. ISO-8601 UTC strings in, one out."""
+    import datetime as _dt
+    now = _dt.datetime.strptime(now_iso, "%Y-%m-%dT%H:%M:%SZ")
+    if last_poll:
+        start = _dt.datetime.strptime(last_poll, "%Y-%m-%dT%H:%M:%SZ") - _dt.timedelta(seconds=overlap_s)
+    else:
+        start = now - _dt.timedelta(seconds=first_s)
+    return start.strftime("%Y-%m-%dT%H:%M:%SZ")

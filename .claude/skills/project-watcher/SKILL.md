@@ -12,6 +12,7 @@ only runs it.
 |---|---|
 | `/project-watcher PREFIX` | `python3 /media/data/dev/bain-studio/studio/asana_webhook.py watch PREFIX` |
 | `/project-watcher stop PREFIX` | `python3 /media/data/dev/bain-studio/studio/asana_webhook.py unwatch PREFIX` |
+| `/project-watcher inbox on` / `inbox off` | `python3 /media/data/dev/bain-studio/studio/asana_webhook.py inbox on` (or `off`): DevBot's tasks in every project, polled every 3 minutes |
 | `/project-watcher status` (or no argument) | `python3 /media/data/dev/bain-studio/studio/asana_webhook.py status` |
 
 With no prefix and a project `CLAUDE.md` in the current directory, use its `ASANA_TASK_PREFIX`.
