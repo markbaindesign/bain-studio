@@ -138,3 +138,51 @@ def test_invoice_line_shows_sent_paid_and_recurring():
     unsent = invoice_line({**inv, "state": "open", "sent_at": None, "paid_at": None,
                            "due_amount": 90.0, "recurring_invoice_id": None})
     assert "sent -" in unsent and "owes 90.00" in unsent and "recurring" not in unsent
+
+
+def test_match_category_by_exact_name_fragment_or_id():
+    from raise_invoice import match_category
+    cats = [{"id": 1, "name": "Premium Plugin"}, {"id": 2, "name": "Premium Theme"},
+            {"id": 3, "name": "Hosting"}]
+    assert match_category(cats, "plugin")["id"] == 1
+    assert match_category(cats, "premium theme")["id"] == 2
+    assert match_category(cats, "3")["id"] == 3
+    with pytest.raises(SystemExit):
+        match_category(cats, "premium")
+    with pytest.raises(SystemExit):
+        match_category(cats, "fonts")
+
+
+def test_possible_duplicates_same_amount_and_day_or_same_item():
+    from raise_invoice import possible_duplicates
+    existing = [{"spent_date": "2026-11-17", "total_cost": 99.0, "notes": "Something else"},
+                {"spent_date": "2026-10-30", "total_cost": 99.0, "notes": "Acme Log renewal"},
+                {"spent_date": "2026-11-17", "total_cost": 50.0, "notes": "Acme Log"}]
+    found = possible_duplicates(existing, 99.0, "2026-11-17", "Acme Log - annual plan")
+    assert [e["spent_date"] for e in found] == ["2026-11-17", "2026-10-30"]
+    assert possible_duplicates(existing, 12.0, "2026-11-17", "Acme Log") == []
+
+
+def test_receipt_type_refuses_unknown_files():
+    from raise_invoice import receipt_type
+    assert receipt_type("/x/Invoice.PDF") == "application/pdf"
+    assert receipt_type("a.jpeg") == "image/jpeg"
+    with pytest.raises(SystemExit):
+        receipt_type("receipt.zip")
+
+
+def test_expense_line():
+    from raise_invoice import expense_line
+    line = expense_line({"spent_date": "2026-11-17", "expense_category": {"name": "Premium Plugin"},
+                         "total_cost": 99.0, "billable": True, "notes": "Acme Log", "receipt": {"x": 1}})
+    assert "2026-11-17" in line and "99.00" in line and "billable" in line and "[receipt]" in line
+
+
+def test_project_matches_code_before_name_fragment():
+    from raise_invoice import InvoiceClient
+    api = InvoiceClient("t", "1")
+    projects = [{"id": 1, "code": "ACX", "name": "Acme Expenses", "client": {"name": "Acme"}},
+                {"id": 2, "code": "AC-2026", "name": "Web 2026 (acx)", "client": {"name": "Acme"}}]
+    api._get = lambda path, params=None: {"projects": projects}
+    assert api.project("acx")["id"] == 1
+    assert api.project("web 2026")["id"] == 2
