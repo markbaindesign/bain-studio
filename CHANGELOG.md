@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-11-19
+
+### Added
+- **DevBot inbox poll: `asana_webhook.py inbox on|off|once`.** While on, the listener checks DevBot's open tasks in every registered project every 3 minutes, with no watch or webhook needed, and wakes DevBot on an unanswered comment from Mark or PmBot or a new assignment since the previous poll. Same run limits and permissions as webhook runs. `/project-watcher inbox on|off`.
+- **`raise_invoice.py expense`** logs a reimbursable expense on a Harvest project with its receipt attached. Previews first; `--create` refuses a likely duplicate unless `--allow-duplicate`. The preview names the client's currency, which Harvest records the amount in.
+
+### Changed
+- `raise_invoice.py` matches a project by its Harvest code (`KFX`) before a name fragment.
+
 ## [2.6.0] - 2026-11-18
 
 ### Added
