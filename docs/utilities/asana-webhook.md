@@ -104,6 +104,29 @@ otherwise also deny the worktrees inside it.
 A project whose `.envrc` exports `CLAUDE_CONFIG_DIR` (KF) runs on that account
 ([ADR 017](../adr/017-per-client-looper-queues.md)).
 
+### Running code (sandbox)
+
+When `bwrap` and `socat` are installed, runs may also run `python3`, `pytest` and the
+project's test command (a `BOT_TEST_COMMAND: make test` line in its `CLAUDE.md`). Those run in
+Claude Code's OS sandbox: no network, writes only in the run's worktree, and credential files
+(`SECRET_FILES`, `~/.ssh`, `~/.claude/.credentials.json`, the listener's state dir) unreadable.
+git and the two `sync.py` calls run outside it, still held to the rules above. The run's
+environment never carries the listener's `studio/.env` keys (`run_env()`), sandbox or not. The sandbox is
+fail-closed (`failIfUnavailable`): if it cannot start, the run does not start either.
+
+Without socat (`sudo apt install socat`) Claude Code would otherwise run commands unsandboxed,
+so the listener keeps the old rules, logs `SANDBOX-OFF {PREFIX} {ID}` and tells the run its
+change is untested. Check the setup end to end with one short live run:
+
+```bash
+python3 studio/scripts/sandbox_probe.py               # exit 0 pass, 1 fail, 2 skipped (deps missing)
+python3 studio/scripts/sandbox_probe.py --task BSTD-896   # also checks sync.py --get-task
+python3 studio/scripts/sandbox_probe.py --read-only-dir /media/data/Dropbox/Work   # real Dropbox
+```
+
+Findings and the reasoning: [ADR 025](../adr/025-asana-webhooks-wake-project-agents.md),
+2026-11-19 addendum.
+
 ## Limits
 
 | Limit | Value |

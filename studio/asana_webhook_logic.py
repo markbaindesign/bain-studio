@@ -350,3 +350,120 @@ def read_only_dirs(dirs: list) -> tuple:
         add += ["--add-dir", str(d)]
         deny += [f"Edit(/{str(d).rstrip('/')}/**)", *secret_read_denies(Path(d))]
     return add, deny
+
+
+# ---------------------------------------------------------------------------
+# Sandboxed execution (BSTD-896, ADR 025)
+# ---------------------------------------------------------------------------
+#
+# Claude Code's Bash sandbox (bubblewrap on Linux) confines what a command can
+# touch at the OS level, so a script the run writes is held to the same limits
+# as the run itself. The permission rules alone cannot do that: they match the
+# command string, so `Bash(python3 *)` would let `python3 x.py` read studio/.env.
+#
+# Verified on Claude Code 2.1.328, 2026-11-19:
+#   - It needs bwrap AND socat. Without socat Claude Code warns and runs every
+#     command UNSANDBOXED, even with allowUnsandboxedCommands false. Only
+#     failIfUnavailable makes it refuse to start instead.
+#   - Permission Read() denies are not enforced inside the sandbox: they must be
+#     repeated as sandbox.filesystem.denyRead.
+#   - --add-dir folders are writable inside it: they must be repeated as
+#     sandbox.filesystem.denyWrite.
+#   - git cannot commit from inside it (the worktree's git dir is in the main
+#     checkout, which is read-only), and sync.py needs .env and Asana. Both run
+#     outside it via excludedCommands, still held to the narrow allow rules.
+
+SANDBOX_DEPS = ("bwrap", "socat")
+
+# Commands that are already allowed by run_allow_rules and must run outside the
+# sandbox to work. An exclusion does not allow anything by itself.
+SANDBOX_EXCLUDED_GIT = ["git status", "git status *", "git diff", "git diff *",
+                        "git log", "git log *", "git show *", "git add *", "git commit *"]
+
+# Credentials a script must never read, wherever the run's file rules point.
+HOME_SECRETS = (".ssh", ".gnupg", ".aws", ".netrc", ".git-credentials",
+                ".claude/.credentials.json", ".config/gh", ".local/share/keyrings")
+
+
+SECRET_ENV_RE = re.compile(r"(PAT|TOKEN|KEY|PASSWORD|SECRET|CREDENTIALS?|WEBHOOK_URL|SA_JSON)$",
+                           re.IGNORECASE)
+
+
+def strip_env(env: dict, keys) -> dict:
+    """`env` without `keys`, and without anything named like a credential in
+    case a key reached the listener some other way. The run must not inherit
+    the listener's secrets."""
+    drop = set(keys)
+    return {k: v for k, v in env.items() if k not in drop and not SECRET_ENV_RE.search(k)}
+
+
+def sandbox_missing(which) -> list:
+    """The sandbox dependencies not on PATH. `which` is shutil.which, injected
+    so this stays testable. Empty means the sandbox can start."""
+    return [d for d in SANDBOX_DEPS if not which(d)]
+
+
+def bot_test_command(claude_md: str) -> str:
+    """The project's own test command, from a `BOT_TEST_COMMAND:` line in its
+    CLAUDE.md (same convention as DROPBOX_FOLDER). "" when there is none."""
+    m = re.search(r"^BOT_TEST_COMMAND:\s*(\S.*?)\s*$", claude_md or "", re.MULTILINE)
+    return m.group(1) if m else ""
+
+
+def exec_allow_rules(test_command: str = "") -> list:
+    """What a sandboxed run may execute, on top of run_allow_rules. Only used
+    when the sandbox is up: inside it these reach no network, no credentials and
+    no file outside the worktree."""
+    rules = ["Bash(python3 *)", "Bash(python3 -m pytest)", "Bash(pytest)", "Bash(pytest *)"]
+    if test_command:
+        rules += [f"Bash({test_command})", f"Bash({test_command} *)"]
+    return rules
+
+
+def _secret_globs(d: str) -> list:
+    out = []
+    for name in SECRET_FILES:
+        out += [f"{d}/{name}", f"{d}/**/{name}"]
+    return out
+
+
+def protected_writes(roots: list) -> list:
+    """The protected_path_denies() files as sandbox write denies. Permission
+    rules do not bind a script, and the sandbox does not cover .envrc itself."""
+    out = []
+    for r in roots:
+        if r:
+            b = str(r).rstrip("/")
+            out += [f"{b}/.git", f"{b}/.claude", f"{b}/.envrc"]
+    return out
+
+
+def sandbox_settings(roots: list, read_only: list, home: Path, sync_py: Path,
+                     extra_secrets: list = ()) -> dict:
+    """The --settings JSON that turns the sandbox on for one run.
+
+    roots: the project checkout and the run's worktree (secret files denied).
+    read_only: --add-dir folders (secret files denied, and no writes).
+    extra_secrets: further paths to hide whole, e.g. the listener's state dir
+    and a per-project CLAUDE_CONFIG_DIR's credentials.
+    Writes are otherwise limited by the sandbox to the working directory.
+    """
+    deny_read = []
+    for d in [*roots, *read_only]:
+        if d:
+            deny_read += _secret_globs(str(d).rstrip("/"))
+    deny_read += [str(home / s) for s in HOME_SECRETS]
+    deny_read += [str(p) for p in extra_secrets if p]
+    return {"sandbox": {
+        "enabled": True,
+        "failIfUnavailable": True,
+        "autoAllowBashIfSandboxed": False,
+        "allowUnsandboxedCommands": False,
+        "network": {"allowedDomains": []},
+        "excludedCommands": [*SANDBOX_EXCLUDED_GIT,
+                             f"python3 {sync_py} --get-task *",
+                             f"python3 {sync_py} --comment *"],
+        "filesystem": {"denyRead": deny_read,
+                       "denyWrite": [*[str(d).rstrip("/") for d in read_only if d],
+                                     *protected_writes(roots)]},
+    }}
