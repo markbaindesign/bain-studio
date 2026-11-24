@@ -44,3 +44,11 @@ context is lost.
   That's intended.
 - Agents creating tasks (studio-pm, looper, `/issue`, `/qa-capture`) should follow the same
   rules: top-level tasks with self-contained titles, and tags or fields for grouping.
+
+## Addendum 2026-11-19: no client name in task titles
+
+Rule 4 no longer puts the client in the title. Every task's home project already names the
+client, and Asana shows the project on the task wherever it is multi-homed, so a client prefix
+only repeats it. Write "Turn off debug logging", not "Acme Ltd: turn off debug logging". The
+title still names the page or site section. The description can name the client where that
+helps.

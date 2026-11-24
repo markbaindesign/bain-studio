@@ -380,3 +380,17 @@ def max_plan_env(environ, **extra) -> dict:
     env = {k: v for k, v in environ.items() if k not in API_AUTH_VARS}
     env.update(extra)
     return env
+
+
+def capped_deadline(deadline: datetime.datetime, now: datetime.datetime,
+                    max_minutes: int | None) -> datetime.datetime:
+    """The window deadline, brought forward to now + max_minutes when that is sooner.
+
+    A short window (the lunch-hour run) must stop starting tasks when Mark is back
+    at the keyboard, even though the quota window runs for hours longer. The cap
+    only stops new iterations: a task already running finishes rather than being
+    killed halfway.
+    """
+    if max_minutes is None:
+        return deadline
+    return min(deadline, now + datetime.timedelta(minutes=max_minutes))
