@@ -188,6 +188,26 @@ anything being hidden: it is on the task, it just does not interrupt him.
 `_render_progress` also HTML-escapes the body. Asana returns a 400 on a bare `&`, `<` or
 `>`, and notes routinely contain `&`, `<1000px` and `->`.
 
+## Mentioning anyone else: @user:{gid}
+
+To mention someone other than Mark, open the note with one `@user:{gid}` token per person, after
+any `@mark`, using their Asana **user GID** (as the mirror shows it, not the profile ID in a
+profile URL):
+
+```bash
+python3 studio/sync.py --comment --task-gid {GID} \
+  --comment-text "@user:{gid1} @user:{gid2} The site is up. || The password follows separately."
+```
+
+Each token becomes a rich-text mention, and each person is added as a follower and given the same
+35-second wait as `@mark` before a fresh post. Tokens count only at the start of the note.
+
+A profile URL in the text does **not** mention anyone. Pasted into Asana by hand it does; posted
+through the API it stays a plain link.
+
+An edited comment never raises a mention, so a correction that has to notify is posted afresh with
+`--replace-story {old story GID}`, which deletes the earlier comment once the new one is up.
+
 ## Corrections edit in place
 
 `leave_progress_comment` edits bainbot's existing comment (`PUT /stories/{gid}`) rather than

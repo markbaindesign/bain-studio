@@ -252,6 +252,27 @@ BLOCK_SEP      = "||"
 MENTION_RE     = re.compile(r"^\s*@(?:mark|me)\b[:,]?\s*", re.IGNORECASE)
 # Longest plausible rendered mention prefix ("@Mark Bain Design " and the like).
 MENTION_PREFIX_MAX = 64
+# Anyone else is mentioned with a leading "@user:{gid}" token, one per person,
+# after any @mark: "@user:123 @user:456 The site is up." Each becomes the same
+# rich-text mention, and each person is added as a follower MENTION_FOLLOW_WAIT
+# before a fresh post, exactly as for @mark. A profile URL pasted into the text
+# does not work: through the API it stays a plain link.
+# Leading only, so the posted comment still ends with the note's plain text and
+# _comment_matches can recognise it.
+USER_MENTION_RE = re.compile(r"^\s*@user:(\d+)\b[:,]?\s*")
+
+
+def _strip_mentions(text: str) -> tuple:
+    """Split a note's leading mention tokens off: (wants_mark, user_gids, rest)."""
+    raw = (text or "").strip()
+    wants_mark = bool(MENTION_RE.match(raw))
+    raw = MENTION_RE.sub("", raw, count=1)
+    gids = []
+    while m := USER_MENTION_RE.match(raw):
+        if m.group(1) not in gids:
+            gids.append(m.group(1))
+        raw = raw[m.end():]
+    return wants_mark, gids, raw.strip()
 
 
 def _render_progress(text: str) -> tuple:
@@ -261,11 +282,9 @@ def _render_progress(text: str) -> tuple:
     and prefixes an @-mention when the note opened with @mark. Returns
     (None, False) for an empty note.
     """
-    raw = (text or "").strip()
-    if not raw:
+    if not (text or "").strip():
         return None, False
-    wants_mention = bool(MENTION_RE.match(raw))
-    raw = MENTION_RE.sub("", raw, count=1)
+    wants_mention, user_gids, raw = _strip_mentions(text)
     lines = [seg.strip() for seg in raw.split(BLOCK_SEP)]
     lines = [l for l in lines if l]
     # Asana rejects bare &, < and > in html_text with a 400, but it does NOT
@@ -274,6 +293,8 @@ def _render_progress(text: str) -> tuple:
     # 2026-11-05). quote=False escapes & < > only; body text needs no more.
     body = "\n".join(html_escape(l, quote=False) for l in lines)
     body = _link_task_ids(body)
+    if user_gids:
+        body = " ".join(f'<a data-asana-gid="{g}"/>' for g in user_gids) + f" {body}"
     if wants_mention and USER_GID:
         body = f'<a data-asana-gid="{USER_GID}"/> {body}'
     return f"<body>{body}</body>", wants_mention
@@ -384,14 +405,14 @@ def split_location(text: str) -> tuple:
     The summary keeps a leading @mark; the where note never carries one, so it
     posts silently. Either part may be "".
     """
-    raw = (text or "").strip()
-    m = MENTION_RE.match(raw)
-    body = raw[m.end():] if m else raw
+    wants_mark, user_gids, body = _strip_mentions(text)
     segs = [s.strip() for s in body.split(BLOCK_SEP) if s.strip()]
     where = [s for s in segs if WHERE_RE.match(s)]
     rest  = [s for s in segs if not WHERE_RE.match(s)]
     summary = f" {BLOCK_SEP} ".join(rest)
-    if summary and (m or HANDOVER_RE.match(summary)):
+    if summary and user_gids:
+        summary = " ".join(f"@user:{g}" for g in user_gids) + " " + summary
+    if summary and (wants_mark or HANDOVER_RE.match(_strip_mentions(summary)[2])):
         summary = "@mark " + summary
     return summary, f" {BLOCK_SEP} ".join(where)
 
@@ -533,7 +554,7 @@ def _progress_plain(text: str) -> str:
     This is what Asana stores as a story's `text` once html_text is posted, so
     it is the form to compare against when checking for a duplicate.
     """
-    raw = MENTION_RE.sub("", (text or "").strip(), count=1)
+    raw = _strip_mentions(text)[2]
     return "\n".join(seg.strip() for seg in raw.split(BLOCK_SEP) if seg.strip())
 
 
@@ -542,7 +563,7 @@ def _normalise_comment(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "")).strip()
 
 
-def _comment_matches(story_text: str, want_plain: str) -> bool:
+def _comment_matches(story_text: str, want_plain: str, mentions: int = 1) -> bool:
     """Is `story_text` the comment that `want_plain` would produce?
 
     Asana renders the embedded mention in a story's plain `text` as a bare URL -
@@ -566,7 +587,13 @@ def _comment_matches(story_text: str, want_plain: str) -> bool:
     # Only a rendered mention may precede the body. Without this cap, a short
     # new note that happens to be the tail of an older, longer comment would
     # read as a duplicate and never get posted.
-    return len(have) - len(want) <= MENTION_PREFIX_MAX
+    return len(have) - len(want) <= MENTION_PREFIX_MAX * max(1, mentions)
+
+
+def _mention_count(note: str) -> int:
+    """How many rendered mentions a note's comment opens with."""
+    wants_mark, gids, _ = _strip_mentions(note)
+    return int(wants_mark) + len(gids)
 
 
 # ---------------------------------------------------------------------------
@@ -1681,6 +1708,20 @@ def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
                 fols = task.setdefault("followers", [])
                 if not any((f or {}).get("gid") == USER_GID for f in fols):
                     fols.append({"gid": USER_GID, "name": uname})
+    user_gids = _strip_mentions(mirror_text)[1]
+    if user_gids:
+        # Same reason as the @mark add above: a mention counts only once its
+        # person has followed the task for MENTION_FOLLOW_WAIT. One wait covers all.
+        longest = 0.0
+        for ug in user_gids:
+            added, uname, wait = _ensure_follower(task_gid, ug)
+            longest = max(longest, wait)
+            if added and task is not None:
+                fols = task.setdefault("followers", [])
+                if not any((f or {}).get("gid") == ug for f in fols):
+                    fols.append({"gid": ug, "name": uname})
+        if longest:
+            time.sleep(longest)
     resp = _post(f"/tasks/{task_gid}/stories", {"data": {"html_text": html}})
     new_story = (resp.get("data") or {}).get("gid")
     if wants_mention:
@@ -2210,7 +2251,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                 want = _progress_plain(summary)
                 bot_stories = t.get("_bot_stories") or []
                 dup = next((b for b in bot_stories
-                            if _comment_matches(b["text"], want)), None)
+                            if _comment_matches(b["text"], want, _mention_count(summary))), None)
                 if dup:
                     log.info(f"  [{proj.prefix}] Skipping comment for {local_id} — identical bainbot comment already on the task")
                     if not dry_run:
@@ -3028,6 +3069,10 @@ def main():
     parser.add_argument("--story-gid", metavar="GID", default="",
                         help="With --comment: edit this existing bainbot comment in place "
                              "instead of posting a second one (how a note is corrected)")
+    parser.add_argument("--replace-story", metavar="GID", default="",
+                        help="With --comment: post the note afresh, then delete this earlier "
+                             "bainbot comment. For a correction that must notify, since an "
+                             "edited comment never raises a mention")
     parser.add_argument("--where-story-gid", metavar="GID", default="",
                         help="With --comment and --story-gid: the note's separate Where: "
                              "comment, edited in place alongside the summary")
@@ -3108,6 +3153,13 @@ def main():
         new_story, where_story = post_note(args.task_gid, args.comment_text,
                                            args.story_gid, args.where_story_gid,
                                            dry_run=args.dry_run)
+        if args.replace_story and new_story and not args.dry_run:
+            try:
+                _delete(f"/stories/{args.replace_story}")
+                log.info(f"Deleted the earlier comment {args.replace_story}.")
+            except Exception as e:
+                log.warning(f"Posted the new comment but could not delete "
+                            f"{args.replace_story} ({e}); remove it in Asana")
         hand_back(args.task_gid, summary, dry_run=args.dry_run)
         if where_story and where_story != args.where_story_gid:
             log.info(f"Posted the Where: comment as story {where_story}; to correct it "
