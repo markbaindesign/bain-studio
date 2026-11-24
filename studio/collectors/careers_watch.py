@@ -2,18 +2,30 @@
 """
 Careers page watcher.
 
-Tracks a dynamic list of target companies' careers pages and alerts via Slack
-(studio notifier) when a new job posting link appears. State is a per-company
-snapshot of previously-seen posting links; alerts fire only on genuinely new
-entries, not on every page edit.
+Tracks a list of target companies' careers pages and creates an Asana task in
+the Prospecting project, assigned to Mark, when a new job posting appears. State
+is a per-company snapshot of previously-seen posting links; a task is created
+only for a genuinely new posting, not on every page edit.
 
-Registry: studio/collectors/careers_watch_companies.json
+Registry: ~/.config/bain-studio/careers_watch_companies.json (outside the repo,
+  which is public: the list of companies Mark is watching is his business)
   [{"name": "Acme Inc", "slug": "acme", "url": "https://acme.com/careers"}, ...]
+  Override with CAREERS_WATCH_REGISTRY.
 
 State: studio/collectors/careers_watch_state/{slug}.json (gitignored)
+  Override with CAREERS_WATCH_STATE_DIR (tests, dry runs).
+
+Asana destination, from studio/.env:
+  CAREERS_WATCH_PROJECT_GID     the Prospecting project
+  CAREERS_WATCH_SECTION_GID     the section new tasks land in (NEXT UP)
+  CAREERS_WATCH_CATEGORY_FIELD  Prospect Category custom field
+  CAREERS_WATCH_CATEGORY_OPTION its "Real Jobs" option
+  CAREERS_WATCH_URL_FIELD       Job URL custom field
+Tasks are written through sync.py's create_task (bainbot token).
 
 Usage:
-  python3 careers_watch.py                       # check all companies, alert on new postings
+  python3 careers_watch.py                       # check all companies, create tasks for new postings
+  python3 careers_watch.py --dry-run             # report what would be created, change nothing
   python3 careers_watch.py --add "Name" "URL"     # add a company to the registry
   python3 careers_watch.py --list                 # print the registry
   python3 careers_watch.py --remove SLUG          # remove a company
@@ -32,8 +44,8 @@ plain HTTP fetch + heuristic HTML link extraction, which WILL fail silently
 import argparse
 import datetime
 import json
+import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import urljoin
@@ -41,11 +53,13 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
-STUDIO_DIR = Path(__file__).parent.parent
-COLLECTORS_DIR = Path(__file__).parent
-REGISTRY_FILE = COLLECTORS_DIR / "careers_watch_companies.json"
-STATE_DIR = COLLECTORS_DIR / "careers_watch_state"
-NOTIFIER = STUDIO_DIR / "notifier.py"
+STUDIO_DIR = Path(__file__).resolve().parent.parent
+COLLECTORS_DIR = Path(__file__).resolve().parent
+REGISTRY_FILE = Path(os.getenv(
+    "CAREERS_WATCH_REGISTRY",
+    Path.home() / ".config" / "bain-studio" / "careers_watch_companies.json",
+))
+STATE_DIR = Path(os.getenv("CAREERS_WATCH_STATE_DIR", COLLECTORS_DIR / "careers_watch_state"))
 LOG_PREFIX = f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] careers_watch"
 
 # Known ATS URL patterns -> (kind, slug-extraction regex)
@@ -79,6 +93,7 @@ def load_registry():
 
 
 def save_registry(companies):
+    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
     REGISTRY_FILE.write_text(json.dumps(companies, indent=2) + "\n")
 
 
@@ -180,22 +195,50 @@ def fetch_postings(url):
     return extract_postings(resp.text, url), "html-scrape"
 
 
-def notify(message, details=None, priority="normal"):
-    cmd = [
-        "python3", str(NOTIFIER), message,
-        "--project", "UAP", "--priority", priority, "--sender", "careers-watch",
-    ]
-    if details:
-        cmd += ["--details", details]
-    subprocess.run(cmd, check=False)
+def _sync():
+    """Import sync.py lazily: it loads studio/.env and the Asana token."""
+    sys.path.insert(0, str(STUDIO_DIR))
+    import sync
+    return sync
 
 
-def check_company(company):
+def create_posting_task(company_name, title, link, dry_run=False):
+    """Create one Prospecting task for a new posting. Returns its GID."""
+    sync = _sync()
+    cfg = {k: os.getenv(f"CAREERS_WATCH_{k}") for k in (
+        "PROJECT_GID", "SECTION_GID", "CATEGORY_FIELD", "CATEGORY_OPTION", "URL_FIELD")}
+    missing = [k for k, v in cfg.items() if not v]
+    if missing:
+        raise RuntimeError(f"studio/.env is missing CAREERS_WATCH_{', CAREERS_WATCH_'.join(missing)}")
+
+    name = f"Apply: {title} at {company_name}"
+    notes = (
+        f"New opening at {company_name}, spotted by the careers watcher: {title}.\n\n"
+        f"Done: applied, or decided not to.\n\n"
+        f"Posting: {link}"
+    )
+    if dry_run:
+        print(f"{LOG_PREFIX} [DRY-RUN] would create task: {name!r}")
+        return "dry-run-gid"
+
+    gid = sync.create_task(cfg["PROJECT_GID"], name, notes, assignee_gid=sync.USER_GID)
+    sync._post(f"/sections/{cfg['SECTION_GID']}/addTask", {"data": {"task": gid}})
+    sync._put(f"/tasks/{gid}", {"data": {"custom_fields": {
+        cfg["CATEGORY_FIELD"]: cfg["CATEGORY_OPTION"],
+        cfg["URL_FIELD"]: link,
+    }}})
+    return gid
+
+
+def check_company(company, dry_run=False):
     slug = company["slug"]
     name = company["name"]
     url = company["url"]
     state = load_state(slug)
     prev_links = set(state.get("seen_links", []))
+    # First run is "never checked", not "nothing seen": a company whose board
+    # emptied must still raise a task for the next posting.
+    first_run = state.get("last_checked") is None
 
     try:
         postings, source = fetch_postings(url)
@@ -209,25 +252,27 @@ def check_company(company):
         note = "page may be JS-rendered" if source == "html-scrape" else "ATS board may be empty"
         print(f"{LOG_PREFIX} WARN {name}: no postings found via {source} — {note}")
 
-    new_links = current_links - prev_links
+    new_links = sorted(current_links - prev_links)
+    seen = set(prev_links & current_links)
 
-    # Only alert once the baseline is established, to avoid a noisy first run
-    if prev_links and new_links:
-        new_titles = [postings[link] for link in new_links]
-        details = "\n".join(f"- {title}\n  {link}" for link, title in
-                             ((l, postings[l]) for l in new_links))
-        notify(
-            f"New posting(s) at {name}: {', '.join(new_titles[:5])}",
-            details=details,
-            priority="normal",
-        )
-        print(f"{LOG_PREFIX} {name}: {len(new_links)} new posting(s)")
-    elif not prev_links:
-        print(f"{LOG_PREFIX} {name}: baseline established ({len(current_links)} postings), no alert")
+    if first_run:
+        seen = set(current_links)
+        print(f"{LOG_PREFIX} {name}: baseline established ({len(current_links)} postings), no tasks")
+    elif new_links:
+        for link in new_links:
+            try:
+                gid = create_posting_task(name, postings[link], link, dry_run=dry_run)
+            except Exception as e:  # leave it unseen so the next run retries
+                print(f"{LOG_PREFIX} ERROR creating task for {name} {link}: {e}")
+                continue
+            seen.add(link)
+            print(f"{LOG_PREFIX} {name}: new posting {postings[link]!r} -> task {gid}")
     else:
         print(f"{LOG_PREFIX} {name}: no change ({len(current_links)} postings)")
 
-    state["seen_links"] = sorted(current_links)
+    if dry_run:
+        return
+    state["seen_links"] = sorted(seen)
     state["last_checked"] = datetime.datetime.now().isoformat()
     save_state(slug, state)
 
@@ -274,6 +319,8 @@ def main():
     parser.add_argument("--add", nargs=2, metavar=("NAME", "URL"))
     parser.add_argument("--remove", metavar="SLUG")
     parser.add_argument("--list", action="store_true")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="report what would be created; create nothing, save no state")
     args = parser.parse_args()
 
     if args.add:
@@ -291,7 +338,7 @@ def main():
         print(f"{LOG_PREFIX} No companies registered. Use --add \"Name\" \"URL\" first.")
         return
     for company in companies:
-        check_company(company)
+        check_company(company, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
