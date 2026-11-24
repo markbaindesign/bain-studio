@@ -96,11 +96,15 @@ is readable but never editable.
 
 The prompt (`AGENT_PROMPT`) has the bot read `CLAUDE.md` and the task thread, then:
 
-- **A question or decision:** answer it, change nothing, post `Answer: ...`.
+- **A question or decision:** answer it, change nothing, and reply in plain words opening `@mark`, with no `Answer:` or `Reply:` label.
 - **Work:** do it in the worktree, commit on `bot/{LOCAL-ID}`, post `Review: ...` with a `Check:` block.
 - **Needs your call:** post `Blocked: ...` and stop.
 
-`Answer`, `Review`, `Blocked` and `Done` notes all mention you, so they reach the Mentioned
+Replies carry no path, branch, file name or URL: Mark does not read them and they bury the
+point. Where he has to open something, such as a commit to review, it goes in a `Where:` block,
+which posts as its own silent comment underneath. An answer usually has none.
+
+Answers, and `Review`, `Blocked` and `Done` notes, all mention you, so they reach the Mentioned
 inbox and Slack. One comment per run, at the end. When the run exits, a worktree with no
 commits and no changes is removed with its branch; one with work stays for you to review and
 merge.

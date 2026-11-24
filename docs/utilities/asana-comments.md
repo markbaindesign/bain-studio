@@ -106,6 +106,11 @@ the bot's queue for his. `Blocked` does not: the work is still the bot's, it onl
 answer. Both came in after PSK-022 and PSK-030 were handed over as `Done:` with no token,
 2026-11-17, and reached nobody.
 
+**A bot's answer to a question carries no label.** It opens `@mark` and reads as a colleague's
+reply would: no `Answer:` or `Reply:` in front, and no path, branch, file name or URL in it.
+Mark does not read locations and they bury the point; one he must open goes in the `Where:`
+block, which posts separately. `Answer` still triggers the mention for older prompts.
+
 ### What it actually does, and what it does not
 
 `sync.py` sends the documented rich-text mention — `html_text` carrying

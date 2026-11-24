@@ -86,6 +86,40 @@ which is the thing an IA review is about.
 nesting four top-level pages under About Us tells you what the client believes the structure
 is, whatever `post_parent` says. Record both and reconcile them in stage 3.
 
+#### Triage before the client sees it
+
+The client's time goes on decisions. An inventory handed over raw makes them mark tag
+archives "delete" one by one and puzzle over a login page from a membership plugin removed
+years ago. Every such row is a decision the studio could have taken, or one with no decision
+in it at all. So the inventory is triaged before it leaves the studio, every time:
+
+| Row | Treatment |
+|---|---|
+| Archive WordPress generates (tag, category, author, date, custom taxonomy, search, feed, pagination) in no menu | Removed. Nothing to decide |
+| The same archive linked from a menu | Kept, marked `check`. The client put it there, which is a decision |
+| Known obsolete: plugin leftovers, test pages, duplicates the studio is sure of | Removed, with the reason |
+| Probably obsolete, or not content (a page that only lists one tag's posts) | Kept, marked `check` with the reason, for the client to confirm |
+
+The tool removes generated archives by default. Known rows come from a per-project rules file
+kept in the client's Dropbox `Docs/Information Architecture/` folder, never in a public repo:
+
+```text
+# action  path glob            reason the client reads
+drop      /login/              membership plugin, removed
+check     /video-library/      a listing of one tag's posts, not content
+```
+
+```bash
+site-inventory.py --url https://{production}/ --menus --content --format csv \
+  --rules "{Dropbox}/Docs/Information Architecture/inventory-rules.txt" \
+  --excluded {date}-inventory-excluded.csv -o {date}-inventory.csv
+```
+
+Write the rules file by reading the raw inventory once before the first handover: a row the
+studio would mark without asking the client belongs in it. **Nothing vanishes silently.** The
+removed rows go to the `--excluded` file with a disposition of `drop`, because a removed page
+still needs a redirect (stage 4). Keep it next to the inventory.
+
 ### 2. Evidence
 
 Join to each row: GA4 sessions and entrances over twelve months, Search Console impressions
@@ -156,7 +190,11 @@ its instructions:
 > `sitemap-chart-template.html`.
 
 Syncing is manual. After a release that changes either file, click **Sync now** in the
-project's knowledge.
+project's knowledge. A file or folder added since the repository was attached may not appear
+in the picker even after a sync: remove the repository from the project and add it again.
+
+`site-inventory.py` (bain-tools) writes an existing site's first source document in this
+format: `## Structure` from the site, `## Navigation` from its menus with `--menus`.
 
 The source of truth is a Markdown document: a `## Structure` section as a nested list, and
 an optional `## Navigation` section of `###` lists referencing pages by path.
