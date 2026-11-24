@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-11-24
+
+### Changed
+- **IA project files move into the repo, `studio/ia/`.** The claude.ai Information Architecture project's instructions and sitemap chart template now live here only, read by the project through the GitHub integration on `main`. See `docs/utilities/information-architecture.md`.
+
 ## [2.8.0] - 2026-11-24
 
 ### Added
