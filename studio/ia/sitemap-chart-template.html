@@ -1,0 +1,702 @@
+<!--
+  SITEMAP CHART TEMPLATE
+  Start every chart from this file. Replace the content, keep the CSS and the script.
+
+  What to change:   the header, the boxes, the off-nav island, the nav panels.
+  What not to:      the :root tokens, the connector rules (.trunk, .branch::after,
+                    .kids::before/::after), and the pan/zoom script at the foot.
+
+  Structure of a box:
+    .box > .name + .slug + .detail( .meta( .tpl .tag ) + .note )
+    Everything inside .detail is hidden until the Build detail toggle is on.
+
+  Statuses are .tag.t-keep / .t-new / .t-merge / .t-drop.
+  A page in no nav list gets class="offnav" on its <li> (or on the .branch).
+-->
+<title>Sitemap Chart Template</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Inter:wght@400;500&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+  /* Layout: one pannable canvas. Home on a trunk, sections on a bus, children on rails. Build detail is a toggle. */
+  :root {
+    --bg: #f6f6f4;
+    --canvas: #fbfbf9;
+    --surface: #ffffff;
+    --surface-2: #f0f0ec;
+    --rule: #d6d6ce;
+    --wire: #a9aea7;
+    --fg: #1d201f;
+    --fg-soft: #5e635f;
+    --accent: #1c4f4a;
+    --accent-soft: #e4efec;
+    --keep: #4a6b52;
+    --new: #1c4f4a;
+    --merge: #8a5a1c;
+    --drop: #8c3b36;
+    --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --font-body: "Inter", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15181a;
+      --canvas: #191d1f;
+      --surface: #23282b;
+      --surface-2: #1d2124;
+      --rule: #353c3f;
+      --wire: #5a6266;
+      --fg: #e8ebe8;
+      --fg-soft: #9ba3a0;
+      --accent: #6fbfb2;
+      --accent-soft: #1f3330;
+      --keep: #8fbd99;
+      --new: #6fbfb2;
+      --merge: #d9a35e;
+      --drop: #e08b84;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15181a;
+    --canvas: #191d1f;
+    --surface: #23282b;
+    --surface-2: #1d2124;
+    --rule: #353c3f;
+    --wire: #5a6266;
+    --fg: #e8ebe8;
+    --fg-soft: #9ba3a0;
+    --accent: #6fbfb2;
+    --accent-soft: #1f3330;
+    --keep: #8fbd99;
+    --new: #6fbfb2;
+    --merge: #d9a35e;
+    --drop: #e08b84;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .wrap {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 2rem 3rem;
+  }
+
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--fg-soft);
+    margin: 0;
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(1.6rem, 4vw, 2.3rem);
+    line-height: 1.1;
+    margin: 0.3rem 0 0;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+  .counts {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--fg-soft);
+    font-variant-numeric: tabular-nums;
+    margin: 0;
+  }
+
+  /* ---- controls ---- */
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.6rem;
+    margin: 1.2rem 0 0.6rem;
+  }
+  button {
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    color: var(--fg);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.32rem 0.6rem;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--wire); }
+  .zoomlevel {
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    color: var(--fg-soft);
+    min-width: 3.4em;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .switch {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    color: var(--fg-soft);
+    margin-left: auto;
+    cursor: pointer;
+  }
+
+  /* ---- canvas ---- */
+  .viewport {
+    position: relative;
+    height: min(72vh, 680px);
+    min-height: 380px;
+    background: var(--canvas);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+    touch-action: none;
+    cursor: grab;
+  }
+  .viewport.dragging { cursor: grabbing; }
+  .viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: max-content;
+    transform-origin: 0 0;
+    padding: 4px;
+  }
+
+  /* ---- chart ---- */
+  .root { display: flex; justify-content: center; }
+  .trunk { height: 24px; display: flex; justify-content: center; }
+  .trunk::before { content: ""; width: 1px; background: var(--wire); }
+
+  .chartrow { display: flex; align-items: flex-start; }
+  .branches { display: flex; align-items: flex-start; }
+  .branch { position: relative; padding: 24px 0.5rem 0; }
+  .branch::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--wire);
+  }
+  .branch:first-child::after { left: 50%; }
+  .branch:last-child::after { right: 50%; }
+  .branch::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 1px;
+    height: 24px;
+    background: var(--wire);
+  }
+
+  .box {
+    width: 186px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.5rem 0.6rem;
+  }
+  .name {
+    display: block;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.95rem;
+    line-height: 1.25;
+  }
+  .slug {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--fg-soft);
+    margin-top: 0.12rem;
+    word-break: break-all;
+  }
+  .detail { display: none; }
+  .canvas.show-detail .detail { display: block; }
+  .meta { display: flex; flex-wrap: wrap; gap: 0.28rem; margin-top: 0.35rem; }
+  .tpl {
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 0.06rem 0.3rem;
+    border-radius: 2px;
+  }
+  .tag {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    padding: 0.03rem 0.28rem;
+  }
+  .t-keep { color: var(--keep); }
+  .t-new { color: var(--new); }
+  .t-merge { color: var(--merge); }
+  .t-drop { color: var(--drop); }
+  .note { margin: 0.3rem 0 0; font-size: 0.75rem; color: var(--fg-soft); line-height: 1.38; }
+
+  .root .box { border-top: 3px solid var(--accent); }
+  .branch > .box { border-top: 2px solid var(--accent); }
+  .offnav > .box { border-style: dashed; background: var(--surface-2); }
+  .offnav .name { font-weight: 500; }
+
+  /* children on rails */
+  .kids { list-style: none; margin: 0; padding: 10px 0 0 18px; }
+  .kids > li { position: relative; }
+  .kids > li + li { margin-top: 10px; }
+  .kids > li::before {
+    content: "";
+    position: absolute;
+    left: -18px;
+    top: -10px;
+    width: 1px;
+    bottom: calc(100% - 19px);
+    background: var(--wire);
+  }
+  .kids > li::after {
+    content: "";
+    position: absolute;
+    left: -18px;
+    top: 19px;
+    width: 18px;
+    height: 1px;
+    background: var(--wire);
+  }
+  .kids .box { background: var(--surface-2); }
+  .kids .offnav > .box { background: var(--surface-2); }
+
+  .island { margin-left: 0.5rem; margin-top: 34px; }
+  .island h3 {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-soft);
+    margin: 0 0 0.5rem;
+    font-weight: 400;
+  }
+  .island ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    margin: 0.8rem 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.78rem;
+    color: var(--fg-soft);
+  }
+  .legend li { display: flex; align-items: center; gap: 0.35rem; }
+  .legend.detail-only { display: none; }
+  body.show-detail .legend.detail-only { display: flex; }
+
+  footer {
+    margin-top: 1.6rem;
+    border-top: 1px solid var(--rule);
+    padding-top: 1rem;
+    font-size: 0.84rem;
+    color: var(--fg-soft);
+    max-width: 70ch;
+  }
+
+  /* ---- navigation panels ---- */
+  .navpanels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1.25rem 1.5rem;
+    margin-top: 1.5rem;
+  }
+  .navpanel h3 {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-soft);
+    font-weight: 400;
+    margin: 0 0 0.5rem;
+  }
+  .navpanel ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+  .navpanel li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 0.3rem;
+    min-width: 0;
+  }
+  .navpanel .n {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--fg-soft);
+    font-variant-numeric: tabular-nums;
+  }
+  .navpanel .target {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--fg-soft);
+    margin-left: auto;
+    word-break: break-all;
+  }
+  .warn {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--drop);
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    padding: 0.03rem 0.28rem;
+  }
+  .warnnote {
+    flex-basis: 100%;
+    margin: 0.15rem 0 0;
+    font-size: 0.75rem;
+    color: var(--drop);
+  }
+
+  .panels-head {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.9rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--fg-soft);
+    margin: 2rem 0 0;
+  }
+</style>
+
+<div class="wrap">
+  <!-- HEADER. Title, draft number, date. Counts are derived from the document:
+       pages = every line in ## Structure, levels deep = deepest indent,
+       "n retired" only when the document has [drop] pages. -->
+  <div class="topbar">
+    <div>
+      <p class="eyebrow">Information architecture &middot; draft 0.1 &middot; 12 November 2026</p>
+      <h1>Example Site</h1>
+    </div>
+    <p class="counts">8 pages &middot; 2 levels deep &middot; 1 retired</p>
+  </div>
+
+  <div class="controls">
+    <button type="button" id="fit">Fit</button>
+    <button type="button" id="out" aria-label="Zoom out">&minus;</button>
+    <span class="zoomlevel" id="zoomlevel">100%</span>
+    <button type="button" id="in" aria-label="Zoom in">+</button>
+    <label class="switch" for="detailtoggle">
+      <input type="checkbox" id="detailtoggle">
+      Build detail
+    </label>
+  </div>
+
+  <div class="viewport" id="viewport" tabindex="0" aria-label="Sitemap canvas. Drag to pan, scroll to zoom.">
+    <div class="canvas" id="canvas">
+
+      <!-- ROOT: the home page. -->
+      <div class="root">
+        <div class="box">
+          <span class="name">Home</span>
+          <span class="slug">/</span>
+          <div class="detail">
+            <div class="meta"><span class="tpl">front-page</span><span class="tag t-new">new</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="trunk"></div>
+
+      <div class="chartrow">
+        <!-- BRANCHES: one .branch per top-level section, in site order.
+             The bus line is drawn by .branch::after, so every top-level
+             section must be a direct child of .branches and nothing else. -->
+        <div class="branches">
+
+          <div class="branch">
+            <div class="box">
+              <span class="name">About</span>
+              <span class="slug">/about/</span>
+              <div class="detail">
+                <div class="meta"><span class="tpl">page</span><span class="tag t-merge">merge</span></div>
+                <p class="note">A note on the page sits here, from an indented line in the document.</p>
+              </div>
+            </div>
+            <!-- CHILDREN: omit the whole <ul> when a section has none.
+                 A child in no nav list keeps its place and gets class="offnav". -->
+            <ul class="kids">
+              <li class="offnav">
+                <div class="box">
+                  <span class="name">Our team</span>
+                  <span class="slug">/about/team/</span>
+                  <div class="detail">
+                    <div class="meta"><span class="tpl">page</span><span class="tag t-keep">keep</span></div>
+                  </div>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="branch">
+            <div class="box">
+              <span class="name">Services</span>
+              <span class="slug">/services/</span>
+              <div class="detail">
+                <div class="meta"><span class="tpl">page</span><span class="tag t-keep">keep</span></div>
+              </div>
+            </div>
+            <ul class="kids">
+              <li>
+                <div class="box">
+                  <span class="name">Service one</span>
+                  <span class="slug">/services/one/</span>
+                  <div class="detail">
+                    <div class="meta"><span class="tpl">page</span><span class="tag t-keep">keep</span></div>
+                  </div>
+                </div>
+              </li>
+              <li>
+                <div class="box">
+                  <span class="name">Service two</span>
+                  <span class="slug">/services/two/</span>
+                  <div class="detail">
+                    <div class="meta"><span class="tpl">page</span><span class="tag t-new">new</span></div>
+                  </div>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="branch">
+            <div class="box">
+              <span class="name">Contact</span>
+              <span class="slug">/contact/</span>
+              <div class="detail">
+                <div class="meta"><span class="tpl">page</span><span class="tag t-keep">keep</span></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- OFF THE NAVIGATION: only TOP-LEVEL pages that appear in no nav list.
+             Delete this whole block when the document has no ## Navigation section,
+             or when every top-level page is in a list. -->
+        <div class="island">
+          <h3>Off the navigation</h3>
+          <ul>
+            <li class="offnav">
+              <div class="box">
+                <span class="name">Privacy</span>
+                <span class="slug">/privacy/</span>
+                <div class="detail">
+                  <div class="meta"><span class="tpl">page</span><span class="tag t-keep">keep</span></div>
+                </div>
+              </div>
+            </li>
+            <li class="offnav">
+              <div class="box">
+                <span class="name">Old page</span>
+                <span class="slug">/old-page/</span>
+                <div class="detail">
+                  <div class="meta"><span class="tpl">&mdash;</span><span class="tag t-drop">drop</span></div>
+                  <p class="note">Redirect to /services/.</p>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <ul class="legend">
+    <li><span style="display:inline-block;width:15px;height:10px;border:1px solid var(--wire);border-radius:2px"></span> in the navigation</li>
+    <li><span style="display:inline-block;width:15px;height:10px;border:1px dashed var(--wire);border-radius:2px"></span> reachable, but not in the navigation</li>
+    <li>Drag to move &middot; scroll to zoom</li>
+  </ul>
+  <ul class="legend detail-only">
+    <li><span class="tag t-keep">keep</span> unchanged</li>
+    <li><span class="tag t-new">new</span> to be written</li>
+    <li><span class="tag t-merge">merge</span> absorbs old pages, needs a redirect</li>
+    <li><span class="tag t-drop">drop</span> removed and redirected</li>
+  </ul>
+
+  <!-- NAVIGATION PANELS: one .navpanel per ### list, entries in document order.
+       Delete the whole .navpanels block when there is no ## Navigation section. -->
+  <h2 class="panels-head">Navigation</h2>
+  <div class="navpanels">
+
+    <div class="navpanel">
+      <h3>Main</h3>
+      <ol>
+        <li><span class="n">1</span> About <span class="target">/about/</span></li>
+        <li><span class="n">2</span> Services <span class="target">/services/</span></li>
+        <li><span class="n">3</span> Service one <span class="target">/services/one/</span></li>
+        <li><span class="n">4</span> Contact <span class="target">/contact/</span></li>
+      </ol>
+    </div>
+
+    <div class="navpanel">
+      <h3>Footer</h3>
+      <ol>
+        <li><span class="n">1</span> Privacy <span class="target">/privacy/</span></li>
+        <!-- A target missing from the structure, or pointing at a [drop] page,
+             is still drawn, with this badge and a one-line note. -->
+        <li>
+          <span class="n">2</span> Old page <span class="warn">dropped</span>
+          <span class="target">/old-page/</span>
+          <p class="warnnote">Points at a page marked drop. Remove it, or repoint it at /services/.</p>
+        </li>
+      </ol>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>Draft for review. Page counts exclude paginated archive pages and attachment pages.</p>
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var vp = document.getElementById('viewport');
+    var cv = document.getElementById('canvas');
+    var zl = document.getElementById('zoomlevel');
+    var MIN = 0.25, MAX = 2.5;
+    var s = 1, tx = 0, ty = 0;
+
+    function apply() {
+      cv.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')';
+      zl.textContent = Math.round(s * 100) + '%';
+    }
+    function clamp(v) { return Math.max(MIN, Math.min(MAX, v)); }
+
+    function fit() {
+      var pad = 20;
+      var w = cv.offsetWidth, h = cv.offsetHeight;
+      if (!w || !h) return;
+      var aw = vp.clientWidth - pad * 2, ah = vp.clientHeight - pad * 2;
+      s = clamp(Math.min(aw / w, ah / h, 1));
+      tx = (vp.clientWidth - w * s) / 2;
+      ty = Math.max(pad, (vp.clientHeight - h * s) / 2);
+      apply();
+    }
+
+    function zoomAt(px, py, factor) {
+      var ns = clamp(s * factor);
+      if (ns === s) return;
+      tx = px - (px - tx) * (ns / s);
+      ty = py - (py - ty) * (ns / s);
+      s = ns;
+      apply();
+    }
+
+    document.getElementById('fit').addEventListener('click', fit);
+    document.getElementById('in').addEventListener('click', function () {
+      zoomAt(vp.clientWidth / 2, vp.clientHeight / 2, 1.2);
+    });
+    document.getElementById('out').addEventListener('click', function () {
+      zoomAt(vp.clientWidth / 2, vp.clientHeight / 2, 1 / 1.2);
+    });
+
+    vp.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      var r = vp.getBoundingClientRect();
+      zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
+    }, { passive: false });
+
+    var pointers = new Map();
+    var pinch = null;
+
+    vp.addEventListener('pointerdown', function (e) {
+      if (e.target.closest('button, label, input')) return;
+      vp.setPointerCapture(e.pointerId);
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      vp.classList.add('dragging');
+      if (pointers.size === 2) {
+        var p = Array.from(pointers.values());
+        pinch = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+      }
+    });
+
+    vp.addEventListener('pointermove', function (e) {
+      var prev = pointers.get(e.pointerId);
+      if (!prev) return;
+      var dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (pointers.size === 2 && pinch) {
+        var p = Array.from(pointers.values());
+        var dist = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+        if (dist > 0) {
+          var r = vp.getBoundingClientRect();
+          zoomAt((p[0].x + p[1].x) / 2 - r.left, (p[0].y + p[1].y) / 2 - r.top, dist / pinch);
+          pinch = dist;
+        }
+        return;
+      }
+      tx += dx;
+      ty += dy;
+      apply();
+    });
+
+    function release(e) {
+      pointers.delete(e.pointerId);
+      if (pointers.size < 2) pinch = null;
+      if (pointers.size === 0) vp.classList.remove('dragging');
+    }
+    vp.addEventListener('pointerup', release);
+    vp.addEventListener('pointercancel', release);
+
+    vp.addEventListener('keydown', function (e) {
+      var step = 60;
+      if (e.key === 'ArrowLeft') { tx += step; }
+      else if (e.key === 'ArrowRight') { tx -= step; }
+      else if (e.key === 'ArrowUp') { ty += step; }
+      else if (e.key === 'ArrowDown') { ty -= step; }
+      else if (e.key === '+' || e.key === '=') { zoomAt(vp.clientWidth / 2, vp.clientHeight / 2, 1.2); return; }
+      else if (e.key === '-') { zoomAt(vp.clientWidth / 2, vp.clientHeight / 2, 1 / 1.2); return; }
+      else if (e.key === '0') { fit(); return; }
+      else { return; }
+      e.preventDefault();
+      apply();
+    });
+
+    var toggle = document.getElementById('detailtoggle');
+    toggle.addEventListener('change', function () {
+      cv.classList.toggle('show-detail', toggle.checked);
+      document.body.classList.toggle('show-detail', toggle.checked);
+      fit();
+    });
+
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(fit);
+    }
+    window.addEventListener('resize', fit);
+    fit();
+  })();
+</script>
