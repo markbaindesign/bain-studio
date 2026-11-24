@@ -13,6 +13,7 @@ from looper_logic import (
     classify_concurrency,
     classify_single_file,
     build_queue,
+    capped_deadline,
     compute_deadline,
     find_orphans,
     max_plan_env,
@@ -495,3 +496,20 @@ def test_max_plan_env_drops_api_auth_and_keeps_the_rest():
     env = max_plan_env({"ANTHROPIC_API_KEY": "k", "ANTHROPIC_AUTH_TOKEN": "t", "PATH": "/bin"},
                        LOOPER_RUN_ID="r1")
     assert env == {"PATH": "/bin", "LOOPER_RUN_ID": "r1"}
+
+
+def test_capped_deadline_brings_a_late_deadline_forward():
+    now = datetime.datetime(2026, 11, 24, 15, 0)
+    assert capped_deadline(now + datetime.timedelta(hours=5), now, 60) == datetime.datetime(2026, 11, 24, 16, 0)
+
+
+def test_capped_deadline_keeps_an_earlier_quota_deadline():
+    now = datetime.datetime(2026, 11, 24, 15, 0)
+    early = now + datetime.timedelta(minutes=20)
+    assert capped_deadline(early, now, 60) == early
+
+
+def test_capped_deadline_without_a_cap_is_unchanged():
+    now = datetime.datetime(2026, 11, 24, 15, 0)
+    late = now + datetime.timedelta(hours=5)
+    assert capped_deadline(late, now, None) == late
