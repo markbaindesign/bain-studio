@@ -192,6 +192,7 @@ from looper_logic import (  # noqa: E402  (path set above)
     WINDOW_EXIT_DEADLINE,
     WINDOW_EXIT_MAX_ITERATIONS,
     WINDOW_EXIT_NO_PROGRESS,
+    capped_deadline,
     max_plan_env,
     window_summary,
 )
@@ -256,7 +257,7 @@ def clear_orphan_state() -> None:
 MAX_ITERATIONS = 30
 
 
-def run_window(label: str) -> None:
+def run_window(label: str, max_minutes: int | None = None) -> None:
     if not presync():
         log(f"window {label}: pre-sync FAILED — launching looper anyway (it re-syncs itself)")
 
@@ -267,7 +268,7 @@ def run_window(label: str) -> None:
         log(f"window {label}: queue empty after pre-sync — skipping window, no session launched")
         return
 
-    deadline = window_deadline()
+    deadline = capped_deadline(window_deadline(), datetime.datetime.now(), max_minutes)
     run_id = f"{datetime.datetime.now():%Y%m%d-%H%M}"
     log(f"window {label}: run id {run_id} — iterating until queue empty / no progress / {deadline:%H:%M}")
     tasks_done = 0
@@ -320,10 +321,15 @@ def main() -> None:
     ap.add_argument("--now", action="store_true", help="run a window immediately")
     ap.add_argument("--at", action="append", default=[], metavar="HH:MM",
                     help="run a window at HH:MM (next occurrence); repeatable, run in order")
+    ap.add_argument("--minutes", type=int, default=None, metavar="N",
+                    help="cap each window at N minutes: no new task starts after that, "
+                         "a running one finishes (e.g. the lunch-hour run)")
     args = ap.parse_args()
 
     if not args.now and not args.at:
         ap.error("nothing to do: pass --now and/or --at HH:MM")
+    if args.minutes is not None and args.minutes < 1:
+        ap.error("--minutes must be at least 1")
 
     for hhmm in args.at:
         try:
@@ -347,10 +353,10 @@ def main() -> None:
         sys.exit(1)
     try:
         if args.now:
-            run_window("immediate")
+            run_window("immediate", args.minutes)
         for hhmm in args.at:
             sleep_until(hhmm)
-            run_window(hhmm)
+            run_window(hhmm, args.minutes)
         log("all windows done — runner exiting, nothing further scheduled")
         notify("looper runner done: all scheduled windows finished, nothing further scheduled.")
     except Exception:

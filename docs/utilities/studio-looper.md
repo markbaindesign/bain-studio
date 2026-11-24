@@ -27,6 +27,19 @@ Flags combine: `/studio-looper --at 20:00 --for 2h`, `/studio-looper --test --ye
 
 Must be invoked from `/media/data/dev/bain-studio`.
 
+## Scheduled windows
+
+Cron runs the queue headless through `studio/scripts/looper_runner.py`, from the ops worktree:
+
+| Window | Cron | Length |
+|---|---|---|
+| Nightly | `0 2 * * *` `looper_runner.py --now` | until the queue drains or the quota window ends |
+| Lunch hour | `0 15 * * 1-5` `looper_runner.py --now --minutes 60` | one hour, weekdays, while Mark is away from the keyboard |
+
+`--minutes N` stops the runner starting a new task N minutes after the window opens. A task
+already running finishes rather than being killed halfway, so a window can overrun by one
+task. Both windows run on the Max login (`max_plan_env`), never the API key.
+
 ## How it works
 
 1. Mark multi-homes tasks from any project (MCF, NORE, BSTD, UAP…) into the **Studio Looper**
