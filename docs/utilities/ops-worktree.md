@@ -58,7 +58,7 @@ one copy of each.
 
 That sharing is a **correctness requirement, not tidiness**. If each tree kept its own collector
 state, `wp_pulse` would re-summarise posts the other tree had already seen, `gmail_watch` would
-reprocess threads, and `careers_watch` would re-alert on known postings.
+reprocess threads, and `careers_watch` would re-create tasks for known postings.
 
 ```bash
 studio/scripts/ops-worktree-link.sh --check     # report only, change nothing
