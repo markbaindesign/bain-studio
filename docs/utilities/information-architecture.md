@@ -140,7 +140,23 @@ assembled after launch is a redirect map with holes in it.
 ### 5 and 6. Restructure and navigate
 
 Done in the claude.ai Information Architecture project. Its instructions and the chart
-template live in `$STUDIO_CONTENT_DIR/internal/information-architecture/`.
+template live in this repo, in `studio/ia/`:
+
+| File | What it is |
+|---|---|
+| `studio/ia/project-instructions.md` | The project's instructions: source document format, how to restructure and chart |
+| `studio/ia/sitemap-chart-template.html` | The chart the project renders a sitemap into |
+
+The repo is the only copy. The claude.ai project reads both through the GitHub integration,
+as project knowledge on `main`, so it follows released versions only. Its Instructions box
+holds one line pointing at them, because GitHub files can fill a project's knowledge but not
+its instructions:
+
+> Follow `project-instructions.md` in this project's knowledge, and render charts with
+> `sitemap-chart-template.html`.
+
+Syncing is manual. After a release that changes either file, click **Sync now** in the
+project's knowledge.
 
 The source of truth is a Markdown document: a `## Structure` section as a nested list, and
 an optional `## Navigation` section of `###` lists referencing pages by path.
