@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-11-24
+
+### Changed
+- **Careers watcher creates Asana tasks instead of Slack pings.** Each new posting on a watched company's careers page becomes a task in Prospecting, assigned to Mark, in NEXT UP, with Prospect Category "Real Jobs" and the Job URL set. The company list moves to `~/.config/bain-studio/careers_watch_companies.json`; the Asana GIDs live in `studio/.env`. New `--dry-run`. See `docs/utilities/careers-watch.md`.
+
+### Fixed
+- **Careers watcher no longer misses a posting after a board empties.** The first-run baseline now means "never checked", and a posting is marked seen only once its task exists.
+
 ## [2.9.0] - 2026-11-24
 
 ### Changed
