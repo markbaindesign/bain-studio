@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-11-24
+
+### Changed
+- **DevBot answers read as plain replies.** The webhook agent's answer opens the mention and says the thing, with no `Answer:` or `Reply:` label and no path, branch, file name or URL in the text. A location goes in the separate `Where:` comment only when there is something to open. `Review:` and `Blocked:` are unchanged.
+- Information architecture guide: triage the inventory before the client sees it; a new folder in the GitHub picker needs the repository removed and re-added.
+
 ## [2.8.1] - 2026-11-24
 
 ### Changed
