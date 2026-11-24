@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-11-24
+
+### Added
+- **`looper_runner.py --minutes N`** caps a looper window: no new task starts N minutes after it opens, and a task already running finishes. Used for a weekday lunch-hour window, `0 15 * * 1-5 ... --now --minutes 60`, on the Max login.
+
+### Changed
+- ADR 022 addendum: no client name in task titles.
+
 ## [2.7.0] - 2026-11-19
 
 ### Added
