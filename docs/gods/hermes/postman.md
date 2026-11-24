@@ -87,7 +87,7 @@ project (for the studio inbox, bain-studio) and, for each one:
 - prefixes the window name with 📬 (the original name is kept in the `@postman_name` window option)
 - flashes the subject on every attached tmux client for 8 seconds
 
-It also sends a critical desktop notification. If no session is open on that project, it says
+It also sends a desktop notification that clears itself after 8 seconds. If no session is open on that project, it says
 so on stderr and logs `PING ... panes=none`; the message waits for `/check-inbox` as before.
 Set `POSTMAN_NO_PING=1` to skip all of this (the tests do).
 

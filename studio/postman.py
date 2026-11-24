@@ -275,7 +275,7 @@ def ping(inbox: Path, *, subject: str, sender: str = '', project: str = '') -> l
         for client in _tmux('list-clients', '-F', '#{client_name}').split():
             _tmux('display-message', '-d', '8000', '-c', client, label)
     try:
-        subprocess.run(['notify-send', '-u', 'critical', 'Postman', label],
+        subprocess.run(['notify-send', '-u', 'normal', '-t', '8000', 'Postman', label],
                        capture_output=True, timeout=5)
     except (OSError, subprocess.SubprocessError):
         pass
