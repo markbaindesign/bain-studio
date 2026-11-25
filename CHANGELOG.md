@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-11-25
+
+### Added
+- **Theme review tooling lives in bain-studio.** `studio/theme-review/` holds theme-sweep, the review template and the CDP checks (keyboard pass folded into `cdp_check.py`), moved from bain-tools.
+- **Review gate** (`studio/theme-review/review-gate.py`) reports a review FULL or PARTIAL before a comment is posted.
+
 ## [2.13.0] - 2026-11-25
 
 ### Added
