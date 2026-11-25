@@ -575,6 +575,9 @@ apart is the point of writing both.
 Ticket #<id>. Reviewer markcbain. Reviewed <YYYY-MM-DD> on WordPress <ver> /
 PHP <ver>, WP_DEBUG on, theme unit test data imported.
 
+**Partial review** | **Full review** under the project definition. Keep one; the
+review gate checks it against what it finds.
+
 ## Verdict
 
 <Required count, recommended count, and the recommendation.>
@@ -596,10 +599,49 @@ decision can be revisited without redoing the work.>
 <New code that has never run gets run. Snapshot first, numbers before and after,
 restore afterwards.>
 
+## Handbook required
+
+Page https://make.wordpress.org/themes/handbook/review/required/, fetched and read
+<YYYY-MM-DD>. One row per numbered section, keyed by its number.
+
+| § | Verdict |
+|---|---|
+| 1 Licensing | <Pass, Fail, n/a, with the evidence> |
+
+## Accessibility guidelines
+
+<accessibility-ready themes only; delete the section otherwise.> Index
+https://wpaccessibility.org/docs/topics/theme-guidelines/, every page read
+<YYYY-MM-DD> with its testing steps. One row per guideline, keyed by its URL slug.
+
+| Guideline | Verdict |
+|---|---|
+| skip-to-content | <verdict, with the evidence> |
+
 ## Tags
 
 | Tag | Evidence |
 |---|---|
+
+## Functions and hooks
+
+<Every function the theme defines and every hook it adds, by name, one row each or
+several on a row. A row with no verdict does not count.>
+
+| Name | Verdict |
+|---|---|
+| `<prefix>_setup()` on `after_setup_theme` | <one line> |
+
+## File ledger
+
+<Every file in the zip, opened and read in this version. A cell may hold one path, a
+comma list (later items inherit the first item's folder), or a glob with its count:
+`assets/fonts/*.woff2 (8)`. The gate fails a glob whose count is wrong.>
+
+| File | Lines | Verdict |
+|---|---|---|
+| style.css | 1-<n> | <verdict> |
+| assets/images/*.jpg (4) | binary: viewed one by one | <verdict> |
 
 ## Other checks
 
@@ -609,7 +651,9 @@ previous version that you are deliberately not raising now.>
 
 ## Not done
 
-<What you did not check, and why. An honest gap beats an implied pass.>
+<What you did not check, and why. An honest gap beats an implied pass. Write
+"Nothing." when nothing is left; an optional guideline step that was not run is
+said after it, and does not make the review partial.>
 
 ## Outcome
 
@@ -707,6 +751,14 @@ its `CLAUDE.md` names it, and it is passed in as `<handover-template>`.
      "https://themes.trac.wordpress.org/ticket/<id>" \
      "file://<reports>/<slug>-<version>-trac-comment.txt"
    ```
+
+Before the handover, run the review gate (`review-gate.py`, beside this file) on the
+notes. It prints FULL or PARTIAL and whether the review is ready to post, and
+`--handover <page>` writes its own results into the page's data block, so the
+review type there is the one the gate found. It reads the tier 2 and tier 3 results
+from `<reports>/evidence/<slug>-<version>-<check>.json` (and the screenshots as
+`<slug>-<version>-<view>-<width>.png` there), and it needs the sign-off and posting
+task to exist already. A comment is not posted until the gate says ready to post.
 
 The notes stay the audit trail; the handover is the dashboard over them. The
 review type on the page is the one the five conditions under "How deep to go"
