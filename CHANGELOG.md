@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-11-25
+
+### Changed
+- **Slack is quiet by default.** The notifier drops `low` and `normal` messages; only `high` and `urgent` reach Slack. `SLACK_MIN_PRIORITY` in `studio/.env` moves the floor. See `docs/utilities/notifier.md`.
+- **No Slack copy of `@mark` notes.** The Asana mention already reaches the inbox. `SLACK_PING_MENTIONS=1` turns it back on.
+- Postman desktop popups clear themselves after 8 seconds.
+
 ## [2.11.0] - 2026-11-25
 
 ### Added
