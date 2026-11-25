@@ -48,6 +48,17 @@ looper session can Read them directly (screenshots of bugs, spec PDFs, etc.).
 - **Asana modified more recently than mirror** → Asana wins, mirror is updated
 - **Mirror modified more recently** → mirror wins, changes are pushed to Asana
 
+"More recently" compares the task's Asana `modified_at` with the per-task stamp in
+`asana-ids.json` (`last_sync_times`). sync.py re-stamps tasks after its own writes so they do
+not read as Asana-side changes. `--create-task --depends-on` and `--follow-up-of` re-stamp the
+task they write to as well, in every project that mirrors it, unless that project had not yet
+pulled an earlier Asana change.
+
+When Asana wins on a task whose mirror entry had been edited since the last sync, the edit is
+lost. sync.py logs a warning naming the task and the line (`pull discarded a mirror edit to
+{field}`). It knows the line was edited because it stores what it last wrote to the mirror
+(`mirror_snapshot` in `asana-ids.json`). Re-apply the edit if it still stands.
+
 ## Which fields push back
 
 Every field on a task is mirrored. Most can be edited in the mirror and are pushed to Asana

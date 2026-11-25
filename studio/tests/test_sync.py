@@ -1053,6 +1053,7 @@ def fake_asana(monkeypatch, proj):
     monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
     monkeypatch.setattr(sync, "_get", lambda path, params=None: {"data": {"name": "Mark Bain"}})
     monkeypatch.setattr(sync, "BAINBOT_GID", "bot_gid")
+    monkeypatch.setattr(sync, "discover_projects", lambda **kw: [])
     return posts
 
 
@@ -2048,3 +2049,114 @@ def test_add_to_project_dry_run_posts_nothing():
          patch.object(sync, "_post") as post:
         assert sync.add_to_project("T1", _proj(), dry_run=True) is True
     post.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# A follow-up must not cost the parent its pending mirror edit (BSTD-904)
+# ---------------------------------------------------------------------------
+
+def _seed_parent(proj, last_sync):
+    state = json.loads(proj.ids_file.read_text()) if proj.ids_file.exists() else {
+        "custom_field_gid": None, "tasks": {}, "next_seq": 1, "posted_progress": {}}
+    state["tasks"]["orig_gid"] = "ACME-002"
+    state.setdefault("last_sync_times", {})["orig_gid"] = last_sync
+    proj.ids_file.write_text(json.dumps(state))
+
+
+def _modified(ts):
+    return lambda path, params=None: (
+        {"data": {"modified_at": ts + ".000Z"}} if path == "/tasks/orig_gid"
+        else {"data": {"name": "Mark Bain"}})
+
+
+def test_follow_up_restamps_a_parent_with_nothing_unpulled(proj, fake_asana, monkeypatch):
+    _seed_parent(proj, "2026-11-24T10:00:00")
+    monkeypatch.setattr(sync, "_get", _modified("2026-11-24T09:59:00"))
+    sync.create_task_full(proj, "Sea limerick", follow_up_of=("orig_gid", "ACME-002"))
+    stamp = json.loads(proj.ids_file.read_text())["last_sync_times"]["orig_gid"]
+    # Ahead of now, so the bump our own comment caused does not read as newer.
+    assert stamp > datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def test_follow_up_leaves_a_parent_with_an_unpulled_change(proj, fake_asana, monkeypatch):
+    _seed_parent(proj, "2026-11-24T10:00:00")
+    monkeypatch.setattr(sync, "_get", _modified("2026-11-24T11:00:00"))
+    sync.create_task_full(proj, "Sea limerick", follow_up_of=("orig_gid", "ACME-002"))
+    stamp = json.loads(proj.ids_file.read_text())["last_sync_times"]["orig_gid"]
+    assert stamp == "2026-11-24T10:00:00"
+
+
+def test_restamp_reaches_every_project_mirroring_the_task(proj, tmp_path):
+    other = MagicMock(prefix="OTHER", ids_file=tmp_path / "other-ids.json",
+                      claude_dir=tmp_path)
+    other.ids_file.write_text(json.dumps(
+        {"tasks": {"orig_gid": "ACME-002"}, "last_sync_times": {"orig_gid": "2026-11-24T10:00:00"}}))
+    _seed_parent(proj, "2026-11-24T10:00:00")
+    done = sync.restamp_after_own_write(proj, "orig_gid", "ACME-002",
+                                        "2026-11-24T09:00:00", projects=[other])
+    assert done == [proj.prefix, "OTHER"]
+
+
+def test_restamp_without_a_modified_time_changes_nothing(proj):
+    _seed_parent(proj, "2026-11-24T10:00:00")
+    assert sync.restamp_after_own_write(proj, "orig_gid", "ACME-002", "", projects=[]) == []
+
+
+def _entry(**raw):
+    base = {"section": "DOING", "due": "none", "theme_status": "Draft", "progress": "x"}
+    base.update(raw)
+    return {"local_id": "ACME-002", "due": base["due"].replace(" **(OVERDUE)**", ""),
+            "_raw": base}
+
+
+def test_local_edits_finds_a_changed_line_only():
+    snap = sync.mirror_snapshot(_entry())
+    assert sync.local_edits(_entry(theme_status="Ready"), snap) == {"theme_status": "Ready"}
+    assert sync.local_edits(_entry(progress="changed"), snap) == {}
+    assert sync.local_edits(_entry(theme_status="Ready"), {}) == {}
+
+
+def test_overdue_marker_is_not_a_local_edit():
+    snap = sync.mirror_snapshot(_entry(due="2026-11-20"))
+    assert sync.local_edits(_entry(due="2026-11-20 **(OVERDUE)**"), snap) == {}
+
+
+def test_discarded_edit_is_reported_and_a_kept_one_is_not(caplog):
+    pulled = {"orig_gid": {"theme_status": "Ready", "section": "DOING"}}
+    written = {"orig_gid": _entry(theme_status="Draft")}
+    with caplog.at_level("WARNING"):
+        lost = sync.warn_discarded_edits("ACME", pulled, written)
+    assert lost == [("ACME-002", "theme_status")]
+    assert "ACME-002: pull discarded a mirror edit to theme_status" in caplog.text
+
+
+def test_sync_project_reports_a_pulled_over_edit_and_snapshots(proj, sample_task, monkeypatch, caplog):
+    monkeypatch.setattr(sync, "BAINBOT_GID", "bot_gid")
+    sample_task["assignee"]["gid"] = "bot_gid"
+    proj.mirror_file.write_text(
+        "### TEST-001 — Fix the bug\n"
+        "- **Local ID:** TEST-001\n"
+        "- **Asana ID:** 111222333\n"
+        "- **Section:** NEXT UP\n"  # local edit: last written as DOING
+        "- **Due:** 2026-05-25\n"
+        "- **Assignee:** Bot (bot_gid)\n"
+        "- **Notes:** Some notes here.\n"
+        "- **Blockers:** None identified.\n"
+        "- **Progress:** Checked 2026-05-20.\n\n"
+    )
+    sample_task["modified_at"] = "2026-05-20T10:00:00.000Z"
+    proj.ids_file.write_text(json.dumps({
+        "custom_field_gid": "cf_gid", "last_synced_field_gid": "ls_gid",
+        "tasks": {"111222333": "TEST-001"}, "next_seq": 2, "posted_progress": {},
+        "last_sync_times": {"111222333": "2026-05-19T00:00:00"},
+        "mirror_snapshot": {"111222333": {"section": "DOING", "due": "2026-05-25"}},
+    }))
+    monkeypatch.setattr(sync, "fetch_tasks", lambda p, f: [sample_task])
+    monkeypatch.setattr(sync, "fetch_sections", lambda p: {"DOING": "s1", "NEXT UP": "s2"})
+    with patch("sync.requests.get") as mock_get, patch("sync.requests.put"), \
+         patch("sync.requests.post"), caplog.at_level("WARNING"):
+        mock_get.return_value.json.return_value = {"data": [], "next_page": None}
+        assert sync_project(proj, dry_run=False)
+    assert "TEST-001: pull discarded a mirror edit to section ('NEXT UP'" in caplog.text
+    snap = json.loads(proj.ids_file.read_text())["mirror_snapshot"]["111222333"]
+    assert snap["section"] == "DOING"
