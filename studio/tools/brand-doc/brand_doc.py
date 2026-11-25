@@ -571,6 +571,7 @@ def build(input_path, output_path=None, one_pager=False):
     # Extract YAML frontmatter if present
     fm_title = ''
     fm_subtitle = ''
+    fm_client = ''
     body_text = md_text
     fm_match = re.match(r'^---\n(.*?)\n---\n', md_text, re.DOTALL)
     if fm_match:
@@ -579,6 +580,8 @@ def build(input_path, output_path=None, one_pager=False):
                 fm_title = ln[6:].strip().strip('"\'')
             elif ln.startswith('subtitle:'):
                 fm_subtitle = ln[9:].strip().strip('"\'')
+            elif ln.startswith('client:'):
+                fm_client = ln[7:].strip().strip('"\'')
         body_text = md_text[fm_match.end():]
 
     # Extract version from HTML comment (<!-- version: X | updated: Y -->)
@@ -597,7 +600,9 @@ def build(input_path, output_path=None, one_pager=False):
              else fm_title
              or input_path.stem.replace('-', ' ').replace('_', ' ').title())
 
-    subtitle = fm_subtitle
+    # A client report says who it is for on the cover. An explicit subtitle
+    # wins; otherwise the client name fills that slot.
+    subtitle = fm_subtitle or fm_client
     if not subtitle:
         for ln in md_text.split('\n')[1:6]:
             if ln.startswith('> '):
