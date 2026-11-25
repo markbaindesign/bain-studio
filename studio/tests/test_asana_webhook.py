@@ -589,3 +589,14 @@ def test_product_worktree_is_a_sibling_on_the_bot_branch_and_tidied_alone(factor
     pwt2, b2 = aw.ensure_product_worktree(product, "BTF-6")
     assert aw.tidy_worktree(product, pwt2, b2) == "removed (no changes)"
     assert not pwt2.exists()
+
+
+def test_continued_branch_is_the_latest_bot_named_branch():
+    from asana_webhook_logic import continued_branch
+    c = lambda who, text: {"resource_subtype": "comment_added", "created_by": {"gid": who}, "text": text}
+    stories = [c("BOT", "Review: x\n\nWhere: looper/20261120-0200 · abc1234"),
+               c("MARK", "see feature/other"),
+               c("BOT", "Review: y\n\nWhere: looper/20261125-0200 · def5678"),
+               c("BOT", "Answer: no branch here")]
+    assert continued_branch(stories, "BOT") == "looper/20261125-0200"
+    assert continued_branch([c("MARK", "looper/x")], "BOT") == ""

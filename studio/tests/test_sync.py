@@ -1996,7 +1996,18 @@ def test_unmentioned_handover_still_refuses_a_location_in_the_summary():
     assert "names a location" in sync.validate_progress_note("Done: merged feature/x-fix")
 
 
-def test_hand_back_reassigns_a_bot_task_and_updates_the_mirror_copy():
+def test_hand_back_is_off_by_default(monkeypatch):
+    # 2026-11-25: bots keep their own tasks.
+    monkeypatch.delenv("BOT_HAND_BACK", raising=False)
+    with patch.object(sync, "USER_GID", "MARK"), patch.object(sync, "BAINBOT_GID", "BOT"), \
+         patch.object(sync, "_put") as put:
+        assert sync.hand_back("T1", "@mark Review: merge it",
+                              task={"assignee": {"gid": "BOT"}}) is False
+    put.assert_not_called()
+
+
+def test_hand_back_reassigns_a_bot_task_and_updates_the_mirror_copy(monkeypatch):
+    monkeypatch.setenv("BOT_HAND_BACK", "1")
     task = {"gid": "T1", "assignee": {"gid": "BOT", "name": "DevBot"}}
     with patch.object(sync, "USER_GID", "MARK"), patch.object(sync, "BAINBOT_GID", "BOT"), \
          patch.object(sync, "_put", return_value={"data": {"assignee": {"gid": "MARK", "name": "Mark Bain"}}}) as put:
@@ -2005,7 +2016,8 @@ def test_hand_back_reassigns_a_bot_task_and_updates_the_mirror_copy():
     assert task["assignee"] == {"gid": "MARK", "name": "Mark Bain"}
 
 
-def test_hand_back_reads_the_assignee_when_no_task_is_given():
+def test_hand_back_reads_the_assignee_when_no_task_is_given(monkeypatch):
+    monkeypatch.setenv("BOT_HAND_BACK", "1")
     with patch.object(sync, "USER_GID", "MARK"), patch.object(sync, "BAINBOT_GID", "BOT"), \
          patch.object(sync, "_get", return_value={"data": {"assignee": {"gid": "BOT"}}}), \
          patch.object(sync, "_put", return_value={"data": {}}) as put:

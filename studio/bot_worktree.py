@@ -66,7 +66,7 @@ def base_branch(root: Path) -> str:
     return "HEAD"
 
 
-def ensure_worktree(root: Path, wt: Path, branch: str) -> tuple:
+def ensure_worktree(root: Path, wt: Path, branch: str, start: str = "") -> tuple:
     """(worktree path, branch), created at `wt` from the base branch on first use
     and reused by every later run that asks for the same path. `wt` must sit
     outside `root`. A branch can be checked out in only one worktree at a time,
@@ -78,7 +78,11 @@ def ensure_worktree(root: Path, wt: Path, branch: str) -> tuple:
     if _git(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}").returncode == 0:
         r = _git(root, "worktree", "add", str(wt), branch)
     else:
-        r = _git(root, "worktree", "add", "-b", branch, str(wt), base_branch(root))
+        # `start` (a looper branch the task's work sits on) when it exists,
+        # else the repo's base branch.
+        ok = start and _git(root, "rev-parse", "--verify", "--quiet",
+                            f"refs/heads/{start}").returncode == 0
+        r = _git(root, "worktree", "add", "-b", branch, str(wt), start if ok else base_branch(root))
     if r.returncode != 0:
         raise RuntimeError(f"git worktree add failed: {r.stderr.strip()}")
     return wt, branch
