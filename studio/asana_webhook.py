@@ -156,6 +156,7 @@ You are in a git worktree of your own at {worktree}, on branch {branch}: a copy 
 4. When finished, post ONE comment on the task: python3 {sync} --comment --task-gid {gid} --comment-text "<text>"
    - An answer opens "@mark " and then just says it, the way a colleague replies in a chat: no label such as "Answer:" or "Reply:", no preamble. Finished work opens "Review:" followed by what Mark does now, in one imperative line (for example "Review: merge the bot branch, then try the new button on the staging site"), then what changed, then a "Check:" block. A question you need Mark to decide opens "Blocked:".
    - Separate blocks with " || ". At most 6 blocks, 150 characters each, 500 in all: sync.py refuses anything longer.
+   - When the task is low-impact housekeeping (studio tooling, docs, Asana or client housekeeping: nothing outside the studio sees it, easy to undo, not a decision) and it is fully done with nothing waiting on Mark, tick it off instead of asking him to: `python3 {sync} --complete-task {lid} --reason "<one line: why it is done>"`. Anything else gets a Review note.
    - No branch, commit, path, file name or URL in the text Mark reads: he never looks at them and they bury the point. Say what a thing is in words. Add a "Where:" block, which goes at the foot of the same comment, only when there is something he must open, such as a commit to review; an answer usually needs none.
    - Post nothing before you are done, so a run that is stopped leaves no half-finished note.
 5. Exit.

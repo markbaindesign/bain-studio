@@ -2310,3 +2310,56 @@ def test_sync_project_reports_a_pulled_over_edit_and_snapshots(proj, sample_task
     assert "TEST-001: pull discarded a mirror edit to section ('NEXT UP'" in caplog.text
     snap = json.loads(proj.ids_file.read_text())["mirror_snapshot"]["111222333"]
     assert snap["section"] == "DOING"
+
+
+# --- Completing tasks (--complete-task, 2026-11-25) ---------------------------
+
+def _fake_task(**kw):
+    t = {"gid": "T1", "name": "Tidy the mirror", "completed": False, "tags": []}
+    t.update(kw)
+    return t
+
+
+def test_completion_blockers():
+    assert sync.completion_blockers(_fake_task(), [], "TAG") == []
+    assert "already completed" in sync.completion_blockers(_fake_task(completed=True), [], "TAG")[0]
+    assert "subtask" in sync.completion_blockers(_fake_task(), ["Add tests"], "TAG")[0]
+    tagged = _fake_task(tags=[{"gid": "TAG"}])
+    assert "Waiting on Mark" in sync.completion_blockers(tagged, [], "TAG")[0]
+
+
+def test_complete_task_ticks_and_leaves_a_silent_reason():
+    puts, posts = [], []
+    with patch.object(sync, "_get", return_value={"data": _fake_task()}), \
+         patch.object(sync, "open_subtask_names", return_value=[]), \
+         patch.object(sync, "_ACTION_TAG", "TAG"), \
+         patch.object(sync, "_put", side_effect=lambda p, b: puts.append((p, b))), \
+         patch.object(sync, "_post", side_effect=lambda p, b: posts.append((p, b)) or {"data": {"gid": "S"}}):
+        sync.complete_task("T1", "the symlink now points at the deployed template")
+    assert puts == [("/tasks/T1", {"data": {"completed": True}})]
+    body = posts[0][1]["data"]["html_text"]
+    assert body.startswith("<body>Ticked off: ") and "data-asana-gid" not in body
+
+
+def test_complete_task_refuses_without_a_reason_or_with_open_subtasks():
+    with pytest.raises(ValueError, match="--reason"):
+        sync.complete_task("T1", "  ")
+    with patch.object(sync, "_get", return_value={"data": _fake_task()}), \
+         patch.object(sync, "open_subtask_names", return_value=["Write docs"]), \
+         patch.object(sync, "_ACTION_TAG", "TAG"), \
+         patch.object(sync, "_put") as put:
+        with pytest.raises(ValueError, match="subtask"):
+            sync.complete_task("T1", "done")
+    put.assert_not_called()
+
+
+def test_reopen_task():
+    puts = []
+    with patch.object(sync, "_get", return_value={"data": _fake_task(completed=True)}), \
+         patch.object(sync, "_put", side_effect=lambda p, b: puts.append(b)), \
+         patch.object(sync, "_post", return_value={"data": {"gid": "S"}}):
+        sync.reopen_task("T1", "ticked by mistake")
+    assert puts == [{"data": {"completed": False}}]
+    with patch.object(sync, "_get", return_value={"data": _fake_task()}):
+        with pytest.raises(ValueError, match="not completed"):
+            sync.reopen_task("T1", "x")

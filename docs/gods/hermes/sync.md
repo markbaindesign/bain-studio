@@ -31,6 +31,22 @@ python3 studio/sync.py --add-to-project SL \     # multi-home tasks into another
 sync gives it a Looper Status of Queue. A task already in the project is left alone, and
 `--dry-run` previews.
 
+## Completing a task
+
+```bash
+python3 studio/sync.py --complete-task BSTD-910 --reason "the symlink points at the deployed template"
+python3 studio/sync.py --reopen-task BSTD-910 --reason "ticked by mistake"
+```
+
+Mark's rule (2026-11-25): Claude ticks a task off when it is **low impact** (studio tooling,
+docs, Asana or client housekeeping: nothing outside the studio sees it, it is easy to undo,
+and it is not a decision) and **nothing is waiting on Mark**. Anything else gets a `Review`
+or `Done` note and Mark ticks it. The judgement is the caller's; the command refuses what a
+script can see: a missing reason, open subtasks, an already completed task, or the
+"Waiting on Mark" tag. Each completion posts the reason as a silent `Ticked off:` comment, so
+it is on the record, and `--reopen-task` posts a `Reopened:` one. Webhook bot runs may use
+`--complete-task`.
+
 ## Attachments
 
 Each sync downloads attachments from **active** (non-completed) tasks into

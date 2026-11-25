@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.19.0] - 2026-11-25
+
+### Added
+- **`sync.py --complete-task` and `--reopen-task`.** Claude ticks off low-impact tasks (studio tooling, docs, Asana or client housekeeping) when nothing waits on Mark, with the reason as a silent comment. Refused with open subtasks or a "Waiting on Mark" tag. Webhook bot runs may use it. See `docs/gods/hermes/sync.md`.
+
 ## [2.18.0] - 2026-11-25
 
 ### Changed
