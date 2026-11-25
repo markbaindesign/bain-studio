@@ -4,6 +4,8 @@
     python3 studio/asana_webhook.py watch BD              # watch a project (/project-watcher)
     python3 studio/asana_webhook.py unwatch BD            # stop watching it
     python3 studio/asana_webhook.py status                # what is watched and running
+    python3 studio/asana_webhook.py session-start         # SessionStart hook: watch this project
+    python3 studio/asana_webhook.py session-end           # SessionEnd hook
     python3 studio/asana_webhook.py serve                 # run the listener (systemd)
     python3 studio/asana_webhook.py register --project BD # create the Asana webhook
     python3 studio/asana_webhook.py list                  # webhook health per project
@@ -18,8 +20,11 @@ resolves queued events against the API, waits for bursts to settle, and launches
 `claude -p` for each task in a git worktree of its own, outside the project, so a
 run never touches the checkout Mark is working in.
 
-Only watched projects get runs: `watch` turns a project on, and it turns itself
-off 30 minutes after Mark's last activity on its bot tasks. Only events authored
+Only watched projects get runs. Opening a Claude session in a project watches it
+(the session-start hook), and so does `watch`. A project stays watched while a
+session is open there, and stops 30 minutes after the last session closes or
+Mark's last activity on its bot tasks, whichever is later. A comment from Mark on
+a bot task in a project whose watch lapsed starts it again. Only events authored
 by ASANA_WEBHOOK_TRIGGER_USERS (Mark and PmBot) wake an agent; client comments
 wait for a normal session. See docs/utilities/asana-webhook.md and ADR 025.
 """
@@ -27,6 +32,7 @@ wait for a normal session. See docs/utilities/asana-webhook.md and ADR 025.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime
 import fcntl
 import json
@@ -50,6 +56,7 @@ from bot_worktree import DISALLOWED, REGISTRY_DIR, WORKTREES  # noqa: E402
 from asana_webhook_logic import (  # noqa: E402
     body_length_error,
     candidate_events,
+    claude_pid,
     activity_from,
     dropbox_folder,
     hit_usage_limit,
@@ -57,15 +64,18 @@ from asana_webhook_logic import (  # noqa: E402
     inbox_cursor,
     inbox_wakes,
     idle_expired,
+    is_bot_session,
     mentions_user,
     wakes_bot,
     launchable,
     over_rate_limit,
+    prefix_for_dir,
     prefix_from_path,
     project_edit_deny,
     custom_field_value,
     product_for_milestone,
     product_git_rules,
+    prune_sessions,
     protected_path_denies,
     secret_read_denies,
     run_name,
@@ -110,6 +120,9 @@ INBOX_INTERVAL_S = 180     # how often the inbox poll looks at DevBot's tasks
 INBOX_OVERLAP_S = 600      # search lags behind writes; each poll reaches back this far
 INBOX_FIRST_S = 3600       # the first poll after switching on looks back an hour
 QUEUES = {"SL", "SLT"}     # cross-project queues: a task there is worked in its home project
+# Projects whose watch lapsed (not ones Mark unwatched): a comment from him on a
+# bot task there starts the watch again rather than being dropped.
+LAPSED = STATE / "lapsed.json"
 LOG = STATE / "webhook.log"
 
 # systemd's PATH lacks ~/.local/bin (ADR 014's 90 silent FileNotFoundErrors).
@@ -260,7 +273,13 @@ class Handler(BaseHTTPRequestHandler):
 
         keep = candidate_events(events, TRIGGER_USERS, BOT_GID)
         if keep and prefix not in watched():
-            log(f"IGNORED {prefix} not watched, candidates={len(keep)}")
+            # Whether the events are on a bot task needs API calls, which the
+            # worker makes; this reply has to stay inside Asana's 10 seconds.
+            if prefix in _locked_json(LAPSED):
+                log(f"LAPSED-EVENTS {prefix} candidates={len(keep)}")
+                enqueue({"prefix": prefix, "events": keep, "source": "lapsed"})
+            else:
+                log(f"IGNORED {prefix} not watched, candidates={len(keep)}")
             return self._reply(200)
         log(f"EVENTS {prefix} received={len(events)} candidates={len(keep)}")
         if keep:
@@ -399,7 +418,18 @@ class Worker:
                 f.unlink(missing_ok=True)
                 continue
             prefix = item.get("prefix")
-            inbox = item.get("source") == "inbox"
+            source = item.get("source")
+            if source == "session":
+                f.unlink(missing_ok=True)
+                if self._session_watch(item):
+                    watch = watched()
+                continue
+            if source == "lapsed" and prefix not in watch:
+                f.unlink(missing_ok=True)
+                if self._rearm(item):
+                    watch = watched()
+                continue
+            inbox = source == "inbox"
             allowed = (prefix in watch or inbox) and prefix in project_map()
             tasks = resolve(item) if allowed else set()
             f.unlink(missing_ok=True)
@@ -431,22 +461,66 @@ class Worker:
                 log(f"LAUNCH {prefix} {gid} failed: {ex!r}")
                 _notify(f"Could not start the bot on a {prefix} task: {ex}", prefix)
 
-    def _expire(self, watch: dict) -> None:
-        """Stop watching a project 30 minutes after Mark's last activity, once its
-        runs have finished. Its queued tasks are dropped with it."""
+    def _session_watch(self, item: dict) -> bool:
+        """A session opened in a project nobody is watching: start the watch (which
+        may register the webhook and sweeps for unanswered comments), then record
+        the session. The hook leaves this to the worker so it stays fast."""
+        prefix, sid, pid = item.get("prefix"), item.get("session"), item.get("pid")
+        if not (sid and _claude_alive(pid)):
+            return False   # closed before the worker got to it
+        if prefix not in watched():
+            ok, msg = start_watch(prefix)
+            if not ok:
+                log(f"SESSION {prefix} {sid} could not watch: {msg}")
+                return False
+        _add_session(prefix, sid, pid)
+        return True
+
+    def _rearm(self, item: dict) -> bool:
+        """Mark commented on a bot task in a project whose watch lapsed: watch it
+        again and queue that task. PmBot's events and comments on other tasks do
+        not count, as with activity that keeps a watch alive."""
+        prefix = item.get("prefix")
+        if prefix not in project_map() or not activity_from(item, sync.USER_GID or ""):
+            log(f"IGNORED {prefix} lapsed, not Mark's activity")
+            return False
+        tasks = resolve(item)
+        if not tasks:
+            log(f"IGNORED {prefix} lapsed, no bot task in the events")
+            return False
         now = time.time()
+        _locked_json(WATCH, lambda d: d.setdefault(prefix, {"since": now, "last_activity": now}))
+        _locked_json(LAPSED, lambda d: d.pop(prefix, None))
+        for gid in tasks:
+            self.pending[gid] = {"prefix": prefix, "last": now}
+        log(f"REWATCH {prefix} tasks={sorted(tasks)}")
+        _notify(f"Watching {prefix} again: you commented on a bot task there after "
+                f"the watch had stopped.", prefix)
+        return True
+
+    def _expire(self, watch: dict) -> None:
+        """Stop watching a project 30 minutes after Mark's last activity or its last
+        open session closing, once its runs have finished. Its queued tasks are
+        dropped with it."""
+        now = time.time()
+        if any(e.get("sessions") for e in watch.values()):
+            _locked_json(WATCH, lambda d: [prune_sessions(e, now, _claude_alive)
+                                           for e in d.values()])
+            watch = watched()
         for prefix, entry in watch.items():
             if not idle_expired(entry, now, IDLE_S):
                 continue
             if any(r["prefix"] == prefix for r in self.running.values()):
                 continue
             _locked_json(WATCH, lambda d: d.pop(prefix, None))
+            _locked_json(LAPSED, lambda d: d.update({prefix: now}))
             for gid in [g for g, p in self.pending.items()
                         if p["prefix"] == prefix and not p.get("inbox")]:
                 del self.pending[gid]
             log(f"UNWATCHED {prefix} idle {IDLE_S // 60}m")
-            _notify(f"Stopped watching {prefix}: no activity for {IDLE_S // 60} minutes. "
-                    f"Run /project-watcher {prefix} to start again.", prefix)
+            _notify(f"Stopped watching {prefix}: no open session and no activity for "
+                    f"{IDLE_S // 60} minutes. A comment from you on a bot task there "
+                    f"starts it again.", prefix)
 
     def _launch(self, prefix: str, gid: str) -> None:
         now = time.time()
@@ -501,6 +575,8 @@ class Worker:
 
         env = bot_worktree.run_env(os.environ, proj.root)
         cfg = env.get("CLAUDE_CONFIG_DIR", "")
+        # Marks the run as a bot's, so the session hooks never let it hold a watch.
+        env["BAIN_BOT_RUN"] = "1"
 
         RUNS.mkdir(parents=True, exist_ok=True)
         run_log = RUNS / f"{prefix}-{name}-{datetime.datetime.now():%Y%m%d-%H%M%S}.log"
@@ -723,37 +799,128 @@ def sweep(prefix: str, proj) -> list:
     return waiting
 
 
-def watch(prefix: str) -> bool:
+def start_watch(prefix: str) -> tuple:
+    """Watch a project: register its webhook if it has none, mark it watched and
+    queue its unanswered comments. Returns (ok, message). Shared by `watch` and
+    the worker, which runs it for a session opened in an unwatched project."""
     proj = project_map().get(prefix)
     if not proj:
-        print(f"{prefix} has no registry entry.")
-        return False
+        return False, f"{prefix} has no registry entry."
     top = bot_worktree._git(proj.root, "rev-parse", "--show-toplevel").stdout.strip()
     if not top or Path(top).resolve() != Path(proj.root).resolve():
-        print(f"{prefix} is not the root of its own git repository ({proj.root}), so a bot "
-              "run has nowhere safe to work. SL and SLT are queues inside bain-studio.")
-        return False
+        return False, (f"{prefix} is not the root of its own git repository ({proj.root}), so a "
+                       "bot run has nowhere safe to work. SL and SLT are queues inside bain-studio.")
     if not listener_up():
-        print(f"The listener is not answering on 127.0.0.1:{PORT}. Start it: "
-              "systemctl --user start asana-webhook")
-        return False
+        return False, (f"The listener is not answering on 127.0.0.1:{PORT}. Start it: "
+                       "systemctl --user start asana-webhook")
     if not any(h.get("active") for h in webhooks_for(proj)):
         print(f"No active webhook for {prefix} - registering one.")
         if not register(prefix):
-            return False
+            return False, f"Could not register a webhook for {prefix}."
     now = time.time()
 
     def update(d):
-        d[prefix] = {"since": now, "last_activity": now}
+        # Keep the sessions of a watch that is already running.
+        d[prefix] = {"since": now, "last_activity": now,
+                     "sessions": (d.get(prefix) or {}).get("sessions") or {}}
 
     _locked_json(WATCH, update)
+    _locked_json(LAPSED, lambda d: d.pop(prefix, None))
     waiting = sweep(prefix, proj)
     if waiting:
         enqueue({"prefix": prefix, "tasks": waiting, "source": "watch"})
     log(f"WATCH {prefix} waiting={waiting}")
-    print(f"Watching {prefix}. Stops after {IDLE_S // 60} minutes with no activity from you."
-          + (f" {len(waiting)} task(s) with an unanswered comment queued." if waiting else ""))
-    return True
+    return True, (f"Watching {prefix}. Stops {IDLE_S // 60} minutes after your last activity "
+                  "or your last Claude session there closes, whichever is later."
+                  + (f" {len(waiting)} task(s) with an unanswered comment queued." if waiting else ""))
+
+
+def watch(prefix: str) -> bool:
+    ok, msg = start_watch(prefix)
+    print(msg)
+    return ok
+
+
+def _claude_alive(pid) -> bool:
+    """Is `pid` still a running Claude process? Checking the name guards against
+    the pid having been reused since the session started."""
+    try:
+        return Path(f"/proc/{int(pid)}/comm").read_text().strip() == "claude"
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _ancestors() -> list:
+    """(pid, comm) for the hook's parent and upwards, as far as /proc allows."""
+    out, pid = [], os.getppid()
+    for _ in range(16):
+        try:
+            comm = Path(f"/proc/{pid}/comm").read_text().strip()
+            ppid = int(Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            break
+        out.append((pid, comm))
+        if ppid <= 1:
+            break
+        pid = ppid
+    return out
+
+
+def _add_session(prefix: str, sid: str, pid: int) -> None:
+    def update(d):
+        if prefix in d:
+            d[prefix].setdefault("sessions", {})[sid] = {"pid": pid, "started": time.time()}
+    _locked_json(WATCH, update)
+    log(f"SESSION {prefix} {sid} open pid={pid}")
+
+
+def _hook_input() -> dict:
+    try:
+        return json.loads(sys.stdin.read() or "{}")
+    except (OSError, ValueError):
+        return {}
+
+
+def _hook_prefix(data: dict):
+    cwd = data.get("cwd") or os.getcwd()
+    if is_bot_session(dict(os.environ), cwd, str(WORKTREES)):
+        return None
+    return prefix_for_dir(cwd, {p: proj.root for p, proj in project_map().items()})
+
+
+def session_start() -> None:
+    """SessionStart hook. Records the session against a watch that is running, or
+    queues it for the worker to start one. Silent: hook output reaches the
+    session's context."""
+    data = _hook_input()
+    sid = data.get("session_id")
+    prefix = _hook_prefix(data)
+    pid = claude_pid(_ancestors())
+    if not (sid and prefix and pid):
+        return
+    if prefix in watched():
+        _add_session(prefix, sid, pid)
+    else:
+        enqueue({"prefix": prefix, "source": "session", "session": sid, "pid": pid})
+
+
+def session_end() -> None:
+    """SessionEnd hook. The idle timer starts from now. A session that ends
+    without the hook (a crash) is caught by the worker's pid check instead."""
+    data = _hook_input()
+    sid = data.get("session_id")
+    prefix = _hook_prefix(data)
+    if not (sid and prefix):
+        return
+    now = time.time()
+
+    def update(d):
+        entry = d.get(prefix)
+        if entry and (entry.get("sessions") or {}).pop(sid, None) is not None:
+            entry["last_activity"] = max(entry.get("last_activity") or 0, now)
+
+    _locked_json(WATCH, update)
+    log(f"SESSION {prefix} {sid} closed")
 
 
 # ---------------------------------------------------------------------------
@@ -835,6 +1002,8 @@ def inbox_cmd(action: str) -> None:
 def unwatch(prefix: str) -> None:
     removed = {}
     _locked_json(WATCH, lambda d: removed.update(x=d.pop(prefix, None)))
+    # Mark's own stop: a later comment must not start it again.
+    _locked_json(LAPSED, lambda d: d.pop(prefix, None))
     log(f"UNWATCH {prefix}")
     if removed.get("x"):
         print(f"Stopped watching {prefix}. Runs already started finish on their own.")
@@ -848,9 +1017,16 @@ def status() -> None:
     if not w:
         print("Watching nothing.")
     for prefix, e in sorted(w.items()):
+        open_ = [s for s in (e.get("sessions") or {}).values() if _claude_alive(s.get("pid"))]
+        if open_:
+            print(f"{prefix}: watched, {len(open_)} Claude session(s) open")
+            continue
         left = max(0, IDLE_S - (now - (e.get("last_activity") or e.get("since") or now)))
         print(f"{prefix}: watched, stops in {left / 60:.0f}m without activity")
     print(f"Inbox poll: {'on' if inbox_on() else 'off'} (every project, every {INBOX_INTERVAL_S // 60} min)")
+    lapsed = sorted(_locked_json(LAPSED))
+    if lapsed:
+        print(f"Lapsed (a comment from you on a bot task restarts them): {', '.join(lapsed)}")
     print(f"Listener: {'up' if listener_up() else 'DOWN'}")
     for wt in sorted(WORKTREES.glob("*/*")) if WORKTREES.exists() else []:
         print(f"Worktree: {wt}")
@@ -863,6 +1039,8 @@ def main() -> None:
     for name in ("watch", "unwatch"):
         sub.add_parser(name).add_argument("prefix", metavar="PREFIX")
     sub.add_parser("status")
+    sub.add_parser("session-start")
+    sub.add_parser("session-end")
     for name in ("register", "unregister"):
         sub.add_parser(name).add_argument("--project", required=True, metavar="PREFIX")
     sub.add_parser("list")
@@ -879,6 +1057,18 @@ def main() -> None:
         unwatch(args.prefix.upper())
     elif args.cmd == "status":
         status()
+    elif args.cmd in ("session-start", "session-end"):
+        # A hook runs in every session, listener up or not: never fail one.
+        # Silent too: SessionStart output can land in the session's context.
+        try:
+            with open(os.devnull, "w") as null, contextlib.redirect_stdout(null):
+                session_start() if args.cmd == "session-start" else session_end()
+        except Exception as ex:
+            try:
+                log(f"SESSION hook {args.cmd} failed: {ex!r}")
+            except Exception:
+                pass
+        sys.exit(0)
     elif args.cmd == "register":
         sys.exit(0 if register(args.project.upper()) else 1)
     elif args.cmd == "unregister":

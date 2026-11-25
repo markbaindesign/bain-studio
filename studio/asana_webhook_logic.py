@@ -9,8 +9,8 @@ Covers:
   - X-Hook-Signature verification
   - Cheap pre-filtering of raw webhook events (no API calls)
   - Deciding whether a fetched story/task should wake an agent
-  - Watching: the 30-minute idle rule, and which queued tasks may start under
-    the per-project and global run limits
+  - Watching: the 30-minute idle rule, open Claude sessions that hold a watch,
+    and which queued tasks may start under the per-project and global run limits
   - Per-task rate capping, to stop PmBot <-> DevBot ping-pong
   - Per-run worktree naming and the allow/deny rules that keep a run inside it
   - Reading a project's CLAUDE_CONFIG_DIR from its .envrc (ADR 017)
@@ -135,9 +135,68 @@ def unanswered(stories: list, trigger_users: set, bot_gid: str, since: str = "")
 
 def idle_expired(entry: dict, now: float, idle_s: int) -> bool:
     """A watched project stops being watched `idle_s` after Mark's last activity
-    on its bot tasks. `last_activity` falls back to when watching started."""
+    on its bot tasks. `last_activity` falls back to when watching started.
+
+    A Claude session open in the project holds the watch however long Mark is
+    quiet in Asana; closing it sets `last_activity`, so `idle_s` then counts
+    from the close (see prune_sessions)."""
+    if (entry or {}).get("sessions"):
+        return False
     last = (entry or {}).get("last_activity") or (entry or {}).get("since") or 0
     return now - last >= idle_s
+
+
+def prune_sessions(entry: dict, now: float, alive) -> bool:
+    """Drop the sessions in a watch entry whose Claude process has gone.
+
+    SessionEnd does not fire when Claude crashes or is killed, so the worker
+    checks each recorded pid with `alive(pid)` rather than trusting the hook to
+    say goodbye. A session that has gone counts as closing `now`, which starts
+    the idle timer. Returns True when anything was dropped."""
+    sessions = (entry or {}).get("sessions") or {}
+    gone = [sid for sid, s in sessions.items() if not alive((s or {}).get("pid"))]
+    for sid in gone:
+        del sessions[sid]
+    if gone:
+        entry["last_activity"] = max(entry.get("last_activity") or 0, now)
+    return bool(gone)
+
+
+def is_bot_session(env: dict, cwd: str, worktrees: str) -> bool:
+    """Is this Claude session a bot's rather than Mark's? Bot sessions never
+    start or extend a watch: a webhook run (BAIN_BOT_RUN, set by _launch), a
+    looper session (LOOPER_RUN_ID, set by the runner), or anything working in a
+    bot worktree."""
+    if (env or {}).get("BAIN_BOT_RUN") or (env or {}).get("LOOPER_RUN_ID"):
+        return True
+    return bool(cwd) and _inside(cwd, worktrees)
+
+
+def _inside(path: str, root: str) -> bool:
+    p, r = Path(path).resolve(), Path(root).resolve()
+    return p == r or r in p.parents
+
+
+def prefix_for_dir(cwd: str, roots: dict) -> str | None:
+    """The registered project a directory belongs to: the one with the deepest
+    root containing it, so a project nested inside another (SL in bain-studio)
+    wins over its parent. `roots` maps prefix to project root."""
+    best, depth = None, -1
+    for prefix, root in (roots or {}).items():
+        if root and cwd and _inside(cwd, str(root)):
+            d = len(Path(str(root)).resolve().parts)
+            if d > depth:
+                best, depth = prefix, d
+    return best
+
+
+def claude_pid(chain: list) -> int | None:
+    """The Claude process a hook runs under: the nearest ancestor named claude.
+    `chain` is (pid, comm) pairs from the hook's parent upwards."""
+    for pid, comm in chain or []:
+        if (comm or "").strip() == "claude":
+            return pid
+    return None
 
 
 def launchable(pending: list, running: dict, prefix_of: dict,
