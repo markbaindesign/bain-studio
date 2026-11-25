@@ -88,6 +88,22 @@ or anything for later keeps the default, `NEXT UP`.
 
 To see sections for a project, check its mirror or Asana board. The `--task-section` value must match exactly (case-insensitive).
 
+## Title prefixes are refused
+
+A title is the task itself, as a plain sentence. `--create-task`, `--update-task --task-name`
+and `--create-subtask` refuse a title that opens with a label (a short run before `: `, or a
+leading `[...]`) and send nothing to Asana:
+
+```
+ERROR Not creating task: title opens with the label 'sync.py:'. A title is the task itself, ...
+```
+
+Write "Give tasks that arrive with a Local ID already in use a fresh one", not "sync.py: give a
+fresh Local ID…". The project's own name (`Theme review:` in the Theme Review project), a
+client, a tool, a workstream and a kind (`Question:`) are all prefixes. Where the tool or page
+matters, put it inside the sentence. Group tasks with the project, a section, a tag, a field, a
+dependency or a parent. See the 2026-11-25 addendum to ADR 022.
+
 ## Description length is enforced
 
 `--task-notes` is the task's **description**. On `--create-task` it is refused over **1,200
@@ -101,7 +117,7 @@ session narrative belong in a commit message or a comment.
 
 A description says three things: what the task is, what done looks like, and where the work
 is (paths, URLs, GIDs). Per [ADR 022](../adr/022-asana-tasks-carry-their-own-context.md) it
-carries its own context, so repeat the client, page or section rather than leaning on the
+carries its own context, so name the page or section rather than leaning on the Asana
 section or a parent task.
 
 **Never in a description:** how the problem arose, what was ruled out, alternatives weighed,

@@ -2106,3 +2106,52 @@ def test_user_mentions_add_each_follower_then_post_once_after_one_wait():
     assert calls == ["/tasks/TASK1/addFollowers", "/tasks/TASK1/addFollowers", "/tasks/TASK1/stories"]
     assert slept == [sync.MENTION_FOLLOW_WAIT]
     assert {f["gid"] for f in task["followers"]} == {"111", "222"}
+
+
+
+# --- Title prefixes (ADR 022, 2026-11-25 addendum) ---------------------------
+
+@pytest.mark.parametrize("title", [
+    "sync.py: give a fresh Local ID to tasks that arrive carrying one already in use",
+    "Theme review: build the review gate that reports FULL or PARTIAL",
+    "Question: which privacy policy wording does the client want?",
+    "Acme privacy policy: add the cookie section",
+    "Looper runner: a 'queue empty' session counts as progress",
+    "[KF] fix the archive redirect",
+])
+def test_title_with_a_prefix_is_refused(title):
+    assert "drop the prefix" in sync.validate_task_title(title)
+
+
+@pytest.mark.parametrize("title", [
+    "Stop the looper runner starting empty sessions",
+    "Move the 10:30 standup reminder",
+    "Fix the redirect from https://example.test/old",
+    "Nav update and Books page",
+    "",
+    None,
+])
+def test_plain_title_passes(title):
+    assert sync.validate_task_title(title) == ""
+
+
+def test_create_task_full_refuses_a_prefixed_title_before_any_write(proj, fake_asana):
+    with pytest.raises(ValueError, match="drop the prefix"):
+        sync.create_task_full(proj, "sync.py: do it")
+    assert fake_asana == []
+
+
+def test_update_task_refuses_a_prefixed_title_before_any_write(monkeypatch):
+    puts = []
+    monkeypatch.setattr(sync, "_put", lambda path, body: puts.append((path, body)))
+    with pytest.raises(ValueError, match="drop the prefix"):
+        sync.update_task("gid", name="Theme review: build the gate")
+    assert puts == []
+
+
+def test_create_subtasks_refuses_a_prefixed_name_before_any_write(monkeypatch):
+    posts = []
+    monkeypatch.setattr(sync, "_post", lambda path, body: posts.append(path) or {"data": {"gid": "g"}})
+    with pytest.raises(ValueError, match="drop the prefix"):
+        sync.create_subtasks("parent", ["Check the form", "Step 2: deploy"])
+    assert posts == []
