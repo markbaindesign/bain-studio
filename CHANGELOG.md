@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-11-25
+
+### Added
+- **Careers watcher follows saved searches on Workable's job board.** Add a `jobs.workable.com/search` URL with `--title-match REGEX` and each new matching role becomes a Prospecting task. A job listed once per country makes one task. `--title-match` also filters a company board. See `docs/utilities/careers-watch.md`.
+- **`sync.py` mentions any Asana user** with a leading `@user:{gid}` token. See `docs/utilities/asana-comments.md`.
+
+### Changed
+- Careers watcher task titles are a plain sentence, "Apply for the X role at Y", with no prefix (ADR 022 addendum).
+- ADR 022 addendum: no prefix of any kind in task titles, including project names and `Question:`/`Decision:`.
+
 ## [2.10.0] - 2026-11-24
 
 ### Changed

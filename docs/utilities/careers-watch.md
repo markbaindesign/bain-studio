@@ -18,6 +18,20 @@ python3 studio/collectors/careers_watch.py            # run all checks (also run
 python3 studio/collectors/careers_watch.py --dry-run  # say what would be created; create and save nothing
 ```
 
+## Saved searches
+
+An entry can be a saved search on Workable's cross-company job board instead of one company's careers page. Add the search page's URL and a `--title-match` regex (case-insensitive):
+
+```bash
+python3 studio/collectors/careers_watch.py --add "Workable WordPress search" \
+  "https://jobs.workable.com/search?query=Wordpress+Developer&workplace=remote&day_range=7" \
+  --title-match wordpress
+```
+
+The watcher reads `jobs.workable.com/api/v1/jobs`, the API behind that page, with the same query parameters, and follows its pages. Only titles matching the regex count. The board lists one job once per country, so a search counts each company and title once and makes one task for it. The task is named for the hiring company, not the search.
+
+`--title-match` also works on a company entry, to watch only some of its roles.
+
 ## Files
 
 - Registry: `~/.config/bain-studio/careers_watch_companies.json` — the companies being watched. Outside the repo because the repo is public; shared by the dev and ops checkouts. Override with `CAREERS_WATCH_REGISTRY`.
