@@ -2661,7 +2661,8 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
 
     follow_up_of is (gid, label) of the task this one follows up. The new
     task's description then opens "Follow-up to {label}." with the label linked
-    to that task, as Asana's own "Create follow-up task" does.
+    to that task, as Asana's own "Create follow-up task" does. Nothing is
+    posted on the original: a comment there notifies all its collaborators.
     """
     from datetime import datetime
 
@@ -2753,18 +2754,13 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
                                f"{depends_on}: {e}") from e
         restamp_after_own_write(proj, depends_on, depends_on, before_dep)
 
-    # 6. Point the original task at its follow-up. A link in a description
-    # leaves no trace on the task it names (checked 2026-11-17), so without
-    # this the original has no way to reach the follow-up. Silent: no @mark.
+    # 6. No comment on the original. Asana notifies every collaborator of a
+    # comment, so a "Follow-up: {ID}" story there pinged Mark for each follow-up
+    # created on a task he follows (BSTD-906). The link lives in the new task's
+    # description only. The re-stamp stays: the description links the parent,
+    # and a parent bumped by that must not read as an Asana-side change.
     if follow_up_of:
-        try:
-            _post(f"/tasks/{follow_up_of[0]}/stories", {"data": {"html_text":
-                  f'<body>Follow-up: <a data-asana-gid="{new_gid}" '
-                  f'data-asana-dynamic="false">{lid}</a></body>'}})
-            log.info(f"  Linked from {follow_up_of[1]}")
-            restamp_after_own_write(proj, follow_up_of[0], follow_up_of[1], before_fu)
-        except Exception as e:
-            log.warning(f"  Created {lid} but could not comment on {follow_up_of[1]}: {e}")
+        restamp_after_own_write(proj, follow_up_of[0], follow_up_of[1], before_fu)
 
     if assignee_gid == BAINBOT_GID:
         assignee_name = ASSIGNEE_NAME
@@ -3123,6 +3119,7 @@ def main():
     parser.add_argument("--follow-up-of", metavar="TASK", default="",
                         help="With --create-task: the task this one follows up (local ID, "
                              "GID or URL). Its description opens with a link to that task, "
+                             "nothing is posted on that task, "
                              "and --project defaults to that task's project")
     parser.add_argument("--add-to-project", metavar="PREFIX", default="",
                         help="Add the task(s) given with --task-gid to another project, "

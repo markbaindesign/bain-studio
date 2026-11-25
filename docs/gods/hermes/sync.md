@@ -51,7 +51,7 @@ looper session can Read them directly (screenshots of bugs, spec PDFs, etc.).
 "More recently" compares the task's Asana `modified_at` with the per-task stamp in
 `asana-ids.json` (`last_sync_times`). sync.py re-stamps tasks after its own writes so they do
 not read as Asana-side changes. `--create-task --depends-on` and `--follow-up-of` re-stamp the
-task they write to as well, in every project that mirrors it, unless that project had not yet
+task they write to or link as well, in every project that mirrors it, unless that project had not yet
 pulled an earlier Asana change.
 
 When Asana wins on a task whose mirror entry had been edited since the last sync, the edit is

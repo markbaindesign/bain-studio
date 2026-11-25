@@ -1097,9 +1097,8 @@ def test_create_task_full_follow_up_links_the_original(proj, fake_asana):
         'ACME-002</a>.\n\nAdd it &amp; check</body>')
     block = proj.mirror_file.read_text().split(f"### {lid} ")[1]
     assert "- **Notes:** Follow-up to ACME-002. Add it & check" in block
-    assert ("/tasks/orig_gid/stories", {"data": {"html_text":
-            f'<body>Follow-up: <a data-asana-gid="new_gid" data-asana-dynamic="false">{lid}</a></body>'}}
-            ) in fake_asana
+    # No comment on the original: Asana would notify its collaborators (BSTD-906).
+    assert not [c for c in fake_asana if c[0].startswith("/tasks/orig_gid/")]
 
 
 def test_create_task_full_follow_up_without_notes(proj, fake_asana):
