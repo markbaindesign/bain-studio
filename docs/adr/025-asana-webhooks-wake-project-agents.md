@@ -170,3 +170,52 @@ stays true of `catchup`; a separate, scheduled `nightly` command now closes the 
 - **Never alongside the looper.** It runs at 07:15, after the 02:00 window's 5-hour ceiling,
   waits while the runner's lock is held by a live process, and stops launching if a window
   starts. It reads the lock and never takes it: the runner exits when it finds the lock held.
+
+## Addendum 2026-11-19: runs execute code inside the OS sandbox (BSTD-896)
+
+Runs could edit but not run anything, so code they delivered was untested (BSTD-841). Allowing
+`python3` through the permission rules alone would not be safe: rules match the command string,
+so `Bash(python3 *)` lets `python3 x.py` read `studio/.env`, write to Dropbox and reach the
+network.
+
+**Findings, Claude Code 2.1.328 on this machine (bubblewrap 0.12, git 2.25):**
+
+- The sandbox works with `claude -p`, `--restricted` and our `--allowedTools` rules. `--settings`
+  still applies under `--restricted`, so the run's sandbox config is passed there.
+- **It needs `socat` as well as `bwrap`, and socat is not installed here.** Without it Claude
+  Code prints a warning and runs every command **unsandboxed**, even with
+  `allowUnsandboxedCommands: false`. Only `sandbox.failIfUnavailable: true` makes it refuse to
+  start instead.
+- With socat present: writes are confined to the working directory, the network is closed
+  (`allowedDomains: []` denies without prompting under `-p`, raw sockets included), and a
+  script cannot write the main checkout's `.git`, so it cannot delete branches.
+- **Permission `Read()` denies are not enforced inside the sandbox**: a script read
+  `studio/.env` and the Claude credentials. They must be repeated as
+  `sandbox.filesystem.denyRead`, which does hide them (`~` and `**/` globs work; a denied
+  directory such as `~/.ssh` appears empty).
+- **`--add-dir` folders are writable inside the sandbox.** The registry and Dropbox need
+  `sandbox.filesystem.denyWrite`.
+- **The run inherited the listener's environment, and with it every `studio/.env` key** (the
+  listener imports `sync.py`, which loads them): Asana, Harvest, Cloudways, Slack and more.
+  Harmless while a run could execute nothing; readable by any script once it can. Runs now get
+  `run_env()`, which drops every key `studio/.env` defines and anything named like a credential.
+- Inside the sandbox the worktree's `.git` and `.claude/` are already unwritable, but `.envrc`
+  is not; all three are added to `denyWrite` for the project and the worktree.
+- `git add`/`commit` fail inside it (the worktree's git dir is in the read-only main checkout,
+  and the sandbox's own mount points show up as untracked files), and `sync.py` needs `.env`
+  and Asana. They run outside it via `excludedCommands`, which only exempts a command already
+  allowed by a rule.
+
+**Decision.** `_launch` turns on execution only when `bwrap` and `socat` are both on the run's
+PATH. It then passes `sandbox_settings()` (fail-closed, no network, secret files and home
+credentials hidden, the listener's state dir hidden, read-only dirs unwritable, git and the two
+sync.py calls excluded) and adds `exec_allow_rules()`: `python3`, `pytest`, and the project's
+own test command from a `BOT_TEST_COMMAND:` line in its `CLAUDE.md`. Otherwise the allow rules
+stay as they were and the prompt tells the run its change is untested. The listener logs
+`SANDBOX-OFF` on each such launch. `studio/scripts/sandbox_probe.py` is the live test: it runs
+one real run with the real flags and environment and checks 30 escape attempts and
+capabilities from outside (`--read-only-dir` points it at the real Dropbox folder).
+
+**Consequence.** Until `sudo apt install socat` is run on the listener's machine, nothing
+changes. After it, runs can test their own work. A user-local socat on `~/.local/bin` would
+also enable it, which is why the probe takes `--path-prefix` instead.

@@ -29,6 +29,7 @@ from asana_webhook_logic import (  # noqa: E402
     read_only_dirs,
     run_allow_rules,
     secret_read_denies,
+    strip_env,
 )
 from voice.tasks import OUTWARD_TOOLS  # noqa: E402
 
@@ -117,16 +118,23 @@ def tidy_worktree(root: Path, wt: Path, branch: str) -> tuple:
     return "removed (no changes)", []
 
 
-def run_env(environ, root: Path) -> dict:
+def run_env(environ, root: Path, path_prefix: str = "", drop_keys=None) -> dict:
     """Environment for a confined run on Mark's Max login, in the project's own
-    Claude account when its .envrc names one (KF runs on a separate account)."""
+    Claude account when its .envrc names one (KF runs on a separate account).
+
+    With drop_keys (the webhook passes every key studio/.env defines), those
+    keys and anything named like a credential are removed too, because a run
+    that can execute code could read them from its environment (BSTD-896)."""
     env = dict(environ)
+    if drop_keys is not None:
+        env = strip_env(env, list(drop_keys))
     # sync.py loads studio/.env, which carries an API key for the Hermes
     # collectors. Left in, it outranks the claude.ai login and bills every run
     # to API credits instead of Mark's Max plan.
     for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
         env.pop(key, None)
-    env["PATH"] = f"{Path.home() / '.local/bin'}:{env.get('PATH', '/usr/bin:/bin')}"
+    prefix = f"{path_prefix}:" if path_prefix else ""
+    env["PATH"] = f"{prefix}{Path.home() / '.local/bin'}:{env.get('PATH', '/usr/bin:/bin')}"
     envrc = root / ".envrc"
     cfg = config_dir_from_envrc(envrc.read_text() if envrc.exists() else "", Path.home())
     if cfg:
