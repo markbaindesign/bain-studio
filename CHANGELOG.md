@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.17.0] - 2026-11-25
+
+### Added
+- **Tier 2 checks write their result files** (BSTD-911): `studio/theme-review/tier2.py` runs the six tier 2 checks from the zip; `cdp/cdp_site_editor.py` writes the Site Editor result. A review can now reach FULL.
+- **Pre-submission reviews** (BSTD-916): `review-gate.py --pre-submission` for a studio theme with no Trac ticket (posting and comment rows n/a, "ready to submit"); `theme-sweep.py install-zip` and `run-local` review a local zip.
+
+### Fixed
+- The review gate reports n/a for block delimiters on a classic theme and for a print stylesheet the readme doesn't claim (BSTD-914).
+- `cdp_check.py` reports the Shift+Tab order correctly when the Tab walk wraps to the first stop (BSTD-915).
+
 ## [2.16.0] - 2026-11-25
 
 ### Added
