@@ -1890,22 +1890,68 @@ def test_validate_allows_a_location_in_where_and_in_silent_notes():
     assert sync.validate_progress_note("Did the thing on feature/x-fix") == ""
 
 
-def test_post_note_posts_summary_then_where_silently():
+def test_post_note_posts_one_comment_with_where_at_the_foot():
+    # 2026-11-25: the Where: block no longer posts as a second comment.
     with patch.object(sync, "USER_GID", ""), \
-         patch.object(sync, "_post", side_effect=[{"data": {"gid": "S1"}},
-                                                  {"data": {"gid": "W1"}}]) as post:
-        got = sync.post_note("TASK1", REVIEW_NOTE)
-    assert got == ("S1", "W1")
-    bodies = [c[0][1]["data"]["html_text"] for c in post.call_args_list]
-    assert "looper/" not in bodies[0] and bodies[1] == "<body>Where: looper/a3f2c1 · 2252ad1</body>"
-
-
-def test_post_note_skips_a_where_already_on_the_task():
-    bot = [{"gid": "W0", "text": "Where: looper/a3f2c1 · 2252ad1"}]
-    with patch.object(sync, "USER_GID", ""), \
+         patch.object(sync, "mark_action_pending", return_value=True), \
          patch.object(sync, "_post", return_value={"data": {"gid": "S1"}}) as post:
-        got = sync.post_note("TASK1", REVIEW_NOTE, bot_stories=bot)
-    assert got == ("S1", "W0") and post.call_count == 1
+        got = sync.post_note("TASK1", REVIEW_NOTE)
+    assert got == ("S1", "") and post.call_count == 1
+    body = post.call_args_list[0][0][1]["data"]["html_text"]
+    summary, where = body.split("\n\nWhere:")
+    assert "looper/" not in summary and "looper/a3f2c1" in where
+
+
+def test_render_puts_a_blank_line_before_where_only():
+    html, _ = sync._render_progress("Review: merge it || Check: || 1. Run it || Where: develop · abc1234")
+    assert html == "<body>Review: merge it\nCheck:\n1. Run it\n\nWhere: develop · abc1234</body>"
+    html, _ = sync._render_progress("Where: develop · abc1234")
+    assert html == "<body>Where: develop · abc1234</body>"
+
+
+def test_a_review_note_tags_the_task_waiting_on_mark():
+    calls = []
+    with patch.object(sync, "USER_GID", ""), \
+         patch.object(sync, "_ACTION_TAG", "TAG1"), \
+         patch.object(sync, "_post", side_effect=lambda path, body: calls.append(path) or {"data": {"gid": "S1"}}):
+        task = {"tags": []}
+        sync.post_note("TASK1", "@mark Review: merge it || Where: develop", task=task)
+    assert "/tasks/TASK1/addTag" in calls and task["tags"][0]["gid"] == "TAG1"
+
+
+def test_a_silent_or_answer_note_does_not_tag():
+    calls = []
+    with patch.object(sync, "USER_GID", ""), \
+         patch.object(sync, "_ACTION_TAG", "TAG1"), \
+         patch.object(sync, "_post", side_effect=lambda path, body: calls.append(path) or {"data": {"gid": "S1"}}):
+        sync.post_note("TASK1", "Started on the header")
+        sync.post_note("TASK1", "Answer: yes, it uses the tokens")
+    assert not any(c.endswith("addTag") for c in calls)
+
+
+def test_action_marker_is_stale_once_done_or_answered():
+    bots, mark = {"BOT"}, "MARK"
+    c = lambda who, at: {"resource_subtype": "comment_added", "created_by": {"gid": who}, "created_at": at}
+    assert sync.action_marker_stale({"completed": True}, [], mark, bots)
+    assert not sync.action_marker_stale({"completed": False}, [c("BOT", "2026-11-25T10:00")], mark, bots)
+    assert sync.action_marker_stale({"completed": False},
+                                    [c("BOT", "2026-11-25T10:00"), c("MARK", "2026-11-25T11:00")], mark, bots)
+    assert not sync.action_marker_stale({"completed": False},
+                                        [c("MARK", "2026-11-25T09:00"), c("BOT", "2026-11-25T10:00")], mark, bots)
+
+
+def test_sweep_clears_only_stale_markers():
+    posts = []
+    def fake_get(path, params=None):
+        if path == "/tags/TAG1/tasks":
+            return {"data": [{"gid": "DONE", "completed": True}, {"gid": "OPEN", "completed": False}]}
+        return {"data": [{"resource_subtype": "comment_added", "created_by": {"gid": "BOT"},
+                          "created_at": "2026-11-25T10:00"}]}
+    with patch.object(sync, "_ACTION_TAG", "TAG1"), patch.object(sync, "USER_GID", "MARK"), \
+         patch.object(sync, "BAINBOT_GID", "BOT"), patch.object(sync, "_get", side_effect=fake_get), \
+         patch.object(sync, "_post", side_effect=lambda p, b: posts.append(p)):
+        assert sync.sweep_action_markers() == 1
+    assert posts == ["/tasks/DONE/removeTag"]
 
 
 def test_done_with_open_subtasks_needs_a_subtasks_block():

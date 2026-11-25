@@ -287,6 +287,10 @@ def _render_progress(text: str) -> tuple:
     wants_mention, user_gids, raw = _strip_mentions(text)
     lines = [seg.strip() for seg in raw.split(BLOCK_SEP)]
     lines = [l for l in lines if l]
+    # The Where: block rides at the foot of the same comment, a blank line below
+    # the summary, so the action reads first and the location stays out of it.
+    lines = [x for i, l in enumerate(lines)
+             for x in (["", l] if i and WHERE_RE.match(l) else [l])]
     # Asana rejects bare &, < and > in html_text with a 400, but it does NOT
     # decode the numeric entity Python emits for an apostrophe: escaping quotes
     # put a literal "&#x27;" in the comment (verified against SLT-001,
@@ -415,6 +419,134 @@ def split_location(text: str) -> tuple:
     if summary and (wants_mark or HANDOVER_RE.match(_strip_mentions(summary)[2])):
         summary = "@mark " + summary
     return summary, f" {BLOCK_SEP} ".join(where)
+
+
+def fold_location(text: str) -> str:
+    """The note as ONE comment: the summary, then its Where: block(s) at the foot.
+
+    Since 2026-11-25 the Where: block no longer posts as its own comment: Mark
+    read a review note, then had to find the second comment to learn where the
+    work was (BSTD task "Open every review request comment with a one-line
+    action"). The summary still may not name a location; only the foot does.
+    """
+    summary, where = split_location(text)
+    if summary and where:
+        return f"{summary} {BLOCK_SEP} {where}"
+    return summary or where
+
+
+# A note that asks Mark to act (review, decide, tick) puts a visible marker on
+# the task until he has: the "Waiting on Mark" tag. sweep_action_markers()
+# takes it off once the task is completed or Mark has replied, so the marker
+# never outlives the action. Answer notes reply to his question and need none.
+ACTION_RE = re.compile(r"^(?:review|blocked|done)\b", re.IGNORECASE)
+ACTION_TAG_NAME = os.getenv("ASANA_ACTION_TAG_NAME", "Waiting on Mark")
+_ACTION_TAG = None
+
+
+def action_tag_gid(create: bool = True) -> str:
+    """GID of the "Waiting on Mark" tag: ASANA_ACTION_TAG_GID, else found by
+    name in the workspace, else created there. "" when it can't be had."""
+    global _ACTION_TAG
+    if _ACTION_TAG is not None:
+        return _ACTION_TAG
+    gid = os.getenv("ASANA_ACTION_TAG_GID", "")
+    if not gid and WORKSPACE_GID:
+        try:
+            params = {"opt_fields": "name", "limit": 100}
+            while True:
+                resp = _get(f"/workspaces/{WORKSPACE_GID}/tags", params)
+                hit = next((t for t in resp.get("data") or []
+                            if (t.get("name") or "").strip().lower() == ACTION_TAG_NAME.lower()), None)
+                if hit:
+                    gid = hit["gid"]
+                    break
+                nxt = (resp.get("next_page") or {}).get("offset")
+                if not nxt:
+                    break
+                params["offset"] = nxt
+            if not gid and create:
+                gid = _post(f"/workspaces/{WORKSPACE_GID}/tags",
+                            {"data": {"name": ACTION_TAG_NAME, "color": "light-orange"}})["data"]["gid"]
+                log.info(f"  Created the '{ACTION_TAG_NAME}' tag ({gid})")
+        except Exception as e:
+            log.warning(f"  Could not find or create the '{ACTION_TAG_NAME}' tag ({e})")
+            gid = ""
+    _ACTION_TAG = gid
+    return gid
+
+
+def mark_action_pending(task_gid: str, summary: str, task: dict = None, dry_run=False) -> bool:
+    """Tag a task "Waiting on Mark" when a note asking him to act goes out.
+    Never raises: the note is posted, and a missed tag must not cost it."""
+    if not ACTION_RE.match(_progress_plain(summary)):
+        return False
+    if dry_run:
+        log.info(f"    [DRY-RUN] Would tag {task_gid} '{ACTION_TAG_NAME}'")
+        return True
+    tag = action_tag_gid()
+    if not tag:
+        return False
+    try:
+        _post(f"/tasks/{task_gid}/addTag", {"data": {"tag": tag}})
+    except Exception as e:
+        log.warning(f"    Posted the note on {task_gid} but could not tag it ({e})")
+        return False
+    if task is not None:
+        tags = task.setdefault("tags", [])
+        if not any((t or {}).get("gid") == tag for t in tags):
+            tags.append({"gid": tag, "name": ACTION_TAG_NAME})
+    return True
+
+
+def action_marker_stale(task: dict, stories: list, user_gid: str, bot_gids: set) -> bool:
+    """Has the action behind a "Waiting on Mark" tag been taken? True when the
+    task is completed, or Mark has commented since the bot's last comment."""
+    if task.get("completed"):
+        return True
+    last_bot = last_mark = ""
+    for st in stories or []:
+        if st.get("resource_subtype") != "comment_added":
+            continue
+        who = (st.get("created_by") or {}).get("gid")
+        at = st.get("created_at") or ""
+        if who in bot_gids:
+            last_bot = max(last_bot, at)
+        elif who == user_gid:
+            last_mark = max(last_mark, at)
+    return bool(last_mark) and last_mark > last_bot
+
+
+def sweep_action_markers(dry_run=False) -> int:
+    """Take "Waiting on Mark" off every task whose action is done. Runs at the
+    start of every full sync (hourly), so a marker lasts an hour at most past
+    the action. Returns how many were cleared."""
+    tag = action_tag_gid(create=False)
+    if not tag or not USER_GID:
+        return 0
+    bots = {g for g in (BAINBOT_GID, os.getenv("ASANA_PMBOT_GID", "")) if g}
+    cleared = 0
+    try:
+        tasks = _get(f"/tags/{tag}/tasks", {"opt_fields": "name,completed", "limit": 100}).get("data") or []
+    except Exception as e:
+        log.warning(f"  Could not list '{ACTION_TAG_NAME}' tasks ({e})")
+        return 0
+    for t in tasks:
+        try:
+            stories = [] if t.get("completed") else _get(
+                f"/tasks/{t['gid']}/stories",
+                {"opt_fields": "created_by.gid,created_at,resource_subtype"}).get("data") or []
+            if not action_marker_stale(t, stories, USER_GID, bots):
+                continue
+            if dry_run:
+                log.info(f"  [DRY-RUN] Would clear '{ACTION_TAG_NAME}' on {t['gid']}")
+            else:
+                _post(f"/tasks/{t['gid']}/removeTag", {"data": {"tag": tag}})
+                log.info(f"  Cleared '{ACTION_TAG_NAME}' on {t.get('name', t['gid'])!r}")
+            cleared += 1
+        except Exception as e:
+            log.warning(f"  Could not check '{ACTION_TAG_NAME}' on {t.get('gid')} ({e})")
+    return cleared
 
 
 def hand_back(task_gid: str, summary: str, task: dict = None, dry_run=False) -> bool:
@@ -1790,29 +1922,18 @@ def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
 def post_note(task_gid: str, mirror_text: str, story_gid: str = "",
               where_story_gid: str = "", dry_run=False, task: dict = None,
               bot_stories: list = None) -> tuple:
-    """Post a note as two comments: the summary, then its Where: block, silently.
+    """Post a note as ONE comment, its Where: block at the foot (fold_location),
+    and tag the task "Waiting on Mark" when the note asks him to act.
 
-    Returns (summary_story_gid, where_story_gid). The where comment is edited in
-    place when the summary was, skipped when an identical bainbot comment is
-    already on the task, and otherwise posted fresh under the summary.
+    Returns (story_gid, ""). The second value is kept for callers that stored a
+    separate Where: comment before 2026-11-25; a legacy one is left as it is.
     """
-    summary, where = split_location(mirror_text)
-    new_story = (leave_progress_comment(task_gid, summary, story_gid, dry_run, task=task)
-                 if summary else story_gid)
-    if not where:
-        return new_story, where_story_gid
-    want = _progress_plain(where)
-    dup = next((b for b in (bot_stories or [])
-                if _comment_matches(b.get("text", ""), want)), None)
-    if dup:
-        return new_story, dup["gid"]
-    edit = where_story_gid if story_gid else ""
-    try:
-        where_story = leave_progress_comment(task_gid, where, edit, dry_run, task=task)
-    except Exception as e:
-        log.warning(f"    Posted the summary on {task_gid} but not its Where: comment ({e})")
-        return new_story, where_story_gid
-    return new_story, where_story or edit
+    summary, _where = split_location(mirror_text)
+    note = fold_location(mirror_text)
+    new_story = leave_progress_comment(task_gid, note, story_gid, dry_run, task=task) if note else story_gid
+    if summary and MENTION_RE.match(summary):
+        mark_action_pending(task_gid, summary, task=task, dry_run=dry_run)
+    return new_story, ""
 
 
 # ---------------------------------------------------------------------------
@@ -2331,7 +2452,7 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
                                   f"Rewrite the Progress line in the mirror; task state still synced.")
                         continue
 
-                want = _progress_plain(summary)
+                want = _progress_plain(fold_location(curr_p))
                 bot_stories = t.get("_bot_stories") or []
                 dup = next((b for b in bot_stories
                             if _comment_matches(b["text"], want, _mention_count(summary))), None)
@@ -3309,9 +3430,6 @@ def main():
                 log.warning(f"Posted the new comment but could not delete "
                             f"{args.replace_story} ({e}); remove it in Asana")
         hand_back(args.task_gid, summary, dry_run=args.dry_run)
-        if where_story and where_story != args.where_story_gid:
-            log.info(f"Posted the Where: comment as story {where_story}; to correct it "
-                     f"with the summary, also pass --where-story-gid {where_story}.")
         if args.story_gid:
             log.info(f"Edited comment {args.story_gid} on task {args.task_gid}.")
         elif not new_story:
@@ -3425,6 +3543,11 @@ def main():
     log.info(f"{len(projects)} project(s) found:")
     for p in projects:
         log.info(f"  {p.prefix}: {p.name}")
+
+    if not args.project:
+        cleared = sweep_action_markers(dry_run=args.dry_run)
+        if cleared:
+            log.info(f"Cleared '{ACTION_TAG_NAME}' on {cleared} task(s) whose action is done")
 
     results = {}
     for proj in projects:

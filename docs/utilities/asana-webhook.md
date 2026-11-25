@@ -125,7 +125,7 @@ The prompt (`AGENT_PROMPT`) has the bot read `CLAUDE.md` and the task thread, th
 
 Replies carry no path, branch, file name or URL: Mark does not read them and they bury the
 point. Where he has to open something, such as a commit to review, it goes in a `Where:` block,
-which posts as its own silent comment underneath. An answer usually has none.
+which goes at the foot of the same comment, below a blank line. An answer usually has none.
 
 Answers, and `Review`, `Blocked` and `Done` notes, all mention you, so they reach the Mentioned
 inbox and Slack. One comment per run, at the end. When the run exits, a worktree with no

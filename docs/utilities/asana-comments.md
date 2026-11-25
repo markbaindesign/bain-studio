@@ -40,25 +40,36 @@ continuation line starting `- **X:**` is misparsed as another field. `||` separa
 and is expanded to newlines at post time by `_progress_plain`.
 
 ```
-**Progress:** @mark Review: {what changed, one line} || Check: || 1. {imperative} || 2. {imperative} || Gaps: {known, not fixed} || Where: {branch} · {commits} · {URL or path}
+**Progress:** @mark Review: {what Mark does now, one imperative line} || {what changed, one line} || Check: || 1. {imperative} || Gaps: {known, not fixed} || Where: {branch} · {commits} · {URL or path}
 ```
 
-`split_location` pulls every `Where:` block out of the note. `post_note` posts the rest as the
-summary (with the `@mark` mention), then the `Where:` block as a separate silent comment under
-it. Its story GID is kept in the state file's `progress_where_stories`; it is edited in place
-when the summary is, and skipped when an identical bainbot comment is already on the task. With
-`--comment`, pass `--where-story-gid` alongside `--story-gid` to correct both.
+**The first line is Mark's action.** After `Review:` or `Blocked:` comes what he does, in
+words: "Review: merge the overnight branch, restart the listener, then ask for a small change
+on a factory task". What changed comes second. Mark reads the first line to know whether and
+how to act; a list of changes he has to translate into an action buried it (2026-11-25).
+
+**One comment, not two** (since 2026-11-25). `fold_location` moves every `Where:` block to the
+foot of the note, and `post_note` posts it all as one comment, the `Where:` line a blank line
+below the summary. Before that it posted as a separate silent comment, and Mark had to find
+the second comment to learn where the work was.
+
+**A note asking Mark to act tags the task "Waiting on Mark"** (`mark_action_pending`), for a
+`Review`, `Blocked` or `Done` note with the mention; an answer gets none. Every full sync starts
+with `sweep_action_markers`, which takes the tag off a task that is completed or where Mark has
+commented since the bot last did, so it never outlives the action by more than an hour. The tag
+is found by name (`ASANA_ACTION_TAG_NAME`, default "Waiting on Mark") or `ASANA_ACTION_TAG_GID`,
+and created in the workspace on first use.
 
 An `@mark` summary may not contain a URL, git-flow branch, path, file name or commit SHA
 (`LOCATION_RE`): those are what Mark looks up, not what he reads to decide.
 
 | Block | Holds | Limit |
 |---|---|---|
-| `Review:` / `Blocked:` / `Done:` | What changed, the question, or the outcome | One line, no date: Asana stamps the comment, and the looper's duplicate-work guard reads that stamp. Asana truncates at "See more", so the action lives here or nowhere. |
+| `Review:` / `Blocked:` / `Done:` | What Mark does now, the question, or the outcome | One line, no date: Asana stamps the comment, and the looper's duplicate-work guard reads that stamp. Asana truncates at "See more", so the action lives here or nowhere. |
 | `Check:` | What Mark does to verify | Max 3, one short line each, imperative, no locations. More means the task should have been split. |
 | `Gaps:` | Work knowingly left undone | Omit entirely when there is none. Never a hedge. Anything meant to be done later is a task, cited by ID. |
 | `Subtasks:` | Each open subtask: done, or why not needed | Required on a `Done` note while subtasks are open (`validate_done_subtasks`). |
-| `Where:` | Branch, commits, URL or file path | Its own silent comment. For a research or decision task, the file the output or decision is recorded in. Max 300 chars. |
+| `Where:` | Branch, commits, URL or file path | At the foot of the same comment, below a blank line. For a research or decision task, the file the output or decision is recorded in. Max 300 chars. |
 
 Limits on the summary: 500 chars, 150 per block, 6 blocks. A `Done` note on a task with open
 subtasks and no `Subtasks:` block is refused, read live via `open_subtask_names`. A decision task
