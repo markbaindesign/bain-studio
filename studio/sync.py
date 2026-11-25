@@ -1724,7 +1724,10 @@ def leave_progress_comment(task_gid: str, mirror_text: str, story_gid: str = "",
             time.sleep(longest)
     resp = _post(f"/tasks/{task_gid}/stories", {"data": {"html_text": html}})
     new_story = (resp.get("data") or {}).get("gid")
-    if wants_mention:
+    # Off by default since 2026-11-24: the Asana mention already reaches Mark's
+    # inbox, and the Slack copy of every note (37 in one day) was noise.
+    # SLACK_PING_MENTIONS=1 in studio/.env turns it back on.
+    if wants_mention and os.getenv("SLACK_PING_MENTIONS") == "1":
         if _ping_slack(task_gid, mirror_text, task):
             log.info(f"    Signalled {task_gid} to Slack")
         else:

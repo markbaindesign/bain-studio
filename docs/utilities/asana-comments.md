@@ -151,7 +151,11 @@ once per task.
 
 ### Slack carries the signal instead
 
-A fresh `@mark` post also pings Slack, via `_ping_slack` in `sync.py`. Three rules:
+**Off by default since 2026-11-24.** The mention already reaches Mark's Asana inbox, and a Slack
+copy of every note (37 in one day) was noise he did not read. Set `SLACK_PING_MENTIONS=1` in
+`studio/.env` to turn it back on.
+
+When on, a fresh `@mark` post also pings Slack, via `_ping_slack` in `sync.py`. Three rules:
 
 - **The comment is posted first** and its GID returned regardless. A Slack
   outage never costs the note.

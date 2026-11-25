@@ -10,6 +10,13 @@ tags:
 
 Sends formatted alerts to Slack. Used directly by agents and internally by `postman.py` for high/urgent messages.
 
+## Volume control
+
+Only `high` and `urgent` reach Slack. `low` and `normal` are dropped (the call returns
+`False`), because the same news is already in Asana or the logs and Slack had become noise.
+Set `SLACK_MIN_PRIORITY` in `studio/.env` (`low`, `normal`, `high`, `urgent`) to move the
+floor.
+
 ## Python API
 
 ```python
