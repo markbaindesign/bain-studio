@@ -118,8 +118,10 @@ def page_pass_summary(fwd, back, focusable, ended):
     fwd_keys = [s["key"] for s in fwd]
     back_keys = [s["key"] for s in back]
     # When the forward pass ended by leaving the page or wrapping to the first stop,
-    # the first Shift+Tab lands on the last stop, so the back pass should read the
-    # forward list reversed. When it ended on the guard, focus is still on the last
+    # the back pass should read the forward list reversed, starting at the last stop.
+    # After a wrap, focus is on the first stop and the first Shift+Tab may leave the
+    # document; page_keyboard_pass skips that one step, so `back` still starts at the
+    # last stop. When it ended on the guard, focus is still on the last
     # stop and the first Shift+Tab lands on the one before it.
     expected = fwd_keys[::-1][1:] if ended.startswith("hit the") else fwd_keys[::-1]
     exact = bool(fwd) and back_keys[:len(expected)] == expected and len(back_keys) >= len(expected)
@@ -283,12 +285,21 @@ def page_keyboard_pass(b):
             break
         fwd.append(s)
     back = []
-    for _ in range(len(fwd)):
+    # A walk that came round to the first stop leaves focus there, so the first
+    # Shift+Tab can step out of the document before re-entering at the last stop.
+    # That one leading None is not the end of the back pass (BSTD-915).
+    may_skip = ended == "focus came round to the first stop"
+    for _ in range(len(fwd) + (1 if may_skip else 0)):
         b.tab(shift=True)
         s = b.ev(STOP_JS)
         if s is None:
+            if may_skip and not back:
+                may_skip = False
+                continue
             break
         back.append(s)
+        if len(back) == len(fwd):
+            break
     return page_pass_summary(fwd, back, b.ev(FOCUSABLE_JS), ended)
 
 
