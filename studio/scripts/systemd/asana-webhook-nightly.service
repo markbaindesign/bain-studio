@@ -1,0 +1,11 @@
+# Nightly bot sweep for unwatched projects - see docs/utilities/asana-webhook.md (BSTD-895)
+[Unit]
+Description=Asana webhook nightly sweep (answer DevBot tasks in unwatched projects)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/bain/ops/bain-studio
+Environment=PATH=/home/bain/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 /home/bain/ops/bain-studio/studio/asana_webhook.py nightly
+# Waits up to 2h for a looper window, then up to 6 runs of at most 1h each.
+TimeoutStartSec=6h

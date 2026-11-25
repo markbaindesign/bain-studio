@@ -129,6 +129,57 @@ def unanswered(stories: list, trigger_users: set, bot_gid: str, since: str = "")
     return bool(last_trigger) and last_trigger > last_bot and last_trigger > (since or "")
 
 
+LOOPER_FIELD = "Looper Status"
+LOOPER_CLAIMED = {"queue", "in progress"}
+
+
+def looper_claimed(task: dict) -> bool:
+    """Is the task queued for the studio looper (Looper Status Queue or In
+    Progress)? The nightly sweep leaves those to the looper. Read from the task's
+    own custom fields, not the SL mirror, which is only as fresh as its last sync."""
+    for f in task.get("custom_fields") or []:
+        if (f.get("name") or "").strip().lower() == LOOPER_FIELD.lower():
+            return (f.get("display_value") or "").strip().lower() in LOOPER_CLAIMED
+    return False
+
+
+def nightly_wakes(task: dict, stories: list, trigger_users: set, bot_gid: str,
+                  since: str = "", cutoff: str = "") -> bool:
+    """Nightly sweep: would the listener have woken the bot on this task, had its
+    project been watched, with nothing from the bot since?
+
+    The newest trigger-user story decides. It is either a comment, or an
+    assignment while the task is assigned to the bot (a task handed to DevBot with
+    no comment). It must be newer than the bot's last comment, than `since` (the
+    last wake) and than `cutoff`, so old threads are not revived. Then the listener's
+    rule applies (wakes_bot): a task assigned to the bot wakes it on any of these, a
+    handed-back task only on a comment that @-mentions the bot.
+    """
+    if task.get("completed"):
+        return False
+    assigned = task_is_for_bot(task, bot_gid)
+    last_bot = ""
+    latest = None
+    for s in stories or []:
+        who = (s.get("created_by") or {}).get("gid")
+        sub = s.get("resource_subtype")
+        at = s.get("created_at") or ""
+        if who == bot_gid:
+            if sub == "comment_added":
+                last_bot = max(last_bot, at)
+        elif who in trigger_users and (sub == "comment_added" or (sub == "assigned" and assigned)):
+            if latest is None or at > (latest.get("created_at") or ""):
+                latest = s
+    if latest is None:
+        return False
+    at = latest.get("created_at") or ""
+    if at <= last_bot or at <= (since or "") or at < (cutoff or ""):
+        return False
+    mentioned = (latest.get("resource_subtype") == "comment_added"
+                 and mentions_user(latest.get("html_text"), bot_gid))
+    return wakes_bot(task, bot_gid, mentioned)
+
+
 # ---------------------------------------------------------------------------
 # Concurrency and rate limits
 # ---------------------------------------------------------------------------

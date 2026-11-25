@@ -1,7 +1,7 @@
 ---
 tags: [utility, ops, asana, agents]
 god: hermes
-command: python3 studio/asana_webhook.py {watch|unwatch|status|session-start|session-end|serve|register|unregister|list|catchup}
+command: python3 studio/asana_webhook.py {watch|unwatch|status|session-start|session-end|serve|register|unregister|list|catchup|nightly|inbox}
 invoke: /project-watcher
 description: Asana webhook listener that has DevBot answer Mark's comments and assignments on a watched project within about a minute, each run in its own git worktree so it never touches the checkout Mark is working in
 ---
@@ -50,7 +50,7 @@ Slack says when it stops.
 **A lapsed watch starts again on your comment.** A comment from you on a bot task in a
 project whose watch lapsed watches it again and queues that task; Slack says so. After
 `unwatch`, or in a project never watched, events are dropped, not saved: `watch` picks them
-up with its sweep.
+up with its sweep. The [nightly sweep](#nightly-sweep) also answers them if you never watch the project.
 
 Sessions by bots never count: webhook runs (`BAIN_BOT_RUN`), looper sessions
 (`LOOPER_RUN_ID`) and anything working in a bot worktree.
@@ -200,7 +200,8 @@ ASANA_WEBHOOK_PORT=8787
    ```
    cp studio/scripts/systemd/asana-webhook* ~/.config/systemd/user/
    systemctl --user daemon-reload
-   systemctl --user enable --now asana-webhook.service asana-webhook-catchup.timer
+   systemctl --user enable --now asana-webhook.service asana-webhook-catchup.timer \
+     asana-webhook-nightly.timer
    ```
    User lingering must be on (`loginctl show-user $USER -p Linger`) for it to start at boot.
 3. `/project-watcher {PREFIX}` registers each project the first time you watch it. The
@@ -214,6 +215,37 @@ Any project in the studio registry can be watched; there is no per-project list 
 `asana-webhook-catchup.timer` runs `catchup` at 07:45. It re-registers a webhook Asana has
 deactivated or deleted (Asana deletes one after 24 hours of failed deliveries), only for a
 project registered before. It never starts a run.
+
+## Nightly sweep
+
+A comment on a bot task in a project you are not watching would otherwise wait for a session
+or the looper. `asana-webhook-nightly.timer` runs `nightly` at 07:15, after the 02:00 looper
+window. It goes through every registered project that is not watched and has a git repository
+of its own (so not SL or SLT), and starts a run for each task the listener would have woken
+the bot on, had the project been watched:
+
+- your or PmBot's newest comment on a task assigned to the bot, with no reply from the bot
+  since and no run since;
+- a task you assigned to the bot, with nothing from the bot since (an assignment by bainbot
+  itself, from `sync.py --create-task`, does not count);
+- on a handed-back task, a newest comment that @-mentions the bot.
+
+Each run is exactly a listener run: its own worktree, one closing `Answer:`, `Review:` or
+`Blocked:` comment, and the same limits (2 per project, 3 at once, 3 per task per hour,
+1 hour each). On top of those:
+
+| Rule | Why |
+|---|---|
+| Only triggers from the last 7 days count | an old thread is not revived |
+| At most 6 runs a night; the rest wait for the next night, and Slack lists them | a backlog cannot use up the Max window |
+| Tasks with Looper Status `Queue` or `In Progress` are skipped | they are the looper's |
+| Never alongside the looper: it waits up to 2 hours while `/tmp/studio-looper/runner.lock` is held by a live process, and launches nothing more once a window starts | the two must not share the usage window or a repo. It only reads the lock: holding it would make the 02:00 runner exit |
+
+See what it would do, without starting anything:
+
+```
+python3 studio/asana_webhook.py nightly --dry-run
+```
 
 ## Files
 

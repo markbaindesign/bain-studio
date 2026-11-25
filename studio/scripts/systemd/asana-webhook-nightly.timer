@@ -1,0 +1,11 @@
+[Unit]
+Description=Answer DevBot tasks in unwatched projects after the nightly looper
+
+[Timer]
+# After the 02:00 looper window, which ends by 07:00 at the latest. The sweep
+# also checks the runner's lock and waits while a window is still going.
+OnCalendar=*-*-* 07:15
+# No Persistent=true: a missed 07:15 must not fire at boot, possibly just before 02:00.
+
+[Install]
+WantedBy=timers.target
