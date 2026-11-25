@@ -78,6 +78,49 @@ restores the real one, through `ddev wp` in `--project` (default the current
 directory). `--json` is the input for the review gate. It needs `chromium-browser`
 and the `websocket` package (`python3-websocket`).
 
+## Tier 2 structural checks - `tier2.py`
+
+```bash
+python3 -I tier2.py <reports>/<slug>-<version>.md
+```
+
+Reads the submitted zip (default `<project>/review-zips/<slug>.<version>.zip`, or
+`--zip`) and writes the six tier 2 results the review gate needs to
+`<reports>/evidence/<slug>-<version>-<check>.json` (or `--evidence`): `main-landmark`
+(a `<main>` in every block template, its parts and patterns inlined), `local-fonts`,
+`msgfmt` (needs `gettext`), `images` (dimensions, metadata, screenshot size),
+`block-delimiters` and `print-stylesheet`. No WordPress or browser needed.
+
+Each file records what was checked, `applicable`, `pass` and `findings`. Findings are
+facts for the reviewer to judge: the gate counts a check as **done** once its file
+exists, whatever it found. Two contracts:
+
+- **`print-stylesheet` is always written.** When the readme makes no print-stylesheet
+  claim it carries `"claimed": false, "applicable": false`, and the gate reports the
+  row as n/a. When the readme claims one, it records where `@media print` is, or a
+  finding that none ships.
+- **`block-delimiters` on a classic theme.** A theme with no `templates/`, `parts/` or
+  `patterns/` has no block markup, so the gate reports the row n/a whether or not the
+  file exists. `main-landmark` is written `applicable: false` for a classic theme,
+  noting which top-level PHP files hold a `<main>`; the rendered pages are tier 3's.
+
+## Site Editor block validation - `cdp/cdp_site_editor.py`
+
+```bash
+python3 -I cdp/cdp_site_editor.py https://<site> <slug> --version <version> \
+  --json <reports>/evidence/<slug>-<version>-site-editor.json
+```
+
+Block themes only, with the theme **active** (the REST API lists only the active
+theme's templates; `theme-sweep.py check` activates it). Signs headless Chromium in as
+user 1 with an auth cookie made by `ddev wp eval` in `--project`, opens the Site
+Editor and runs the editor's own validator over every template, part and theme
+pattern, as the template's "Block validation" section describes. It records each
+item's `source` and `has_theme_file` (a database copy is listed in
+`database_copies`), every invalid block with its first issues, and two controls that
+must come out invalid. Exit 1 when the controls fail, because then the validator was
+not running.
+
 ## Requirements
 
 A DDEV WordPress project with the theme unit test data imported, and the `theme-check`

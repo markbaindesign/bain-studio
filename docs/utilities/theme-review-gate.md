@@ -58,7 +58,7 @@ Exit status: `0` ready to post, `1` not ready, `2` could not run (no notes, no z
 | requirements | handbook page cited with its read date | the section names the page URL and a date |
 | requirements | every handbook section has a verdict | a `§ \| Verdict` row for every section number on the page as fetched today |
 | requirements | guideline rows (accessibility-ready only) | the gate fetched the guideline index, and `## Accessibility guidelines` has a `Guideline \| Verdict` row **keyed by each page's URL slug** |
-| tiers | tier 2 | `<slug>-<version>-<check>.json` exists for each of `main-landmark`, `local-fonts`, `msgfmt`, `images`, `block-delimiters`, `print-stylesheet` |
+| tiers | tier 2 | `<slug>-<version>-<check>.json` exists for each of `main-landmark`, `local-fonts`, `msgfmt`, `images`, `block-delimiters`, `print-stylesheet`. A result written `"applicable": false` (or `"claimed": false`) passes as n/a; `block-delimiters` is n/a for a theme with no templates, parts or patterns |
 | tiers | tier 3 | `<slug>-<version>-cdp.json` from `cdp_check.py --long-title --json` covers 390 and a desktop width (1280 or more), with a keyboard pass at both, a long-title run and no aborted page; screenshots `<slug>-<version>-<view>-<width>.png` at 390 and desktop; for a block theme, `<slug>-<version>-site-editor.json` |
 | notes | every template section present | `## ` headings starting Verdict, Handbook required, Tags, Functions and hooks, File ledger, Other checks, Not done, Outcome (and Accessibility guidelines when tagged) |
 | notes | Not done is empty | the section is empty or starts "Nothing" / "None". An optional step not run is said after that word |
@@ -69,9 +69,10 @@ Everything is matched exactly on keys the template prescribes. A guideline row n
 "Skip link" does not count for `skip-to-content`. A page that cannot be fetched is a
 FAIL row, never a skipped one.
 
-The tier 2 file names are this gate's contract. The scripts that write them are a
-follow-up; until they exist, tier 2 fails on every review, so no review comes out
-FULL.
+The tier 2 file names are this gate's contract. `studio/theme-review/tier2.py` writes
+all six from the zip, and `cdp/cdp_site_editor.py` writes the Site Editor result (see
+the folder's README). A row passes when its check was run: findings inside a result
+are the reviewer's to judge, and the gate shows their count.
 
 ## Ledger cells
 
