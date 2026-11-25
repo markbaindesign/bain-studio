@@ -1357,17 +1357,21 @@ function renderKFPage(d) {
   const months         = d.months_elapsed;
   const curMonth       = d.current_month;
   const mName          = new Date(curMonth + '-01').toLocaleString('en-GB', { month: 'long' });
+  const yearLeft       = d.year_hours_remaining ?? Math.max(annualAdj - yearLogged, 0);
+  const monthLeft      = d.month_hours_remaining ?? Math.max(monthlyTarget - monthLogged, 0);
+  const owed           = d.owed_at_month_start;
+  const onMonthPace    = d.month_expected_by_today === undefined
+    ? monthVar >= 0 : monthLogged >= d.month_expected_by_today;
 
   const yearPct   = Math.min(yearLogged / annualAdj * 100, 100);
   const targetPct = Math.min(adjTargetToDate / annualAdj * 100, 100);
   const monthPct  = Math.min(monthLogged / monthlyTarget * 100, 100);
 
-  const yearDir   = yearVar >= 0 ? 'ahead of' : 'behind';
-  const monthDir  = monthVar >= 0 ? 'ahead of' : 'behind';
-  const yearCls   = yearVar >= 0 ? 'positive' : 'negative';
-  const monthCls  = monthVar >= 0 ? 'positive' : 'negative';
-  const yearBarColor  = yearVar >= 0 ? '#2d8a4e' : '#c0392b';
-  const monthBarColor = monthVar >= 0 ? '#2d8a4e' : '#c0392b';
+  const yearOk    = owed === undefined ? yearVar >= 0 : owed <= 0;
+  const yearCls   = yearOk ? 'positive' : 'negative';
+  const monthCls  = onMonthPace ? 'positive' : 'negative';
+  const yearBarColor  = yearOk ? '#2d8a4e' : '#c0392b';
+  const monthBarColor = onMonthPace ? '#2d8a4e' : '#c0392b';
 
   // Monthly breakdown rows
   const byMonth = d.by_month || {};
@@ -1391,15 +1395,16 @@ function renderKFPage(d) {
         <span style="color:#bbb">—</span>
       </div>`;
     }
-    const pct = Math.min(logged / monthlyTarget * 100, 100);
-    const v   = logged - monthlyTarget;
+    const rowTarget = isCurrentMonth ? monthlyTarget : d.monthly_hours_target;
+    const pct = Math.min(logged / rowTarget * 100, 100);
+    const v   = logged - rowTarget;
     const vc  = v >= 0 ? 'positive' : 'negative';
     const bc  = v >= 0 ? '#2d8a4e' : '#c0392b';
     return `<div class="month-row" style="${isCurrentMonth ? 'font-weight:600' : ''}">
       <span>${mn}${isCurrentMonth ? ' ●' : ''}</span>
       <div class="month-bar-track"><div class="month-bar-fill" style="width:${pct}%;background:${bc}"></div></div>
       <span>${fmtHours(logged)}</span>
-      <span style="color:#aaa">${fmtHours(monthlyTarget)}</span>
+      <span style="color:#aaa">${fmtHours(rowTarget)}</span>
       <span class="${vc}">${v >= 0 ? '+' : ''}${fmtHours(v)}</span>
     </div>`;
   }).join('');
@@ -1435,9 +1440,9 @@ function renderKFPage(d) {
 
   document.getElementById('kfGrid').innerHTML = `
     <div class="card col-6">
-      <div class="card-title">Year ${d.year} — Annual Budget</div>
-      <div class="stat-value ${yearCls}">${fmtHours(yearLogged)}</div>
-      <div class="stat-label">of ${fmtHours(annualAdj)} adjusted target (${d.rate_usd * annualAdj | 0} USD)</div>
+      <div class="card-title">Year ${d.year} — Hours Left to Work</div>
+      <div class="stat-value ${yearCls}">${fmtHours(yearLeft)}</div>
+      <div class="stat-label">${fmtHours(yearLogged)} logged of ${fmtHours(annualAdj)} adjusted target (${d.rate_usd * annualAdj | 0} USD)</div>
       ${carryOverHtml}
       <div style="position:relative;margin:16px 0 32px;">
         <div class="kf-progress-track" style="margin:0;">
@@ -1448,31 +1453,35 @@ function renderKFPage(d) {
         <div style="position:absolute;top:-6px;left:${targetPct}%;width:2px;height:28px;background:#aaa;border-radius:1px;transform:translateX(-50%)"></div>
       </div>
       <div style="font-size:11px;color:#aaa;margin-bottom:12px;">
-        Adjusted target to date (${months} months): ${fmtHours(adjTargetToDate)}
-        <span style="float:right;font-size:11px;color:#bbb">▲ target marker</span>
+        ▲ On track = ${fmtHours(adjTargetToDate)} logged by end of ${mName}
       </div>
-      <div class="stat-sub ${yearCls}" style="font-size:14px;">
-        ${fmtHours(Math.abs(yearVar))} ${yearDir} target
+      ${owed === undefined ? '' : `<div class="stat-sub ${yearCls}" style="font-size:14px;">
+        ${owed > 0
+          ? `${fmtHours(owed)} catch-up owed at start of ${mName}`
+          : `${fmtHours(Math.abs(owed))} ahead at start of ${mName}`}
       </div>
+      <div style="font-size:11px;color:#aaa;margin-top:4px;">
+        vs. ${fmtHours(d.monthly_hours_target)}/mo base retainer, incl. ${carryFromYear ?? 'last year'} carry-over
+      </div>`}
     </div>
 
     <div class="card col-6">
-      <div class="card-title">${mName} — Monthly Target (Paced)</div>
-      <div class="stat-value ${monthCls}">${fmtHours(monthLogged)}</div>
-      <div class="stat-label">of ${fmtHours(monthlyTarget)} paced target</div>
+      <div class="card-title">${mName} — Hours Left to Work</div>
+      <div class="stat-value ${monthCls}">${fmtHours(monthLeft)}</div>
+      <div class="stat-label">${fmtHours(monthLogged)} logged of ${fmtHours(monthlyTarget)} target this month</div>
       <div style="font-size:11px;color:#aaa;margin:4px 0 10px;">
-        (${fmtHours(annualAdj)} remaining ÷ ${d.months_remaining} months left)
+        Target = (${fmtHours(annualAdj)} − ${fmtHours(d.completed_hours)} done before ${mName}) ÷ ${d.months_remaining} months left
         · base rate ${fmtHours(d.monthly_hours_target)}/mo
       </div>
       <div class="kf-progress-track">
         <div class="kf-progress-fill" style="width:${monthPct}%;background:${monthBarColor}"></div>
       </div>
-      <div class="stat-sub ${monthCls}" style="font-size:14px;margin-top:12px;">
-        ${fmtHours(Math.abs(monthVar))} ${monthDir} target
+      ${d.month_days_left === undefined ? '' : `<div class="stat-sub ${monthCls}" style="font-size:14px;margin-top:12px;">
+        ${d.month_days_left} days left · about ${fmtHours(d.month_daily_pace)}/day
       </div>
       <div class="stat-sub" style="margin-top:6px;">
-        ${fmtHours(Math.max(monthlyTarget - monthLogged, 0))} remaining this month
-      </div>
+        ${onMonthPace ? 'On pace' : 'Behind pace'} for today (${fmtHours(d.month_expected_by_today)} expected by now)
+      </div>`}
     </div>
 
     <div class="card col-12">
@@ -1544,8 +1553,14 @@ async function loadHighlights() {
   } else add(1, 'finance', 'Financial data unavailable: ' + fin.reason.message);
 
   if (kf.status === 'fulfilled') {
-    const k = kf.value, v = k.year_variance;
-    add(Math.abs(v) > 10 ? 0 : v < 0 ? 1 : 2, 'kf', `KF is ${fmtHours(Math.abs(v))} ${v < 0 ? 'behind' : 'ahead of'} pace for ${k.year} (${fmtHours(k.year_hours_logged)} logged)`);
+    const k = kf.value;
+    if (k.owed_at_month_start === undefined) {
+      const v = k.year_variance;
+      add(Math.abs(v) > 10 ? 0 : v < 0 ? 1 : 2, 'kf', `KF is ${fmtHours(Math.abs(v))} ${v < 0 ? 'behind' : 'ahead of'} pace for ${k.year} (${fmtHours(k.year_hours_logged)} logged)`);
+    } else {
+      const owed = k.owed_at_month_start;
+      add(owed > 10 ? 0 : owed > 0 ? 1 : 2, 'kf', `KF: ${fmtHours(k.month_hours_remaining)} left this month, ${fmtHours(k.year_hours_remaining)} left for ${k.year}${owed > 0 ? ` (${fmtHours(owed)} catch-up owed)` : ''}`);
+    }
   } else add(1, 'kf', 'KF data unavailable: ' + kf.reason.message);
 
   if (briefs.status === 'fulfilled') {
