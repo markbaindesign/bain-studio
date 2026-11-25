@@ -109,6 +109,20 @@ inbox and Slack. One comment per run, at the end. When the run exits, a worktree
 commits and no changes is removed with its branch; one with work stays for you to review and
 merge.
 
+### Factory products: a second worktree
+
+A factory project keeps each product in a repo of its own, listed in its `products.json`. When
+the project has one and the task's **Related Milestone** names an `in-production` product (by
+the codename in brackets, e.g. `Contents May Differ (prototype-hall)`), the run also gets a
+worktree of that product's repo: `bain-bot-worktrees/{PREFIX}/{LOCAL-ID}--{codename}`, on the
+same `bot/{LOCAL-ID}` branch name, from the product's `develop`. The prompt tells the run where
+it is and to use `git -C <that path>` for it. When the run exits, each worktree is tidied on its
+own: one with work stays, an untouched one goes.
+
+`products.json` is read from the project's main checkout, never from the run's worktree, so a
+run cannot promote a product for the next one. Graduated products, unknown codenames and a
+`source` that is not a git repo root get no second worktree.
+
 ## Permissions
 
 Runs start with `--restricted --strict-mcp-config`: no settings files and no MCP servers are
@@ -127,6 +141,10 @@ project's Dropbox folder (the `DROPBOX_FOLDER:` line in its `CLAUDE.md`): each i
 no branch to review, so a task that needs one ends in a `Blocked:` saying what to write. The
 worktrees sit outside `bain-studio/` for this reason: a deny on the registry folder would
 otherwise also deny the worktrees inside it.
+With a product worktree, the run additionally gets `--add-dir` and `Edit` on that worktree, and
+git `status`, `diff`, `log`, `show`, `add`, `commit` there as `git -C <path> ...`; the product's
+main checkout is denied for edits, and both carry the `.git`/`.claude`/`.envrc` edit denies and
+the credential-file read denies. Nothing else widens.
 A project whose `.envrc` exports `CLAUDE_CONFIG_DIR` (KF) runs on that account
 ([ADR 017](../adr/017-per-client-looper-queues.md)).
 

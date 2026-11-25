@@ -45,8 +45,10 @@ python3 /media/data/dev/bain-studio/studio/sync.py --create-task \
 ```
 
 This is the API's version of Asana's "Create follow-up task" menu item, which has no endpoint
-of its own. A link in a description leaves nothing on the task it names, hence the comment on
-the original. Verified on SLT, 2026-11-17.
+of its own. The link lives only in the new task's description; nothing is posted on the
+original. A comment there would notify every collaborator on it, so each follow-up would land
+in Mark's inbox without a mention. The original therefore carries no link to its follow-up:
+cite the follow-up's local ID in the handover note, which `sync.py` links.
 
 ## Full options
 
@@ -63,8 +65,8 @@ the original. Verified on SLT, 2026-11-17.
                        is still created but the command exits 1 and says so
 --follow-up-of TASK    The task this one follows up (local ID, GID or URL).
                        The description opens "Follow-up to {ID}." linking that
-                       task, and the original gets a silent "Follow-up: {new ID}"
-                       comment linking back
+                       task. Nothing is posted on the original, so its
+                       collaborators get no notification
 --dry-run              Preview without creating anything
 ```
 

@@ -66,6 +66,9 @@ from asana_webhook_logic import (  # noqa: E402
     prefix_from_path,
     project_edit_deny,
     read_only_dirs,
+    custom_field_value,
+    product_for_milestone,
+    product_git_rules,
     protected_path_denies,
     run_allow_rules,
     run_name,
@@ -162,6 +165,12 @@ Rules for this unattended run:
 - Never push, merge, deploy, or send email. Commit only on {branch}.
 - You can read the studio registry ({registry}) and the project's Dropbox folder ({dropbox}), but not change them. If the task needs a file written there, do everything else, then say exactly what to write in a Blocked: comment.
 - If something needs Mark's decision, ask it in a Blocked: comment and stop rather than guessing.
+"""
+
+# Appended when the task's Related Milestone names an in-production factory product
+# (BSTD-905): the product lives in its own repo, so the run gets a worktree of that too.
+PRODUCT_PROMPT = """
+This task is about the product {product}, which lives in its own git repository. You also have a worktree of that repository at {product_worktree}, on branch {branch}. Edit the product's files there and nowhere else: its main checkout ({product_source}) stays read-only. Your shell stays in the project worktree, so run git for the product as `git -C {product_worktree} <status|diff|log|show|add|commit> ...`, never with cd. Commit product changes there, project changes in the project worktree.
 """
 
 
@@ -341,21 +350,65 @@ def base_branch(root: Path) -> str:
     return "HEAD"
 
 
+def _ensure_wt(root: Path, wt: Path, branch: str) -> None:
+    if (wt / ".git").exists():
+        return
+    wt.parent.mkdir(parents=True, exist_ok=True)
+    _git(root, "worktree", "prune")
+    if _git(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}").returncode == 0:
+        r = _git(root, "worktree", "add", str(wt), branch)
+    else:
+        r = _git(root, "worktree", "add", "-b", branch, str(wt), base_branch(root))
+    if r.returncode != 0:
+        raise RuntimeError(f"git worktree add failed: {r.stderr.strip()}")
+
+
 def ensure_worktree(proj, name: str) -> tuple:
     """(worktree path, branch) for a task, created from the base branch on first
     use and reused by every later run on the same task."""
     wt = WORKTREES / proj.prefix / name
     branch = f"bot/{name}"
-    if (wt / ".git").exists():
-        return wt, branch
-    wt.parent.mkdir(parents=True, exist_ok=True)
-    _git(proj.root, "worktree", "prune")
-    if _git(proj.root, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}").returncode == 0:
-        r = _git(proj.root, "worktree", "add", str(wt), branch)
-    else:
-        r = _git(proj.root, "worktree", "add", "-b", branch, str(wt), base_branch(proj.root))
-    if r.returncode != 0:
-        raise RuntimeError(f"git worktree add failed: {r.stderr.strip()}")
+    _ensure_wt(proj.root, wt, branch)
+    return wt, branch
+
+
+class ProductRepo:
+    """A factory product's own repo, shaped like a project for tidy_worktree and
+    guard_hits (both read only .root and .prefix)."""
+    def __init__(self, root: Path, prefix: str, codename: str):
+        self.root, self.prefix, self.codename = root, prefix, codename
+
+
+def product_for_task(proj, task: dict):
+    """The ProductRepo a run on `task` may also edit, or None (BSTD-905).
+
+    products.json is read from the project's main checkout, never from the run's
+    worktree: the run can edit its worktree copy, and must not be able to promote
+    a product to in-production or repoint its source for the next run."""
+    pj = proj.root / "products.json"
+    if not pj.exists():
+        return None
+    try:
+        products = json.loads(pj.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    p = product_for_milestone(products, custom_field_value(task, "Related Milestone"))
+    if not p:
+        return None
+    src = Path(p["source"]).expanduser()
+    top = _git(src, "rev-parse", "--show-toplevel") if src.is_dir() else None
+    if not top or top.returncode != 0 or Path(top.stdout.strip()).resolve() != src.resolve():
+        log(f"PRODUCT {proj.prefix} {p['codename']}: source {src} is not a git repo root; skipped")
+        return None
+    return ProductRepo(src, proj.prefix, p["codename"])
+
+
+def ensure_product_worktree(product: ProductRepo, name: str) -> tuple:
+    """(worktree path, branch) of the product repo for a task: a sibling of the
+    task's project worktree, on the same bot/{name} branch name."""
+    wt = WORKTREES / product.prefix / f"{name}--{product.codename}"
+    branch = f"bot/{name}"
+    _ensure_wt(product.root, wt, branch)
     return wt, branch
 
 
@@ -500,15 +553,33 @@ class Worker:
         name = run_name(gid, local_ids(proj))
         wt, branch = ensure_worktree(proj, name)
         try:
-            title = sync._get(f"/tasks/{gid}", {"opt_fields": "name"})["data"]["name"]
+            task = sync._get(f"/tasks/{gid}", {
+                "opt_fields": "name,custom_fields.name,custom_fields.display_value"})["data"]
+            title = task.get("name") or "(name unavailable)"
         except Exception:
-            title = "(name unavailable)"
+            task, title = {}, "(name unavailable)"
+        # A factory task on an in-production product also gets that product's repo.
+        product = product_for_task(proj, task) if task else None
+        pwt = None
+        if product:
+            pwt, _ = ensure_product_worktree(product, name)
         claude_md = proj.root / "CLAUDE.md"
         dropbox = dropbox_folder(claude_md.read_text() if claude_md.exists() else "")
         add_dirs, ro_denies = read_only_dirs([REGISTRY_DIR, dropbox])
         prompt = AGENT_PROMPT.format(prefix=prefix, gid=gid, lid=name, name=title, worktree=wt,
                                      branch=branch, root=proj.root, sync=SYNC_PY,
                                      registry=REGISTRY_DIR, dropbox=dropbox or "none")
+        product_allow, product_deny = [], []
+        if product:
+            prompt += PRODUCT_PROMPT.format(product=product.codename, product_worktree=pwt,
+                                            branch=branch, product_source=product.root)
+            # Restricted mode confines file tools to working dirs, so the product
+            # worktree is added; edits are allowed there and only there.
+            add_dirs += ["--add-dir", str(pwt)]
+            product_allow = [f"Edit(/{str(pwt).rstrip('/')}/**)", *product_git_rules(pwt)]
+            product_deny = [*project_edit_deny(product.root), *protected_path_denies(product.root),
+                            *protected_path_denies(pwt), *secret_read_denies(product.root),
+                            *secret_read_denies(pwt)]
 
         env = dict(os.environ)
         # sync.py loads studio/.env, which carries an API key for the Hermes
@@ -530,16 +601,18 @@ class Worker:
         proc = subprocess.Popen(
             [CLAUDE_BIN, "-p", prompt, "--model", MODEL,
              "--restricted", "--strict-mcp-config", "--tools", RUN_TOOLS, *add_dirs,
-             "--allowedTools", *run_allow_rules(wt, SYNC_PY),
+             "--allowedTools", *run_allow_rules(wt, SYNC_PY), *product_allow,
              "--disallowedTools", *DISALLOWED, *GIT_WRITE_DENIES, *project_edit_deny(proj.root),
              *protected_path_denies(proj.root), *protected_path_denies(wt),
-             *secret_read_denies(proj.root), *secret_read_denies(wt), *ro_denies],
+             *secret_read_denies(proj.root), *secret_read_denies(wt), *ro_denies, *product_deny],
             cwd=wt, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
             start_new_session=True)
         self.running[gid] = {"proc": proc, "started": time.time(), "out": out, "log": run_log,
-                             "prefix": prefix, "wt": wt, "branch": branch, "proj": proj}
+                             "prefix": prefix, "wt": wt, "branch": branch, "proj": proj,
+                             "product": product, "pwt": pwt}
         log(f"LAUNCH {prefix} {name} pid={proc.pid} branch={branch} model={MODEL} "
-            f"config={cfg or 'default'} log={run_log.name}")
+            f"config={cfg or 'default'} log={run_log.name}"
+            + (f" product={product.codename} product_wt={pwt}" if product else ""))
 
     def _reap(self) -> None:
         for gid, r in list(self.running.items()):
@@ -563,6 +636,12 @@ class Worker:
                 tidy = tidy_worktree(r["proj"], r["wt"], r["branch"])
             except Exception as ex:
                 tidy = f"tidy failed: {ex!r}"
+            if r.get("product"):
+                try:
+                    tidy += f"; product {r['product'].codename} " + tidy_worktree(
+                        r["product"], r["pwt"], r["branch"])
+                except Exception as ex:
+                    tidy += f"; product tidy failed: {ex!r}"
             log(f"EXIT {prefix} {gid} pid={proc.pid} code={code} after {mins:.1f}m worktree {tidy}")
             del self.running[gid]
 

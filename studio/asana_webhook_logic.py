@@ -195,6 +195,54 @@ def run_allow_rules(worktree: Path, sync_py: Path) -> list:
     ]
 
 
+def product_git_rules(worktree: Path) -> list:
+    """Git allowances for a product repo's worktree (BSTD-905). The run's cwd is
+    the project worktree, so the plain `git add *` rules act there; the product
+    repo is reached with `git -C <path>`, enumerated command by command so that
+    checkout, branch and the rest stay out exactly as they do for the project."""
+    wt = str(worktree).rstrip("/")
+    out = []
+    for cmd in ("status", "diff", "log", "show", "add", "commit"):
+        out.append(f"Bash(git -C {wt} {cmd} *)")
+        if cmd in ("status", "diff", "log"):
+            out.append(f"Bash(git -C {wt} {cmd})")
+    return out
+
+
+def milestone_codename(value: str) -> str:
+    """The product codename in a Related Milestone value. The factory names its
+    milestones "Display Name (codename)", e.g. "Contents May Differ (prototype-hall)";
+    a bare value is taken as the codename itself."""
+    v = (value or "").strip()
+    m = re.search(r"\(([^()]+)\)\s*$", v)
+    return (m.group(1) if m else v).strip()
+
+
+def product_for_milestone(products: dict, milestone: str):
+    """The factory product a task's Related Milestone names, or None. Only an
+    `in-production` product with a source path qualifies: a graduated product is
+    released and edited by hand, and anything else (unknown codename, no source,
+    a malformed products.json) gets no second worktree. Matched on codename, not
+    name, because a product's public name changes while its codename does not."""
+    code = milestone_codename(milestone)
+    if not code or code.lower() == "none" or not isinstance(products, dict):
+        return None
+    for p in products.get("products") or []:
+        if not isinstance(p, dict):
+            continue
+        if p.get("codename") == code and p.get("status") == "in-production" and p.get("source"):
+            return p
+    return None
+
+
+def custom_field_value(task: dict, name: str) -> str:
+    """A task's custom field, as displayed, by field name. "" when absent."""
+    for cf in (task or {}).get("custom_fields") or []:
+        if (cf or {}).get("name") == name:
+            return cf.get("display_value") or ""
+    return ""
+
+
 def project_edit_deny(root: Path) -> list:
     """Deny every edit inside the project checkout. Deny beats allow, and the
     run's worktree is outside the root, so this costs the run nothing."""

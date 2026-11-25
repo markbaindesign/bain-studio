@@ -1392,6 +1392,33 @@ def parse_existing_mirror(proj: ProjectConfig) -> dict:
     return carried
 
 
+# Mirror lines that are never pushed, or change on every run, so a difference
+# from the snapshot says nothing about a local edit.
+SNAPSHOT_SKIP = {"local_id", "asana_id", "notes", "blockers", "progress",
+                 "comments", "attachments", "modified", "url"}
+
+
+def mirror_snapshot(entry: dict) -> dict:
+    """The pushable lines of one parsed mirror entry, as sync.py last wrote them.
+
+    Stored per task in state["mirror_snapshot"] after every mirror write. On the
+    next run, a line that differs from its snapshot was edited locally. Due is
+    taken from the parsed value, which drops the date-dependent OVERDUE marker.
+    """
+    snap = {k: v for k, v in (entry.get("_raw") or {}).items() if k not in SNAPSHOT_SKIP}
+    if "due" in snap:
+        snap["due"] = entry.get("due", "none")
+    return snap
+
+
+def local_edits(entry: dict, snapshot: dict) -> dict:
+    """Lines of a mirror entry changed since sync.py last wrote it: {key: value}."""
+    if not snapshot:
+        return {}  # never snapshotted (new task, or older sync.py): nothing to compare
+    now = mirror_snapshot(entry)
+    return {k: v for k, v in now.items() if k in snapshot and snapshot[k] != v}
+
+
 def parse_existing_task_gids(proj: ProjectConfig) -> set:
     if not proj.mirror_file.exists():
         return set()
@@ -2110,6 +2137,28 @@ def _push_section(t: dict, mirror_section: str, sections: dict, dry_run: bool, p
 # Per-project sync
 # ---------------------------------------------------------------------------
 
+def warn_discarded_edits(prefix: str, pulled_over: dict, written: dict) -> list:
+    """Log a warning for every local mirror edit a pull overwrote.
+
+    pulled_over holds the edits seen on tasks the run pulled; written is the new
+    mirror, parsed. An edit is lost when the new mirror no longer shows it. A
+    pull decides by modified_at alone, so this is the only trace the edit leaves.
+    """
+    lost = []
+    for gid, edits in pulled_over.items():
+        entry = written.get(gid) or {}
+        now = mirror_snapshot(entry) if entry else {}
+        lid = entry.get("local_id") or gid
+        for key, val in edits.items():
+            if now.get(key) == val:
+                continue
+            lost.append((lid, key))
+            log.warning(f"  [{prefix}] {lid}: pull discarded a mirror edit to {key} "
+                        f"({val!r}, now {now.get(key, 'gone')!r}) — Asana changed the task "
+                        f"since the last sync. Re-apply the edit if it still stands.")
+    return lost
+
+
 def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
     log.info(f"\n[{proj.prefix}] {proj.name}")
     log.info(f"  Path: {proj.root}")
@@ -2161,6 +2210,8 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         # --- Bidirectional field sync ---
         pushed = 0
         touched_gids = set()  # tasks WE wrote to this run — re-stamped after all writes
+        snapshots = state.get("mirror_snapshot", {})
+        pulled_over = {}  # gid -> {mirror key: local value} the pull may discard
         for t in tasks:
             gid  = t["gid"]
             prev = carried.get(gid)
@@ -2172,7 +2223,12 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
             task_last_sync = last_sync_times.get(gid, "")
 
             if asana_mod > task_last_sync:
-                # Asana is newer — pull (mirror rebuilds from t fields naturally)
+                # Asana is newer — pull (mirror rebuilds from t fields naturally).
+                # Remember any local edit it is about to overwrite, so the loss
+                # is reported once the new mirror shows what survived (BSTD-904).
+                edits = local_edits(prev, snapshots.get(gid))
+                if edits:
+                    pulled_over[gid] = edits
                 last_sync_times[gid] = now_utc
                 continue
 
@@ -2376,6 +2432,10 @@ def sync_project(proj: ProjectConfig, dry_run=False) -> bool:
         if not dry_run:
             proj.mirror_file.write_text(mirror)
             log.info(f"  Mirror → {proj.mirror_file}")
+            written = parse_existing_mirror(proj)
+            warn_discarded_edits(proj.prefix, pulled_over, written)
+            state["mirror_snapshot"] = {g: mirror_snapshot(e) for g, e in written.items()}
+            save_ids(proj, state, dry_run)
         else:
             log.info(f"  [DRY-RUN] Mirror would be written to {proj.mirror_file}")
 
@@ -2408,6 +2468,57 @@ def write_registry(projects: list, results: dict):
 # ---------------------------------------------------------------------------
 # Task creation (--create-task)
 # ---------------------------------------------------------------------------
+
+def _asana_modified(gid: str) -> str:
+    """A task's modified_at, trimmed to the mirror's precision; "" if unreadable."""
+    try:
+        return (_get(f"/tasks/{gid}", {"opt_fields": "modified_at"})["data"]
+                .get("modified_at") or "")[:19]
+    except Exception:
+        return ""
+
+
+def restamp_after_own_write(home: ProjectConfig, gid: str, label: str,
+                            before_mod: str, projects: list = None) -> list:
+    """Mark our own write to an existing task as seen, in every project mirroring it.
+
+    Writing to another task from the create path (a follow-up link, a
+    dependency) bumps its modified_at. The next sync then reads Asana as newer
+    and pulls, overwriting any mirror edit still waiting to be pushed — BSTD-904,
+    where a Theme Status edit on the parent was lost. sync_project re-stamps the
+    tasks it writes to for the same reason; this does it for the create path.
+
+    A project is re-stamped only if it had already seen everything Asana held
+    before our write (before_mod <= its last-sync stamp). Otherwise a genuine
+    change is waiting to be pulled there and must stay newer.
+    Returns the prefixes re-stamped.
+    """
+    if not before_mod:
+        log.warning(f"  Could not read {label}'s modified time — its next sync may pull "
+                    f"over a pending mirror edit")
+        return []
+    if projects is None:
+        try:
+            projects = discover_projects(quiet=True)
+        except Exception:
+            projects = []
+    seen, done = set(), []
+    post_write = (datetime.utcnow() + timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%S")
+    for p in [home] + list(projects):
+        if p.prefix in seen:
+            continue
+        seen.add(p.prefix)
+        state = load_ids(p)
+        if gid not in state.get("tasks", {}):
+            continue
+        times = state.setdefault("last_sync_times", {})
+        if before_mod > times.get(gid, ""):
+            continue  # Asana already had an unpulled change: let the pull win
+        times[gid] = post_write
+        save_ids(p, state)
+        done.append(p.prefix)
+    return done
+
 
 def create_task(project_gid: str, name: str, notes: str = '', assignee_gid: str = None,
                 depends_on_gid: str = None, dry_run: bool = False) -> str:
@@ -2624,7 +2735,8 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
 
     follow_up_of is (gid, label) of the task this one follows up. The new
     task's description then opens "Follow-up to {label}." with the label linked
-    to that task, as Asana's own "Create follow-up task" does.
+    to that task, as Asana's own "Create follow-up task" does. Nothing is
+    posted on the original: a comment there notifies all its collaborators.
     """
     from datetime import datetime
 
@@ -2677,6 +2789,11 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
                  + (f", with {'; '.join(field_labels)}" if field_labels else ""))
         return f"{proj.prefix}-DRY"
 
+    # Read before ANY write: the create itself may link the parent, and a
+    # modified_at read afterwards would already include our own bump.
+    before_dep = _asana_modified(depends_on) if depends_on else ""
+    before_fu  = _asana_modified(follow_up_of[0]) if follow_up_of else ""
+
     resp = _post("/tasks", payload)
     new_gid = resp["data"]["gid"]
     log.info(f"  Task created in Asana: {name!r} ({new_gid})")
@@ -2709,18 +2826,15 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
         except Exception as e:
             raise RuntimeError(f"Created {lid} ({new_gid}) but could not make it block "
                                f"{depends_on}: {e}") from e
+        restamp_after_own_write(proj, depends_on, depends_on, before_dep)
 
-    # 6. Point the original task at its follow-up. A link in a description
-    # leaves no trace on the task it names (checked 2026-11-17), so without
-    # this the original has no way to reach the follow-up. Silent: no @mark.
+    # 6. No comment on the original. Asana notifies every collaborator of a
+    # comment, so a "Follow-up: {ID}" story there pinged Mark for each follow-up
+    # created on a task he follows (BSTD-906). The link lives in the new task's
+    # description only. The re-stamp stays: the description links the parent,
+    # and a parent bumped by that must not read as an Asana-side change.
     if follow_up_of:
-        try:
-            _post(f"/tasks/{follow_up_of[0]}/stories", {"data": {"html_text":
-                  f'<body>Follow-up: <a data-asana-gid="{new_gid}" '
-                  f'data-asana-dynamic="false">{lid}</a></body>'}})
-            log.info(f"  Linked from {follow_up_of[1]}")
-        except Exception as e:
-            log.warning(f"  Created {lid} but could not comment on {follow_up_of[1]}: {e}")
+        restamp_after_own_write(proj, follow_up_of[0], follow_up_of[1], before_fu)
 
     if assignee_gid == BAINBOT_GID:
         assignee_name = ASSIGNEE_NAME
@@ -3079,6 +3193,7 @@ def main():
     parser.add_argument("--follow-up-of", metavar="TASK", default="",
                         help="With --create-task: the task this one follows up (local ID, "
                              "GID or URL). Its description opens with a link to that task, "
+                             "nothing is posted on that task, "
                              "and --project defaults to that task's project")
     parser.add_argument("--add-to-project", metavar="PREFIX", default="",
                         help="Add the task(s) given with --task-gid to another project, "

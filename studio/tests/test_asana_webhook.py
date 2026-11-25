@@ -1,9 +1,14 @@
 import hashlib
 import hmac
+import json
 from pathlib import Path
 
 from asana_webhook_logic import (
     body_length_error,
+    custom_field_value,
+    milestone_codename,
+    product_for_milestone,
+    product_git_rules,
     candidate_events,
     config_dir_from_envrc,
     GIT_WRITE_DENIES,
@@ -467,3 +472,120 @@ def test_home_prefix_skips_queues_and_unregistered():
 def test_inbox_cursor_overlaps_previous_poll():
     assert inbox_cursor("2026-11-19T10:00:00Z", "2026-11-19T10:03:00Z", 600, 3600) == "2026-11-19T09:50:00Z"
     assert inbox_cursor("", "2026-11-19T10:00:00Z", 600, 3600) == "2026-11-19T09:00:00Z"
+
+
+# ---------------------------------------------------------------------------
+# Factory products (BSTD-905): a run may also edit an in-production product's repo
+# ---------------------------------------------------------------------------
+
+PRODUCTS = {"products": [
+    {"codename": "paper-lantern", "name": "Lampwick", "status": "in-production",
+     "source": "/dev/themes/paper-lantern"},
+    {"codename": "old-quill", "name": "Quill", "status": "graduated",
+     "source": "/dev/themes/old-quill"},
+    {"codename": "no-source", "status": "in-production", "source": ""},
+    {"slug": "a-plugin", "status": "in-production", "source": "/dev/plugins/a"},
+]}
+
+
+def test_milestone_codename_reads_the_parenthesised_codename():
+    assert milestone_codename("Night Shift Notes (paper-lantern)") == "paper-lantern"
+    assert milestone_codename("paper-lantern") == "paper-lantern"
+    assert milestone_codename("") == ""
+
+
+def test_product_for_milestone_only_in_production_by_codename():
+    assert product_for_milestone(PRODUCTS, "Night Shift Notes (paper-lantern)")["codename"] == "paper-lantern"
+    # Matched on codename: the product's public name does not count.
+    assert product_for_milestone(PRODUCTS, "Lampwick") is None
+    assert product_for_milestone(PRODUCTS, "Quill (old-quill)") is None       # graduated
+    assert product_for_milestone(PRODUCTS, "Gone (unknown-thing)") is None
+    assert product_for_milestone(PRODUCTS, "X (no-source)") is None
+    assert product_for_milestone(PRODUCTS, "none") is None
+    assert product_for_milestone(PRODUCTS, "") is None
+    assert product_for_milestone([], "X (paper-lantern)") is None             # malformed file
+
+
+def test_custom_field_value_by_name():
+    task = {"custom_fields": [{"name": "Priority", "display_value": "High"},
+                              {"name": "Related Milestone", "display_value": "N (paper-lantern)"}]}
+    assert custom_field_value(task, "Related Milestone") == "N (paper-lantern)"
+    assert custom_field_value(task, "Missing") == ""
+    assert custom_field_value({}, "Related Milestone") == ""
+
+
+def test_product_git_rules_reach_only_the_product_worktree_and_never_switch_branch():
+    rules = product_git_rules(Path("/data/wt/BTF/BTF-1--paper-lantern"))
+    assert "Bash(git -C /data/wt/BTF/BTF-1--paper-lantern add *)" in rules
+    assert "Bash(git -C /data/wt/BTF/BTF-1--paper-lantern commit *)" in rules
+    assert all(r.startswith("Bash(git -C /data/wt/BTF/BTF-1--paper-lantern ") for r in rules)
+    verbs = {r.split()[3].rstrip(")") for r in rules}
+    assert verbs == {"status", "diff", "log", "show", "add", "commit"}
+
+
+@pytest.fixture
+def factory(tmp_path, monkeypatch):
+    """A factory project with products.json and an in-production product repo."""
+    import asana_webhook as aw
+    for k, v in {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
+                 "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
+                 "GIT_CONFIG_PARAMETERS": "'core.hooksPath=/dev/null'"}.items():
+        monkeypatch.setenv(k, v)
+    run = lambda *a, cwd: subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True)
+    src = tmp_path / "themes" / "paper-lantern"
+    src.mkdir(parents=True)
+    run("init", "-q", cwd=src)
+    run("checkout", "-q", "-b", "develop", cwd=src)
+    (src / "style.css").write_text("/* theme */")
+    run("add", ".", cwd=src)
+    run("commit", "-qm", "init", cwd=src)
+    root = tmp_path / "factory"
+    root.mkdir()
+    products = {"products": [{"codename": "paper-lantern", "status": "in-production",
+                              "source": str(src)}]}
+    (root / "products.json").write_text(json.dumps(products))
+    monkeypatch.setattr(aw, "WORKTREES", tmp_path / "wts")
+    monkeypatch.setattr(aw, "log", lambda m: None)
+
+    class P:
+        prefix = "BTF"
+    P.root = root
+    task = {"custom_fields": [{"name": "Related Milestone", "display_value": "N (paper-lantern)"}]}
+    return aw, P, src, task, run
+
+
+def test_product_for_task_reads_the_main_checkouts_products_json(factory):
+    aw, proj, src, task, run = factory
+    product = aw.product_for_task(proj, task)
+    assert product.root == src and product.codename == "paper-lantern"
+    other = {"custom_fields": [{"name": "Related Milestone", "display_value": "none"}]}
+    assert aw.product_for_task(proj, other) is None
+    (proj.root / "products.json").unlink()
+    assert aw.product_for_task(proj, task) is None
+
+
+def test_product_for_task_skips_a_source_that_is_not_a_repo_root(factory):
+    aw, proj, src, task, run = factory
+    sub = src / "sub"
+    sub.mkdir()
+    (proj.root / "products.json").write_text(json.dumps({"products": [
+        {"codename": "paper-lantern", "status": "in-production", "source": str(sub)}]}))
+    assert aw.product_for_task(proj, task) is None
+
+
+def test_product_worktree_is_a_sibling_on_the_bot_branch_and_tidied_alone(factory):
+    aw, proj, src, task, run = factory
+    product = aw.product_for_task(proj, task)
+    pwt, branch = aw.ensure_product_worktree(product, "BTF-5")
+    assert branch == "bot/BTF-5"
+    assert pwt == aw.WORKTREES / "BTF" / "BTF-5--paper-lantern"
+    assert not str(pwt).startswith(str(src))
+    assert (pwt / "style.css").exists()
+    assert aw.ensure_product_worktree(product, "BTF-5") == (pwt, branch)
+    (pwt / "style.css").write_text("/* changed */")
+    run("commit", "-qam", "work", cwd=pwt)
+    assert aw.tidy_worktree(product, pwt, branch) == "kept (1 commit(s) on bot/BTF-5)"
+    # An untouched product worktree goes, with its branch.
+    pwt2, b2 = aw.ensure_product_worktree(product, "BTF-6")
+    assert aw.tidy_worktree(product, pwt2, b2) == "removed (no changes)"
+    assert not pwt2.exists()
