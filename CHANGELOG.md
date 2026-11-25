@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.0] - 2026-11-25
+
+### Changed
+- **Review comments open with Mark's action and are one comment.** The first line after `Review:` or `Blocked:` says what Mark does; the `Where:` block now sits at the foot of the same comment instead of posting separately. See `docs/utilities/asana-comments.md`.
+
+### Added
+- **"Waiting on Mark" tag.** A Review, Blocked or Done note tags the task; every full sync clears it once the task is completed or Mark has replied.
+
 ## [2.17.0] - 2026-11-25
 
 ### Added
