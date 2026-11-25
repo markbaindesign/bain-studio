@@ -140,3 +140,76 @@ def test_main_restores_title_when_sweep_fails(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError):
         cdp.main(["https://x.test", "t", "--long-title", "--project", str(tmp_path)])
     assert calls[-1] == ("update", "blogname", "Original Title")
+
+
+class FakeTabBrowser:
+    """A page's tab order as Chromium walks it: Tab off the last stop leaves the
+    document (STOP_JS reads None), and the next Tab comes back in at the first stop.
+    Shift+Tab mirrors it. `leaves` False models a page whose walk wraps straight
+    from the last stop to the first, with no None in between."""
+
+    def __init__(self, stops, leaves=True):
+        self.stops, self.leaves = stops, leaves
+        self.pos = None          # None: focus is outside the document
+
+    def tab(self, shift=False):
+        n = len(self.stops)
+        if self.pos is None:
+            self.pos = n - 1 if shift else 0
+            return
+        nxt = self.pos - 1 if shift else self.pos + 1
+        if 0 <= nxt < n:
+            self.pos = nxt
+        elif self.leaves:
+            self.pos = None
+        else:
+            self.pos = nxt % n
+
+    def ev(self, expr):
+        if expr == cdp.FOCUSABLE_JS:
+            return len(self.stops)
+        return None if self.pos is None else self.stops[self.pos]
+
+
+def _page(n=4):
+    return [stop("s%d" % i, y=30 * i) for i in range(n)]
+
+
+def test_keyboard_pass_exact_reverse_when_focus_leaves_the_page():
+    r = cdp.page_keyboard_pass(FakeTabBrowser(_page()))
+    assert r["ended"] == "focus left the page"
+    assert r["shift_tab_exact_reverse"] is True
+
+
+def test_keyboard_pass_exact_reverse_when_the_walk_wraps_to_the_first_stop():
+    # The forward walk comes round to the first stop, so focus is still there.
+    # Shift+Tab from the first stop leaves the document before re-entering at the
+    # last stop. That None used to end the back pass empty and report a correct
+    # reverse order as wrong (BSTD-915).
+    class WrapThenLeave(FakeTabBrowser):
+        def tab(self, shift=False):
+            n = len(self.stops)
+            if not shift and self.pos == n - 1:
+                self.pos = 0     # forward wraps straight round
+                return
+            super().tab(shift)
+
+    r = cdp.page_keyboard_pass(WrapThenLeave(_page(), leaves=True))
+    assert r["ended"] == "focus came round to the first stop"
+    assert r["shift_tab_exact_reverse"] is True
+
+
+def test_keyboard_pass_wrap_still_reports_a_wrong_reverse_order():
+    class WrapBadBack(FakeTabBrowser):
+        def tab(self, shift=False):
+            n = len(self.stops)
+            if not shift and self.pos == n - 1:
+                self.pos = 0
+                return
+            if shift and self.pos == 2:
+                self.pos = 0     # skips stop 1 on the way back
+                return
+            super().tab(shift)
+
+    r = cdp.page_keyboard_pass(WrapBadBack(_page(), leaves=True))
+    assert r["shift_tab_exact_reverse"] is False
