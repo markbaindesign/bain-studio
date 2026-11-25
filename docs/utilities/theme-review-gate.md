@@ -41,7 +41,9 @@ The slug and version come from the notes file's name.
 
 `--pre-submission` is for a studio theme reviewed before it goes to wordpress.org,
 installed with `theme-sweep.py install-zip` or `run-local`. There is no ticket, so the
-**sign-off and posting task** row prints `N/A` and counts as passed, the last line reads
+**sign-off and posting task** row prints `N/A` and counts as passed, so does the
+**comment claims** row when there is no Trac comment file (one written anyway is still
+checked), the last line reads
 **ready to submit** instead of ready to post, and the handover fragment sets `ticket` to
 `0`, so the page shows no ticket link or button. Every other row, and the exit status, is
 unchanged.

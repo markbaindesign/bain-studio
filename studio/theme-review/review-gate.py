@@ -523,7 +523,7 @@ def check_notes(notes_secs, a11y):
     return rows
 
 
-def check_claims(notes_text, comment_path, granted):
+def check_claims(notes_text, comment_path, granted, pre_submission=False):
     rows = []
     head = claim(header_block(notes_text))
     rows.append(Row("claims", "notes header claims %s" % granted, head == granted,
@@ -531,7 +531,14 @@ def check_claims(notes_text, comment_path, granted):
     try:
         comment = comment_path.read_text()
     except FileNotFoundError:
-        rows.append(Row("claims", "comment claims %s" % granted, False, "missing %s" % comment_path.name))
+        if pre_submission:
+            # No Trac ticket, so no comment to post. A comment file written anyway
+            # (notes for the author) is still checked below.
+            rows.append(Row("claims", "comment claims %s" % granted, True,
+                            "pre-submission review, no Trac comment", na=True))
+        else:
+            rows.append(Row("claims", "comment claims %s" % granted, False,
+                            "missing %s" % comment_path.name))
         return rows
     said = claim(comment)
     rows.append(Row("claims", "comment claims %s" % granted, said == granted,
@@ -585,7 +592,7 @@ def run_gate(notes_path, zip_path, comment_path, evidence, mirror, get=fetch,
     rows += check_tier3(Path(evidence), stem, block)
     rows += check_notes(secs, a11y)
     granted = "full" if all(r.ok for r in rows) else "partial"
-    rows += check_claims(notes_text, Path(comment_path), granted)
+    rows += check_claims(notes_text, Path(comment_path), granted, pre_submission)
     rows += check_posting(Path(mirror), header.get("theme name", ""), version, pre_submission)
     postable = all(r.ok for r in rows if r.group in POSTING)
     return {

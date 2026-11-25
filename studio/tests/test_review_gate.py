@@ -458,3 +458,15 @@ def test_cli_pre_submission(tmp_path, monkeypatch, capsys):
     assert gate.main([str(notes), "--zip", str(z), "--mirror", str(mirror), "--pre-submission"]) == 0
     out = capsys.readouterr().out
     assert "ready to submit: yes" in out and "N/A   posting" in out
+
+
+def test_pre_submission_needs_no_trac_comment(tmp_path):
+    rows = gate.check_claims("", tmp_path / "missing-trac-comment.txt", "partial", pre_submission=True)
+    comment = [r for r in rows if r.name.startswith("comment claims")][0]
+    assert comment.na and comment.ok
+
+
+def test_a_missing_comment_still_fails_a_normal_review(tmp_path):
+    rows = gate.check_claims("", tmp_path / "missing-trac-comment.txt", "partial")
+    comment = [r for r in rows if r.name.startswith("comment claims")][0]
+    assert not comment.ok and not comment.na

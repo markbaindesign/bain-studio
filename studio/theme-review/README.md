@@ -113,7 +113,8 @@ exactly as `fetch` installs a download. The slug is the zip's one top-level fold
 version comes from that folder's `style.css` unless `--version` is given. `run-local` is
 `install-zip`, `reset`, then `check`, as `run` is for a submitted version. Review it with
 `review-gate.py --pre-submission` (see the review template): there is no Trac ticket yet, so
-the gate marks the sign-off and posting row n/a and says "ready to submit".
+the gate marks the sign-off and posting row, and the comment row when there is no comment
+file, n/a and says "ready to submit".
 
 `reset` matters more than it looks. Some themes ship an importer that force-deletes
 every post and attachment on the site, so one click can cost you the unit test data.
