@@ -102,7 +102,18 @@ theme-sweep.py check example-theme
 
 # put the content back after a theme has chewed on it
 theme-sweep.py reset
+
+# a theme that is not on wordpress.org yet (the studio's own, before submission)
+theme-sweep.py run-local ~/builds/example-theme.zip
+theme-sweep.py install-zip ~/builds/example-theme.zip --version 1.0.0   # install only
 ```
+
+`install-zip` copies a local zip into `review-zips/` as `<slug>.<version>.zip` and installs it
+exactly as `fetch` installs a download. The slug is the zip's one top-level folder; the
+version comes from that folder's `style.css` unless `--version` is given. `run-local` is
+`install-zip`, `reset`, then `check`, as `run` is for a submitted version. Review it with
+`review-gate.py --pre-submission` (see the review template): there is no Trac ticket yet, so
+the gate marks the sign-off and posting row n/a and says "ready to submit".
 
 `reset` matters more than it looks. Some themes ship an importer that force-deletes
 every post and attachment on the site, so one click can cost you the unit test data.

@@ -87,3 +87,75 @@ def test_remote_hosts_skips_header_and_allowlisted_hosts(tmp_path):
     assert "header.example.com" not in hosts
     assert "wordpress.org" not in hosts
     assert "fonts.googleapis.com" in hosts  # reported; the report marks the exception
+
+
+# --- install-zip (BSTD-916): a local zip, installed as fetch installs a download ---
+
+import zipfile  # noqa: E402
+
+import pytest  # noqa: E402
+
+
+def local_zip(where, slug="quill-press", style=STYLE, name="build.zip", extra=None):
+    path = where / name
+    with zipfile.ZipFile(path, "w") as z:
+        if style is not None:
+            z.writestr(f"{slug}/style.css", style)
+        z.writestr(f"{slug}/index.php", "<?php\n")
+        for rel, text in (extra or {}).items():
+            z.writestr(rel, text)
+    return path
+
+
+def review_project(tmp_path):
+    project = tmp_path / "site"
+    (project / "wp-content" / "themes").mkdir(parents=True)
+    return project
+
+
+def test_zip_identity_reads_slug_and_version(tmp_path):
+    assert sweep.zip_identity(local_zip(tmp_path)) == ("quill-press", "1.2.0")
+    assert sweep.zip_identity(local_zip(tmp_path), "2.0.0") == ("quill-press", "2.0.0")
+
+
+def test_zip_identity_needs_one_top_folder(tmp_path):
+    with pytest.raises(ValueError, match="one top-level"):
+        sweep.zip_identity(local_zip(tmp_path, extra={"other/x.txt": "x"}))
+
+
+def test_zip_identity_ignores_macos_folder(tmp_path):
+    z = local_zip(tmp_path, extra={"__MACOSX/quill-press/._style.css": "x"})
+    assert sweep.zip_identity(z) == ("quill-press", "1.2.0")
+
+
+def test_zip_identity_without_version_asks_for_one(tmp_path):
+    with pytest.raises(ValueError, match="--version"):
+        sweep.zip_identity(local_zip(tmp_path, style="/*\nTheme Name: Quill Press\n*/\n"))
+    assert sweep.zip_identity(local_zip(tmp_path, style=None), "0.1.0") == ("quill-press", "0.1.0")
+
+
+def test_install_zip_copies_and_extracts(tmp_path):
+    project = review_project(tmp_path)
+    old = project / "wp-content" / "themes" / "quill-press"
+    old.mkdir()
+    (old / "stale.php").write_text("old")
+    slug = sweep.cmd_install_zip(project, local_zip(tmp_path))
+    assert slug == "quill-press"
+    assert (project / "review-zips" / "quill-press.1.2.0.zip").is_file()
+    theme = project / "wp-content" / "themes" / "quill-press"
+    assert (theme / "style.css").is_file() and (theme / "index.php").is_file()
+    assert not (theme / "stale.php").exists()
+    assert not list((project / "review-zips").glob(".extract-*"))
+
+
+def test_install_zip_from_review_zips_itself(tmp_path):
+    project = review_project(tmp_path)
+    (project / "review-zips").mkdir()
+    z = local_zip(project / "review-zips", name="quill-press.1.2.0.zip")
+    assert sweep.cmd_install_zip(project, z) == "quill-press"
+    assert (project / "wp-content" / "themes" / "quill-press" / "style.css").is_file()
+
+
+def test_install_zip_missing_file_exits(tmp_path):
+    with pytest.raises(SystemExit):
+        sweep.cmd_install_zip(review_project(tmp_path), tmp_path / "nope.zip")

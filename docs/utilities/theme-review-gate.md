@@ -33,8 +33,18 @@ python3 -I /home/bain/ops/bain-studio/studio/theme-review/review-gate.py \
 | `--project` | the current directory |
 | `--handover-json FILE` | write the handover fragment to a file |
 | `--handover PAGE` | write the fragment into the page's `handover-data` block |
+| `--pre-submission` | the studio's own theme, before submission: no Trac ticket |
 
 The slug and version come from the notes file's name.
+
+## Pre-submission reviews
+
+`--pre-submission` is for a studio theme reviewed before it goes to wordpress.org,
+installed with `theme-sweep.py install-zip` or `run-local`. There is no ticket, so the
+**sign-off and posting task** row prints `N/A` and counts as passed, the last line reads
+**ready to submit** instead of ready to post, and the handover fragment sets `ticket` to
+`0`, so the page shows no ticket link or button. Every other row, and the exit status, is
+unchanged.
 
 ## Two answers, kept apart
 
@@ -90,8 +100,9 @@ A File cell is one path, a comma list, or a glob with its count:
 **Full-review definition** group, rebuilt from the gate's rows. It appends a
 **Review gate (date)** group with every row and sets the Workflow item "Review gate
 run" to pass. Everything else on the page is left alone, and running it twice gives
-the same page. Statuses are only `pass` and `fail`, so the page can only show what the
-gate checked.
+the same page. Statuses are `pass` and `fail`, plus `na` for a row that does not apply
+(the posting row on a pre-submission review), so the page can only show what the gate
+checked.
 
 ## Tests
 
