@@ -12,6 +12,14 @@ Registry: ~/.config/bain-studio/careers_watch_companies.json (outside the repo,
   [{"name": "Acme Inc", "slug": "acme", "url": "https://acme.com/careers"}, ...]
   Override with CAREERS_WATCH_REGISTRY.
 
+  An entry can also be a saved search on Workable's cross-company job board,
+  with a regex every matching title must contain:
+  {"name": "Workable WordPress search", "slug": "workable-wordpress",
+   "url": "https://jobs.workable.com/search?query=Wordpress+Developer&workplace=remote&day_range=7",
+   "title_match": "wordpress"}
+  The board lists one job once per country; a search entry counts a company and
+  title once, so those copies become one task.
+
 State: studio/collectors/careers_watch_state/{slug}.json (gitignored)
   Override with CAREERS_WATCH_STATE_DIR (tests, dry runs).
 
@@ -27,6 +35,7 @@ Usage:
   python3 careers_watch.py                       # check all companies, create tasks for new postings
   python3 careers_watch.py --dry-run             # report what would be created, change nothing
   python3 careers_watch.py --add "Name" "URL"     # add a company to the registry
+  python3 careers_watch.py --add "Name" "URL" --title-match REGEX   # add a saved search
   python3 careers_watch.py --list                 # print the registry
   python3 careers_watch.py --remove SLUG          # remove a company
 
@@ -48,7 +57,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import parse_qsl, urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -64,6 +73,7 @@ LOG_PREFIX = f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] careers
 
 # Known ATS URL patterns -> (kind, slug-extraction regex)
 ATS_PATTERNS = [
+    ("workable-search", re.compile(r"jobs\.workable\.com/search\?(.*)")),
     ("greenhouse", re.compile(r"(?:boards|job-boards)\.greenhouse\.io/([^/?#]+)")),
     ("lever", re.compile(r"jobs\.lever\.co/([^/?#]+)")),
     ("workable", re.compile(r"apply\.workable\.com/([^/?#]+)")),
@@ -141,6 +151,10 @@ def detect_ats(url):
     return None
 
 
+def _posting(title, url, company=None):
+    return {"title": title, "url": url, "company": company}
+
+
 def fetch_greenhouse(slug):
     r = requests.get(
         f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs",
@@ -150,7 +164,7 @@ def fetch_greenhouse(slug):
     data = r.json()
     if "jobs" not in data:
         raise ValueError(f"unexpected Greenhouse response: {data}")
-    return {j["absolute_url"]: j["title"] for j in data["jobs"]}
+    return {j["absolute_url"]: _posting(j["title"], j["absolute_url"]) for j in data["jobs"]}
 
 
 def fetch_lever(slug):
@@ -162,7 +176,7 @@ def fetch_lever(slug):
     data = r.json()
     if not isinstance(data, list):
         raise ValueError(f"unexpected Lever response: {data}")
-    return {j["hostedUrl"]: j["text"] for j in data}
+    return {j["hostedUrl"]: _posting(j["text"], j["hostedUrl"]) for j in data}
 
 
 def fetch_workable(slug):
@@ -174,7 +188,38 @@ def fetch_workable(slug):
     data = r.json()
     if "jobs" not in data:
         raise ValueError(f"unexpected Workable response: {data}")
-    return {j["shortlink"]: j["title"] for j in data["jobs"]}
+    return {j["shortlink"]: _posting(j["title"], j["shortlink"]) for j in data["jobs"]}
+
+
+def fetch_workable_search(query_string, title_match=None, max_pages=10):
+    """Read a saved search on jobs.workable.com through the API behind it.
+
+    Keyed by company and title, not URL: the board lists one job once per
+    country, and those copies should make one task, not six.
+    """
+    params = dict(parse_qsl(query_string))
+    pattern = re.compile(title_match, re.IGNORECASE) if title_match else None
+    postings = {}
+    token = None
+    for _ in range(max_pages):
+        page = dict(params, **({"pageToken": token} if token else {}))
+        r = requests.get("https://jobs.workable.com/api/v1/jobs",
+                         params=page, headers=HEADERS, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+        if "jobs" not in data:
+            raise ValueError(f"unexpected Workable search response: {str(data)[:200]}")
+        for j in data["jobs"]:
+            title = j.get("title") or ""
+            if pattern and not pattern.search(title):
+                continue
+            company = (j.get("company") or {}).get("title") or "unknown company"
+            key = f"{company.strip().lower()}|{title.strip().lower()}"
+            postings.setdefault(key, _posting(title, j.get("url"), company))
+        token = data.get("nextPageToken")
+        if not token or not data["jobs"]:
+            break
+    return postings
 
 
 ATS_FETCHERS = {
@@ -184,15 +229,27 @@ ATS_FETCHERS = {
 }
 
 
-def fetch_postings(url):
-    """Fetch current postings for a company, via ATS API if detected, else HTML scrape."""
+def fetch_postings(url, title_match=None):
+    """Fetch current postings, via ATS API if detected, else HTML scrape.
+
+    Returns ({key: {"title", "url", "company"}}, source).
+    """
     ats = detect_ats(url)
     if ats:
         kind, slug = ats
-        return ATS_FETCHERS[kind](slug), kind
-    resp = requests.get(url, headers=HEADERS, timeout=20)
-    resp.raise_for_status()
-    return extract_postings(resp.text, url), "html-scrape"
+        if kind == "workable-search":
+            return fetch_workable_search(slug, title_match), kind
+        postings = ATS_FETCHERS[kind](slug)
+    else:
+        resp = requests.get(url, headers=HEADERS, timeout=20)
+        resp.raise_for_status()
+        postings = {link: _posting(text, link)
+                    for link, text in extract_postings(resp.text, url).items()}
+        kind = "html-scrape"
+    if title_match:
+        pattern = re.compile(title_match, re.IGNORECASE)
+        postings = {k: v for k, v in postings.items() if pattern.search(v["title"])}
+    return postings, kind
 
 
 def _sync():
@@ -211,9 +268,9 @@ def create_posting_task(company_name, title, link, dry_run=False):
     if missing:
         raise RuntimeError(f"studio/.env is missing CAREERS_WATCH_{', CAREERS_WATCH_'.join(missing)}")
 
-    name = f"Apply: {title} at {company_name}"
+    name = f"Apply for the {title} role at {company_name}"
     notes = (
-        f"New opening at {company_name}, spotted by the careers watcher: {title}.\n\n"
+        f"New opening at {company_name}: {title}.\n\n"
         f"Done: applied, or decided not to.\n\n"
         f"Posting: {link}"
     )
@@ -241,7 +298,7 @@ def check_company(company, dry_run=False):
     first_run = state.get("last_checked") is None
 
     try:
-        postings, source = fetch_postings(url)
+        postings, source = fetch_postings(url, company.get("title_match"))
     except (requests.RequestException, ValueError) as e:
         print(f"{LOG_PREFIX} ERROR fetching {name} ({url}): {e}")
         return
@@ -261,12 +318,14 @@ def check_company(company, dry_run=False):
     elif new_links:
         for link in new_links:
             try:
-                gid = create_posting_task(name, postings[link], link, dry_run=dry_run)
+                p = postings[link]
+                gid = create_posting_task(p["company"] or name, p["title"], p["url"] or link,
+                                          dry_run=dry_run)
             except Exception as e:  # leave it unseen so the next run retries
                 print(f"{LOG_PREFIX} ERROR creating task for {name} {link}: {e}")
                 continue
             seen.add(link)
-            print(f"{LOG_PREFIX} {name}: new posting {postings[link]!r} -> task {gid}")
+            print(f"{LOG_PREFIX} {name}: new posting {postings[link]['title']!r} -> task {gid}")
     else:
         print(f"{LOG_PREFIX} {name}: no change ({len(current_links)} postings)")
 
@@ -277,13 +336,16 @@ def check_company(company, dry_run=False):
     save_state(slug, state)
 
 
-def cmd_add(name, url):
+def cmd_add(name, url, title_match=None):
     companies = load_registry()
     slug = slugify(name)
     if any(c["slug"] == slug for c in companies):
         print(f"{name} is already in the registry (slug: {slug})")
         return
-    companies.append({"name": name, "slug": slug, "url": url})
+    entry = {"name": name, "slug": slug, "url": url}
+    if title_match:
+        entry["title_match"] = title_match
+    companies.append(entry)
     save_registry(companies)
     print(f"Added {name} ({slug}) — {url}")
 
@@ -317,6 +379,8 @@ def cmd_list():
 def main():
     parser = argparse.ArgumentParser(description="Watch target company careers pages for new postings")
     parser.add_argument("--add", nargs=2, metavar=("NAME", "URL"))
+    parser.add_argument("--title-match", metavar="REGEX",
+                        help="with --add: only titles matching this (case-insensitive)")
     parser.add_argument("--remove", metavar="SLUG")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--dry-run", action="store_true",
@@ -324,7 +388,7 @@ def main():
     args = parser.parse_args()
 
     if args.add:
-        cmd_add(*args.add)
+        cmd_add(*args.add, title_match=args.title_match)
         return
     if args.remove:
         cmd_remove(args.remove)
