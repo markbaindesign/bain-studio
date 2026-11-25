@@ -294,7 +294,7 @@ You are in a git worktree of your own at {worktree}, on branch {branch}: a copy 
    - Before blocking on a question, look for the answer in the task and its comments, this CLAUDE.md and docs/adr/ here, and the studio's ADRs in {studio}/docs/adr/. A thin task with one clearly most likely reading is not blocked: do that reading and say it plainly in the Review line.
    - Block when the plausible readings lead to materially different work, or the work is irreversible or outward-facing.
 5. When finished, post ONE comment: python3 {sync} --comment --task-gid {gid} --comment-text "<text>"
-   - Finished: "@mark Review: <what changed, one line> || Check: || 1. <something Mark does> || 2. <...> || Gaps: <only work knowingly left undone> || Where: {branch} · <commit> "
+   - Finished: "@mark Review: <what Mark does now, one imperative line> || <what changed, one line> || Check: || 1. <something Mark does> || 2. <...> || Gaps: <only work knowingly left undone> || Where: {branch} · <commit> "
    - Blocked: "@mark Blocked: <the one question> || Tried: <where you looked> || Need: <what Mark must decide or provide>"
    - At most 6 blocks, 150 characters each, 500 in all: sync.py refuses anything longer. No branch, commit, path or URL before the "Where:" block. No reasoning, no dates.
    - Post nothing before you are done.
