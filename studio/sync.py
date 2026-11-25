@@ -548,6 +548,30 @@ def validate_task_description(text: str) -> str:
             f"message or a comment.")
 
 
+# A title is the task itself, as a plain sentence (ADR 022, 2026-11-25
+# addendum). "sync.py: give a fresh Local ID…", "Theme review: build the gate"
+# in the Theme Review project, "Question: …": every row of a narrow list then
+# starts with the same words and none can be told apart at a glance. Grouping
+# belongs in Asana's own links (project, section, tag, field, dependency,
+# parent), never in title text. Only titles written through this script are
+# checked; Mark's own tasks and email intake never pass through here.
+#
+# A label is a short run before ": " (a colon then a space, so "10:30" and
+# "https://" pass), or a leading "[...]" tag.
+TITLE_PREFIX_RE = re.compile(r"^\s*(?:\[[^\]\n]{1,40}\]\s|[^:\n]{1,40}:\s)")
+
+
+def validate_task_title(name: str) -> str:
+    """Why this task title may not be written, or "" when it is fine."""
+    m = TITLE_PREFIX_RE.match(name or "")
+    if not m:
+        return ""
+    return (f"title opens with the label {m.group(0).strip()!r}. A title is the task "
+            f"itself, as a plain sentence: drop the prefix, and if the tool, page or "
+            f"section matters, say it inside the sentence. Group tasks with the "
+            f"project, a section, a tag, a field, a dependency or a parent instead.")
+
+
 def _progress_plain(text: str) -> str:
     """The mention-stripped, BLOCK_SEP-expanded plain text of a Progress note.
 
@@ -2391,7 +2415,7 @@ def create_task(project_gid: str, name: str, notes: str = '', assignee_gid: str 
     Create a task in the given Asana project via bainbot, return the new task GID.
     Optionally set it as a dependency of depends_on_gid.
     """
-    bad = validate_task_description(notes)
+    bad = validate_task_title(name) or validate_task_description(notes)
     if bad:
         raise ValueError(bad)
 
@@ -2441,6 +2465,8 @@ def update_task(task_gid: str, name: str = None, notes: str = None,
     # description would leave the wrong text in place. So on an update, an
     # over-limit description is refused only when it is no shorter than the one
     # it replaces. Creation stays strict — there is nothing to improve on.
+    if name is not None and validate_task_title(name):
+        raise ValueError(validate_task_title(name))
     if notes is not None and validate_task_description(notes):
         current = ""
         try:
@@ -2480,6 +2506,10 @@ def create_subtasks(parent_gid: str, names: list, dry_run: bool = False) -> list
     Subtasks are not added to any project, so they stay out of the task mirror.
     Returns the list of new subtask GIDs.
     """
+    for name in names:
+        bad = validate_task_title(name)
+        if bad:
+            raise ValueError(f"subtask {name!r}: {bad}")
     gids = []
     for name in names:
         if dry_run:
@@ -2598,7 +2628,7 @@ def create_task_full(proj: ProjectConfig, name: str, section_name: str = "NEXT U
     """
     from datetime import datetime
 
-    bad = validate_task_description(notes)
+    bad = validate_task_title(name) or validate_task_description(notes)
     if bad:
         raise ValueError(bad)
 
@@ -3198,7 +3228,11 @@ def main():
             parser.error("--create-subtask requires --task-gid")
         if not args.subtask_name:
             parser.error("--create-subtask requires at least one --subtask-name")
-        gids = create_subtasks(args.task_gid, args.subtask_name, dry_run=args.dry_run)
+        try:
+            gids = create_subtasks(args.task_gid, args.subtask_name, dry_run=args.dry_run)
+        except ValueError as e:
+            log.error(f"Not creating subtasks: {e}")
+            sys.exit(1)
         for gid in gids:
             print(gid)
         sys.exit(0)
