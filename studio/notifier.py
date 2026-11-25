@@ -34,6 +34,8 @@ PRIORITY_EMOJI = {
     'low':    ':information_source:',
 }
 
+PRIORITY_RANK = {'low': 0, 'normal': 1, 'high': 2, 'urgent': 3}
+
 SENDER_EMOJI = {
     'hephaestus': ':hammer_and_wrench:',
     'athena':     ':owl:',
@@ -60,6 +62,13 @@ def notify(
     Send a Slack notification.
     Returns True on success, False on failure (never raises).
     """
+    # Volume control (2026-11-25, Mark: Slack was noise). Below the floor a
+    # message is dropped, not queued: the same news is in Asana or the logs.
+    # SLACK_MIN_PRIORITY in studio/.env lowers it (low|normal|high|urgent).
+    floor = os.getenv('SLACK_MIN_PRIORITY', 'high')
+    if PRIORITY_RANK.get(priority, 1) < PRIORITY_RANK.get(floor, 2):
+        return False
+
     webhook_url = WEBHOOK_URL
     if channel:
         env_var = CHANNEL_WEBHOOKS.get(channel)
