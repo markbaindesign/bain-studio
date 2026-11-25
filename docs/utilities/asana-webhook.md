@@ -127,7 +127,9 @@ Replies carry no path, branch, file name or URL: Mark does not read them and the
 point. Where he has to open something, such as a commit to review, it goes in a `Where:` block,
 which goes at the foot of the same comment, below a blank line. An answer usually has none.
 
-Answers, and `Review`, `Blocked` and `Done` notes, all mention you, so they reach the Mentioned
+A task stays DevBot's through `Review` and `Blocked` (since 2026-11-25), so your reply on it
+wakes the bot, and a run on a task whose last note names a `looper/` or `bot/` branch starts
+from that branch (`CONTINUE` in the log). Answers, and `Review`, `Blocked` and `Done` notes, all mention you, so they reach the Mentioned
 inbox and Slack. One comment per run, at the end. When the run exits, a worktree with no
 commits and no changes is removed with its branch; one with work stays for you to review and
 merge.

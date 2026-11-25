@@ -58,8 +58,10 @@ task. Both windows run on the Max login (`max_plan_env`), never the API key.
    worktree for it outside the project, and starts a **confined** `claude -p` session there
    (below). The session does the work, commits once on the task's branch, and posts **one**
    `@mark` note — `Review:` or `Blocked:` — through `sync.py --comment`.
-4. The runner moves Looper Status to **Review** or **Blocked** and reassigns to Mark. The task is
-   never marked done in Asana.
+4. The runner moves Looper Status to **Review** or **Blocked**. The task stays assigned to
+   DevBot (since 2026-11-25): the `@mark` note and the "Waiting on Mark" tag reach Mark, and his
+   reply wakes the bot, which continues on the looper branch the note named. The task is never
+   marked done by the runner.
 5. Next task, until the queue is empty, the deadline or usage cap is reached, or a session stops
    at the Max usage limit.
 6. Mark reviews tasks in Review and marks them done himself.

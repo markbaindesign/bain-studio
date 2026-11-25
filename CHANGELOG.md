@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.20.0] - 2026-11-25
+
+### Changed
+- **Bots keep their own tasks.** A Review, Blocked or Done note no longer reassigns the task to Mark (webhook runs and the looper); the @mark note and the "Waiting on Mark" tag reach him, and his reply wakes the bot. `BOT_HAND_BACK=1` restores the old behaviour.
+- **A reply continues the work.** A webhook run on a task whose latest bot note names a `looper/` or `bot/` branch starts its worktree from that branch.
+
 ## [2.19.0] - 2026-11-25
 
 ### Added

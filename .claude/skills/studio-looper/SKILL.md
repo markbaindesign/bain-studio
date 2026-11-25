@@ -324,8 +324,9 @@ Task events go to `~/logs/task-looper.log`, window events to `~/logs/studio-loop
 
 ## Guard rails
 
-- Never mark a task DONE in Asana — the runner moves it to Review and reassigns to Mark.
-  Completing it is Mark's approval, and it is his click.
+- Never mark a task DONE in Asana — the runner moves it to Review and the task stays
+  DevBot's; Mark's reply wakes the bot. Completing reviewed work is Mark's approval, and it is
+  his click.
 - **This session never works a task.** Working a task in an unconfined interactive session is
   exactly what the runner exists to prevent: the project checkout switched under Mark, his WIP in
   a looper commit, a failed switch-back leaving the folder on a looper branch.

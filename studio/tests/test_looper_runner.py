@@ -295,3 +295,19 @@ def test_window_respects_the_usage_cap(tmp_path, monkeypatch):
     monkeypatch.setattr(lr, "usage_pct", lambda: 80)
     monkeypatch.setattr(lr, "work_task", lambda t, r: pytest.fail("worked past the cap"))
     lr.run_window("test", stop_at_pct=60)
+
+
+def test_worktree_starts_from_a_named_branch(tmp_path):
+    import subprocess
+    import bot_worktree
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    g = lambda *a: subprocess.run(["git", *a], cwd=repo, capture_output=True, text=True, check=True)
+    g("init", "-q"); g("checkout", "-qb", "develop"); g("config", "user.email", "t@example.test"); g("config", "user.name", "T")
+    (repo / "a").write_text("1"); g("add", "a"); g("commit", "-qm", "base")
+    g("checkout", "-qb", "looper/x"); (repo / "b").write_text("2"); g("add", "b"); g("commit", "-qm", "looper work")
+    g("checkout", "-q", "develop")
+    wt, _ = bot_worktree.ensure_worktree(repo, tmp_path / "wt", "bot/T-1", start="looper/x")
+    assert (wt / "b").exists()
+    wt2, _ = bot_worktree.ensure_worktree(repo, tmp_path / "wt2", "bot/T-2", start="looper/missing")
+    assert not (wt2 / "b").exists()
