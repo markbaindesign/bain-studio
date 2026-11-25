@@ -1,7 +1,7 @@
 # ADR 002 — Bainbot account for all Asana API writes
 
 **Date:** 2026-05-18  
-**Status:** Accepted (token swap pending — see TODO.md)
+**Status:** Accepted, implemented
 
 ## Decision
 

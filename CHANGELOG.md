@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-11-25
+
+### Added
+- `studio/scripts/asana_conform.py`: a read-only check of every project against studio Asana conventions.
+- `task_from_template.py`: build an Asana task with nested, ordered subtasks from a template.
+- Asana PAT rotation script across every live location.
+- studio-tmux: split a window into panes with a tmux layout.
+- brand-doc puts the client name on the cover.
+- PmBot's projects index is generated from the registry (BSTD-841).
+
+### Fixed
+- A follow-up no longer costs its parent a pending mirror edit (BSTD-904), and `--follow-up-of` no longer comments on the parent task (BSTD-906).
+
+### Changed
+- A factory webhook run gets a worktree of its product's repo (BSTD-905).
+- KF time budget leads with hours left to work and shows cumulative catch-up.
+- Block themes playbook points at the factory scaffold script; ADR 002 bainbot token swap marked implemented.
+
 ## [2.14.0] - 2026-11-25
 
 ### Added

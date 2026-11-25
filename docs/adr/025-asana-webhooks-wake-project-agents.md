@@ -7,7 +7,7 @@ description: Project agents are woken by Asana webhooks through Tailscale Funnel
 # ADR 025 — Asana webhooks wake project agents
 
 Date: 2026-10-22
-Status: Accepted, amended 2026-11-17 (see the addendum)
+Status: Accepted, amended 2026-11-17 and 2026-11-25 (see the addenda)
 Related: [ADR 003](003-multi-agent-studio-architecture.md) (revisits its "autonomous trigger"
 condition), [ADR 014](014-ops-worktree-for-scheduled-jobs.md),
 [ADR 017](017-per-client-looper-queues.md), [ADR 021](021-studio-state-and-registry-leave-the-repo.md)
@@ -112,3 +112,16 @@ Decided with Mark in a grill session:
   because a run could reach neither. Writes there stay with interactive sessions: a Dropbox
   edit has no branch and no review. Worktrees moved to `$XDG_DATA_HOME/bain-bot-worktrees/`
   so the registry folder can be denied to edits whole.
+
+## Addendum 2026-11-25: a second worktree for a factory product (BSTD-905)
+
+A run could edit only its own worktree of the project repo. The theme factory keeps each
+product in a separate repo, so a run on a factory task could decide but never build: on BTF-105
+it had to answer `Blocked:` instead of making the change Mark had chosen.
+
+**Decision:** when the project has a `products.json` and the task's Related Milestone names an
+`in-production` product, the run also gets a worktree of that product's repo, on its bot branch,
+with `Edit` and git `status/diff/log/show/add/commit` (via `git -C`) allowed there and nothing
+else widened. The product's main checkout and graduated products stay denied. `products.json`
+is read from the main checkout, never the run's worktree, so a run cannot widen its own next
+run. Covered by `studio/tests/test_asana_webhook.py`.

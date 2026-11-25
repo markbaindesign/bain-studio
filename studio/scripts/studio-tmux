@@ -16,6 +16,14 @@ The window list is local config, not code: ~/.config/bain-studio/tmux.json
 "cmd" is optional; without it the window is a plain shell. A window with a
 command drops to a shell when the command exits, so it stays open.
 
+A window can be split into panes instead: "panes" is a list of {"cmd", "dir"}
+(both optional, "dir" defaults to the window's), and "layout" is any tmux
+layout name (default "tiled"). The first pane takes the window's place, so
+"cmd" is ignored when "panes" is set.
+
+        {"name": "monitor", "dir": "~", "layout": "main-vertical",
+         "panes": [{"cmd": "htop"}, {"cmd": "tail -F ~/app.log"}]}
+
 Usage:
     studio-tmux                    create the session if missing, add any
                                    configured windows it lacks, then attach
@@ -28,6 +36,7 @@ Usage:
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -70,15 +79,37 @@ def window_names(session):
     return out.split()
 
 
-def add_window(session, name, directory, cmd, create_session=False):
-    directory = os.path.expanduser(directory)
+def add_window(session, window, create_session=False):
+    """Create one configured window, splitting it into panes if it has any."""
+    name = window["name"]
+    directory = os.path.expanduser(window["dir"])
     if not os.path.isdir(directory):
         print(f"studio-tmux: skipping '{name}', no such directory: {directory}", file=sys.stderr)
         return False
+    panes = window.get("panes") or [{"cmd": window.get("cmd")}]
+
+    def pane_dir(pane):
+        return os.path.expanduser(pane.get("dir") or directory)
+
+    first = panes[0]
+    # -P -F prints the new window and pane ids, so the splits below target them exactly
+    ids = ("-P", "-F", "#{window_id} #{pane_id}")
     if create_session:
-        tmux("new-session", "-d", "-s", session, "-n", name, "-c", directory, *shell_command(cmd))
+        # A detached session defaults to 80x24, too narrow to lay out panes;
+        # size it to the terminal instead (COLUMNS/LINES, else the tty)
+        cols, lines = shutil.get_terminal_size()
+        created = tmux("new-session", "-d", *ids, "-x", str(cols), "-y", str(lines), "-s", session,
+                       "-n", name, "-c", pane_dir(first), *shell_command(first.get("cmd")))
     else:
-        tmux("new-window", "-d", "-t", f"={session}:", "-n", name, "-c", directory, *shell_command(cmd))
+        created = tmux("new-window", "-d", *ids, "-t", f"={session}:", "-n", name,
+                       "-c", pane_dir(first), *shell_command(first.get("cmd")))
+    window_id, last_pane = created.stdout.split()
+    for pane in panes[1:]:
+        # Split the newest pane, so panes keep their configured order
+        last_pane = tmux("split-window", "-d", "-P", "-F", "#{pane_id}", "-t", last_pane,
+                         "-c", pane_dir(pane), *shell_command(pane.get("cmd"))).stdout.strip()
+    if len(panes) > 1:
+        tmux("select-layout", "-t", window_id, window.get("layout", "tiled"))
     return True
 
 
@@ -90,7 +121,7 @@ def ensure_session(cfg):
     for w in cfg["windows"]:
         if w["name"] in present:
             continue
-        if add_window(session, w["name"], w["dir"], w.get("cmd"), create_session=not exists):
+        if add_window(session, w, create_session=not exists):
             exists = True
             present.append(w["name"])
     if not exists:
@@ -127,7 +158,7 @@ def main():
         if not session_exists(session):
             ensure_session(cfg)
         if args.name not in window_names(session):
-            if not add_window(session, args.name, args.dir, args.cmd):
+            if not add_window(session, {"name": args.name, "dir": args.dir, "cmd": args.cmd}):
                 sys.exit(1)
         tmux("select-window", "-t", f"={session}:{args.name}")
         print(f"Opened window '{args.name}' in tmux session '{session}'.")
