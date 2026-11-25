@@ -57,6 +57,21 @@ so all looper sessions are enforced and interactive sessions remain unaffected.
 chosen on API cost; since 2.3.0 looper runs bill to the Max plan, so that reason is gone, and the
 haiku run that misread a live concurrency state (2026-07-22) was the cost of keeping it.
 
+**2026-11-19 (BSTD-893): each task in its own worktree, confined.** The runner no longer launches
+`claude --dangerously-skip-permissions -p '/studio-looper --yes'` in the studio checkout. It drives
+the queue itself: per task it resolves the home project through the registry, makes a git worktree
+outside the project on `looper/{run}/{TASK}` (one branch per task, since git checks a branch out in
+one worktree only), and starts a `claude -p` session confined exactly like a webhook run (ADR 025,
+`studio/bot_worktree.py`): `--restricted`, edits only in the worktree, every edit in the checkout
+denied. The session posts its own note through `sync.py --comment`; the runner moves Looper Status.
+A worktree with no commits is removed; one with commits is kept and checked against the
+client-data denylist. The project's checkout is never switched or written to, so Mark's
+uncommitted work can no longer reach a looper commit, and a failed switch-back can no longer
+strand his folder on a looper branch. `/studio-looper` becomes a trigger for the runner and never
+works a task in its own session. This supersedes the **Driver** and **Git** bullets above (the
+branch is now per task, and nothing is checked out in the project) and makes the stop hook and
+the state file's role in driving the loop obsolete.
+
 ## Consequences
 
 - One queue, one set of rules, one place to harden.

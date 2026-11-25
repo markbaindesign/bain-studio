@@ -9,8 +9,8 @@ Covers:
   - X-Hook-Signature verification
   - Cheap pre-filtering of raw webhook events (no API calls)
   - Deciding whether a fetched story/task should wake an agent
-  - Watching: the 30-minute idle rule, and which queued tasks may start under
-    the per-project and global run limits
+  - Watching: the 30-minute idle rule, open Claude sessions that hold a watch,
+    and which queued tasks may start under the per-project and global run limits
   - Per-task rate capping, to stop PmBot <-> DevBot ping-pong
   - Per-run worktree naming and the allow/deny rules that keep a run inside it
   - Reading a project's CLAUDE_CONFIG_DIR from its .envrc (ADR 017)
@@ -129,15 +129,125 @@ def unanswered(stories: list, trigger_users: set, bot_gid: str, since: str = "")
     return bool(last_trigger) and last_trigger > last_bot and last_trigger > (since or "")
 
 
+LOOPER_FIELD = "Looper Status"
+LOOPER_CLAIMED = {"queue", "in progress"}
+
+
+def looper_claimed(task: dict) -> bool:
+    """Is the task queued for the studio looper (Looper Status Queue or In
+    Progress)? The nightly sweep leaves those to the looper. Read from the task's
+    own custom fields, not the SL mirror, which is only as fresh as its last sync."""
+    for f in task.get("custom_fields") or []:
+        if (f.get("name") or "").strip().lower() == LOOPER_FIELD.lower():
+            return (f.get("display_value") or "").strip().lower() in LOOPER_CLAIMED
+    return False
+
+
+def nightly_wakes(task: dict, stories: list, trigger_users: set, bot_gid: str,
+                  since: str = "", cutoff: str = "") -> bool:
+    """Nightly sweep: would the listener have woken the bot on this task, had its
+    project been watched, with nothing from the bot since?
+
+    The newest trigger-user story decides. It is either a comment, or an
+    assignment while the task is assigned to the bot (a task handed to DevBot with
+    no comment). It must be newer than the bot's last comment, than `since` (the
+    last wake) and than `cutoff`, so old threads are not revived. Then the listener's
+    rule applies (wakes_bot): a task assigned to the bot wakes it on any of these, a
+    handed-back task only on a comment that @-mentions the bot.
+    """
+    if task.get("completed"):
+        return False
+    assigned = task_is_for_bot(task, bot_gid)
+    last_bot = ""
+    latest = None
+    for s in stories or []:
+        who = (s.get("created_by") or {}).get("gid")
+        sub = s.get("resource_subtype")
+        at = s.get("created_at") or ""
+        if who == bot_gid:
+            if sub == "comment_added":
+                last_bot = max(last_bot, at)
+        elif who in trigger_users and (sub == "comment_added" or (sub == "assigned" and assigned)):
+            if latest is None or at > (latest.get("created_at") or ""):
+                latest = s
+    if latest is None:
+        return False
+    at = latest.get("created_at") or ""
+    if at <= last_bot or at <= (since or "") or at < (cutoff or ""):
+        return False
+    mentioned = (latest.get("resource_subtype") == "comment_added"
+                 and mentions_user(latest.get("html_text"), bot_gid))
+    return wakes_bot(task, bot_gid, mentioned)
+
+
 # ---------------------------------------------------------------------------
 # Concurrency and rate limits
 # ---------------------------------------------------------------------------
 
 def idle_expired(entry: dict, now: float, idle_s: int) -> bool:
     """A watched project stops being watched `idle_s` after Mark's last activity
-    on its bot tasks. `last_activity` falls back to when watching started."""
+    on its bot tasks. `last_activity` falls back to when watching started.
+
+    A Claude session open in the project holds the watch however long Mark is
+    quiet in Asana; closing it sets `last_activity`, so `idle_s` then counts
+    from the close (see prune_sessions)."""
+    if (entry or {}).get("sessions"):
+        return False
     last = (entry or {}).get("last_activity") or (entry or {}).get("since") or 0
     return now - last >= idle_s
+
+
+def prune_sessions(entry: dict, now: float, alive) -> bool:
+    """Drop the sessions in a watch entry whose Claude process has gone.
+
+    SessionEnd does not fire when Claude crashes or is killed, so the worker
+    checks each recorded pid with `alive(pid)` rather than trusting the hook to
+    say goodbye. A session that has gone counts as closing `now`, which starts
+    the idle timer. Returns True when anything was dropped."""
+    sessions = (entry or {}).get("sessions") or {}
+    gone = [sid for sid, s in sessions.items() if not alive((s or {}).get("pid"))]
+    for sid in gone:
+        del sessions[sid]
+    if gone:
+        entry["last_activity"] = max(entry.get("last_activity") or 0, now)
+    return bool(gone)
+
+
+def is_bot_session(env: dict, cwd: str, worktrees: str) -> bool:
+    """Is this Claude session a bot's rather than Mark's? Bot sessions never
+    start or extend a watch: a webhook run (BAIN_BOT_RUN, set by _launch), a
+    looper session (LOOPER_RUN_ID, set by the runner), or anything working in a
+    bot worktree."""
+    if (env or {}).get("BAIN_BOT_RUN") or (env or {}).get("LOOPER_RUN_ID"):
+        return True
+    return bool(cwd) and _inside(cwd, worktrees)
+
+
+def _inside(path: str, root: str) -> bool:
+    p, r = Path(path).resolve(), Path(root).resolve()
+    return p == r or r in p.parents
+
+
+def prefix_for_dir(cwd: str, roots: dict) -> str | None:
+    """The registered project a directory belongs to: the one with the deepest
+    root containing it, so a project nested inside another (SL in bain-studio)
+    wins over its parent. `roots` maps prefix to project root."""
+    best, depth = None, -1
+    for prefix, root in (roots or {}).items():
+        if root and cwd and _inside(cwd, str(root)):
+            d = len(Path(str(root)).resolve().parts)
+            if d > depth:
+                best, depth = prefix, d
+    return best
+
+
+def claude_pid(chain: list) -> int | None:
+    """The Claude process a hook runs under: the nearest ancestor named claude.
+    `chain` is (pid, comm) pairs from the hook's parent upwards."""
+    for pid, comm in chain or []:
+        if (comm or "").strip() == "claude":
+            return pid
+    return None
 
 
 def launchable(pending: list, running: dict, prefix_of: dict,
@@ -458,3 +568,120 @@ def inbox_cursor(last_poll: str, now_iso: str, overlap_s: int, first_s: int) -> 
     else:
         start = now - _dt.timedelta(seconds=first_s)
     return start.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ---------------------------------------------------------------------------
+# Sandboxed execution (BSTD-896, ADR 025)
+# ---------------------------------------------------------------------------
+#
+# Claude Code's Bash sandbox (bubblewrap on Linux) confines what a command can
+# touch at the OS level, so a script the run writes is held to the same limits
+# as the run itself. The permission rules alone cannot do that: they match the
+# command string, so `Bash(python3 *)` would let `python3 x.py` read studio/.env.
+#
+# Verified on Claude Code 2.1.328, 2026-11-19:
+#   - It needs bwrap AND socat. Without socat Claude Code warns and runs every
+#     command UNSANDBOXED, even with allowUnsandboxedCommands false. Only
+#     failIfUnavailable makes it refuse to start instead.
+#   - Permission Read() denies are not enforced inside the sandbox: they must be
+#     repeated as sandbox.filesystem.denyRead.
+#   - --add-dir folders are writable inside it: they must be repeated as
+#     sandbox.filesystem.denyWrite.
+#   - git cannot commit from inside it (the worktree's git dir is in the main
+#     checkout, which is read-only), and sync.py needs .env and Asana. Both run
+#     outside it via excludedCommands, still held to the narrow allow rules.
+
+SANDBOX_DEPS = ("bwrap", "socat")
+
+# Commands that are already allowed by run_allow_rules and must run outside the
+# sandbox to work. An exclusion does not allow anything by itself.
+SANDBOX_EXCLUDED_GIT = ["git status", "git status *", "git diff", "git diff *",
+                        "git log", "git log *", "git show *", "git add *", "git commit *"]
+
+# Credentials a script must never read, wherever the run's file rules point.
+HOME_SECRETS = (".ssh", ".gnupg", ".aws", ".netrc", ".git-credentials",
+                ".claude/.credentials.json", ".config/gh", ".local/share/keyrings")
+
+
+SECRET_ENV_RE = re.compile(r"(PAT|TOKEN|KEY|PASSWORD|SECRET|CREDENTIALS?|WEBHOOK_URL|SA_JSON)$",
+                           re.IGNORECASE)
+
+
+def strip_env(env: dict, keys) -> dict:
+    """`env` without `keys`, and without anything named like a credential in
+    case a key reached the listener some other way. The run must not inherit
+    the listener's secrets."""
+    drop = set(keys)
+    return {k: v for k, v in env.items() if k not in drop and not SECRET_ENV_RE.search(k)}
+
+
+def sandbox_missing(which) -> list:
+    """The sandbox dependencies not on PATH. `which` is shutil.which, injected
+    so this stays testable. Empty means the sandbox can start."""
+    return [d for d in SANDBOX_DEPS if not which(d)]
+
+
+def bot_test_command(claude_md: str) -> str:
+    """The project's own test command, from a `BOT_TEST_COMMAND:` line in its
+    CLAUDE.md (same convention as DROPBOX_FOLDER). "" when there is none."""
+    m = re.search(r"^BOT_TEST_COMMAND:\s*(\S.*?)\s*$", claude_md or "", re.MULTILINE)
+    return m.group(1) if m else ""
+
+
+def exec_allow_rules(test_command: str = "") -> list:
+    """What a sandboxed run may execute, on top of run_allow_rules. Only used
+    when the sandbox is up: inside it these reach no network, no credentials and
+    no file outside the worktree."""
+    rules = ["Bash(python3 *)", "Bash(python3 -m pytest)", "Bash(pytest)", "Bash(pytest *)"]
+    if test_command:
+        rules += [f"Bash({test_command})", f"Bash({test_command} *)"]
+    return rules
+
+
+def _secret_globs(d: str) -> list:
+    out = []
+    for name in SECRET_FILES:
+        out += [f"{d}/{name}", f"{d}/**/{name}"]
+    return out
+
+
+def protected_writes(roots: list) -> list:
+    """The protected_path_denies() files as sandbox write denies. Permission
+    rules do not bind a script, and the sandbox does not cover .envrc itself."""
+    out = []
+    for r in roots:
+        if r:
+            b = str(r).rstrip("/")
+            out += [f"{b}/.git", f"{b}/.claude", f"{b}/.envrc"]
+    return out
+
+
+def sandbox_settings(roots: list, read_only: list, home: Path, sync_py: Path,
+                     extra_secrets: list = ()) -> dict:
+    """The --settings JSON that turns the sandbox on for one run.
+
+    roots: the project checkout and the run's worktree (secret files denied).
+    read_only: --add-dir folders (secret files denied, and no writes).
+    extra_secrets: further paths to hide whole, e.g. the listener's state dir
+    and a per-project CLAUDE_CONFIG_DIR's credentials.
+    Writes are otherwise limited by the sandbox to the working directory.
+    """
+    deny_read = []
+    for d in [*roots, *read_only]:
+        if d:
+            deny_read += _secret_globs(str(d).rstrip("/"))
+    deny_read += [str(home / s) for s in HOME_SECRETS]
+    deny_read += [str(p) for p in extra_secrets if p]
+    return {"sandbox": {
+        "enabled": True,
+        "failIfUnavailable": True,
+        "autoAllowBashIfSandboxed": False,
+        "allowUnsandboxedCommands": False,
+        "network": {"allowedDomains": []},
+        "excludedCommands": [*SANDBOX_EXCLUDED_GIT,
+                             f"python3 {sync_py} --get-task *",
+                             f"python3 {sync_py} --comment *"],
+        "filesystem": {"denyRead": deny_read,
+                       "denyWrite": [*[str(d).rstrip("/") for d in read_only if d],
+                                     *protected_writes(roots)]},
+    }}

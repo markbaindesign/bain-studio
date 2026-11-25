@@ -14,16 +14,23 @@ marking done.
 ## Invoke
 
 ```bash
-/studio-looper                    # start the queue
-/studio-looper --for 2h           # run for up to 2 hours
-/studio-looper --use 10%          # consume at most 10% of quota
-/studio-looper --yes              # skip queue confirmation
-/studio-looper --at 20:00         # schedule for 20:00 today
-/studio-looper --dry-run          # show queue without working tasks
-/studio-looper --test             # run against the sandbox SLT queue instead of SL
+/studio-looper                    # start a window now (launches the runner)
+/studio-looper --for 2h           # start no new task after 2 hours
+/studio-looper --use 10%          # stop once 10 more points of the 5-hour quota are used
+/studio-looper --at 20:00         # the runner sleeps until 20:00, then runs a window
+/studio-looper --dry-run          # show the queue, launch nothing
+/studio-looper --health-check     # verify the chain, touch nothing
+/studio-looper --test             # the sandbox SLT queue instead of SL
 ```
 
-Flags combine: `/studio-looper --at 20:00 --for 2h`, `/studio-looper --test --yes`
+The skill is a trigger: it checks for a competing run, shows the queue and launches
+`studio/scripts/looper_runner.py` in the background. The runner does the work, and is what cron
+runs nightly:
+
+```bash
+python3 studio/scripts/looper_runner.py --now [--target SLT] [--until ISO] [--stop-at-pct N]
+python3 studio/scripts/looper_runner.py --at 02:00
+```
 
 Must be invoked from `/media/data/dev/bain-studio`.
 
@@ -43,35 +50,52 @@ task. Both windows run on the Max login (`max_plan_env`), never the API key.
 ## How it works
 
 1. Mark multi-homes tasks from any project (MCF, NORE, BSTD, UAP…) into the **Studio Looper**
-   Asana project, Queue section. Drag order = execution priority. From a session:
+   Asana project. From a session:
    `python3 studio/sync.py --add-to-project SL --task-gid BSTD-893,BSTD-894`.
-2. `/studio-looper` syncs the SL project, reads the Queue, and presents the list for
-   confirmation before starting.
-3. BainBot works each task in the correct project directory (derived from the task's prefix —
-   MCF-007 → MCF project path, etc.).
-4. On completion: task moves to **Review** section, reassigned to Mark, and gets **one**
-   Asana comment — a templated review note opening `@mark`. Task is NOT marked done in Asana.
-5. On blocker: task moves to **Blocked** section, reassigned to Mark, with a `@mark Blocked:`
-   note carrying the question.
-6. Mark reviews tasks in the Review section, marks them done himself.
+2. The runner syncs SL, resets any task stranded at In Progress, and takes the top task of the
+   queue (Priority, then mirror order).
+3. It resolves the task's home project from its prefix through the registry, makes a git
+   worktree for it outside the project, and starts a **confined** `claude -p` session there
+   (below). The session does the work, commits once on the task's branch, and posts **one**
+   `@mark` note — `Review:` or `Blocked:` — through `sync.py --comment`.
+4. The runner moves Looper Status to **Review** or **Blocked** and reassigns to Mark. The task is
+   never marked done in Asana.
+5. Next task, until the queue is empty, the deadline or usage cap is reached, or a session stops
+   at the Max usage limit.
+6. Mark reviews tasks in Review and marks them done himself.
 
 The note's template, the `@mark` mention that reaches his filtered inbox, and the
 one-task-one-comment rule are in [asana-comments](asana-comments.md).
 
-## Permission/access failures never halt the loop
+## Worktrees and confinement
 
-A permission-denied on Edit/Write/Bash (missing `additionalDirectories` entry for the task's
-project, git auth failure, sandboxed path, etc.) is treated exactly like any other blocker: log
-a WARNING to `~/logs/task-looper.log`, mark the task Blocked with the access error as the reason,
-sync, and advance to the next task. The loop must never stop and wait for interactive approval
-mid-run — that defeats the point of running unattended.
+Since BSTD-893 every task runs in a worktree of its own and the project's checkout is never
+switched or written to. Before, the session switched the project's own checkout to the looper
+branch and back: Mark's uncommitted work rode along, overlap was caught only by an instruction,
+a failed switch-back left the folder on the looper branch, and the session ran with
+`--dangerously-skip-permissions`.
 
-This only fully holds when denials come back as a **scripted** decision (e.g. a PreToolUse hook
-returning `permissionDecision: "deny"` with a reason) rather than an **interactive** permission
-prompt, since only the former returns an error the model can react to — an interactive prompt
-genuinely blocks on a human. Practical mitigation: keep `additionalDirectories` and the explicit
-`Edit()` allow rules in `.claude/settings.json` complete for every registered project, so paths
-the looper legitimately needs hit an allow (or a scripted deny) rather than an ambiguous ask.
+| | |
+|---|---|
+| Worktree | `~/.local/share/bain-bot-worktrees/{PREFIX}/looper-{run}-{TASK}` |
+| Branch | `looper/{run}/{TASK}` from `develop` (else `main`). One per task: git checks a branch out in one worktree only. |
+| Session | `bot_worktree.confined_argv`, shared with the webhook runs (ADR 025): `--restricted`, `Edit` only inside the worktree and denied in the checkout, git limited to status/diff/log/show/add/commit, `sync.py --get-task`/`--comment`, no network, no outward tools, credential files unreadable |
+| Read-only | the studio's `docs/` (ADRs), the registry, the project's `DROPBOX_FOLDER` |
+| Sandbox | SLT tasks work in `studio/looper-test/` inside a worktree of the studio repo; SL-native tasks have no repo and are blocked |
+| Account | the project's `.envrc` `CLAUDE_CONFIG_DIR`, so a client on its own Claude account is billed there (ADR 017) |
+| No commits | worktree and branch removed |
+| Commits | kept for review; in a repo with the commit guard installed, checked against the client-data denylist (runs commit with hooks off); a hit notifies at high priority |
+| No result | the runner blocks the task with its own note naming the run log |
+
+A confined session cannot write a report into Dropbox, or run tests and builds (BSTD-896). Both
+come back as a `Blocked:` or a `Gaps:` line rather than a failure.
+
+A repo that already has a `looper/{run}` branch from an older run cannot also hold
+`looper/{run}/{TASK}` (git refs are paths). Run ids are minute stamps, so this only bites a
+re-run within the same minute as an old-style run.
+
+The task prompt is `TASK_PROMPT` in `looper_runner.py`. It carries what used to be the skill's
+Step 4: the duplicate-work guard, the documented-answer gate, the note format.
 
 ## Looper Status field values
 
@@ -115,6 +139,10 @@ Exits non-zero with a specific error if the reference can't be resolved or Asana
 Before this existed (SL-133) the looper blocked every task that pointed at another task.
 
 ## State file
+
+> The runner writes no state file and never launches this skill. What follows describes the
+> interactive concurrency guard, which still reads state files left by older builds; the runner's
+> per-queue lock (`/tmp/studio-looper/runner.lock`, `runner-SLT.lock`) is the live signal.
 
 `/tmp/studio-looper/studio-looper.{session_id}.local.md` — **session-scoped**, named
 from `$CLAUDE_CODE_SESSION_ID` at creation time (Step 3 of the skill). Written by the skill,
@@ -163,19 +191,12 @@ positive `CLEAR` line is cheaper than a nightly model upgrade and the same itera
 code task correctly. If it misjudges again after this change, move the runner to sonnet.
 
 Note where each piece runs from. Cron invokes `looper_runner.py` out of the ops worktree
-(`/home/bain/ops/bain-studio`), but `_resolve_studio()` resolves `STUDIO` to the **dev** checkout,
-and the runner launches claude with `cwd=STUDIO`. So a nightly session loads dev's `SKILL.md`,
-hooks and `settings.local.json`, and Step 1a's absolute path calls dev's `looper_logic.py`. Skill
-and guard changes are therefore live on the next nightly run as soon as they're committed to
-whatever branch dev has checked out; only `looper_runner.py` itself needs `ops-deploy.sh`. For the
-same reason the runner imports `looper_logic` relative to `__file__`, not to `STUDIO` — a
-`STUDIO`-relative import would pull the module from whichever branch dev sits on, and on one
-without `window_summary` that is an ImportError at module scope, before `notify()` exists, which
-would lose the window in silence.
+(`/home/bain/ops/bain-studio`), but `_resolve_studio()` resolves `STUDIO` to the **dev** checkout:
+the mirrors and `sync.py` it drives live there. The runner imports `looper_logic` and
+`bot_worktree` relative to `__file__`, so its code, the task prompt and the confinement rules all
+come from the ops deploy and change only with `ops-deploy.sh`.
 
-The runner also now distinguishes an early stop from a drained queue. It decides an iteration made
-progress by watching `~/logs/task-looper.log` grow, so a session that declines to start looks
-exactly like an empty queue. At window end it counts tasks still at Looper Status `Queue` in the SL
+The runner also distinguishes an early stop from a drained queue. At window end it counts tasks still at Looper Status `Queue` in the SL
 mirror; if any remain it logs `ENDED EARLY` and sends a high-priority notification naming them,
 instead of reporting a finished window.
 
@@ -196,11 +217,8 @@ require human OAuth, not the bainbot PAT.
 
 ## Stop hook
 
-`~/.claude/hooks/studio-task-looper-stop-hook.sh` — fires on every session stop, resolves
-*that session's own* state file (`/tmp/studio-looper/studio-looper.{firing session's id}.local.md`),
-reads it, resolves the next task's project directory, and re-injects the next task prompt into
-that same session. Runs alongside the per-project looper hook; each hook only acts on state files
-matching its own naming scheme.
+`~/.claude/hooks/studio-task-looper-stop-hook.sh` re-injected the next task into an interactive
+session from its state file. Nothing writes one any more, so it no longer fires for the looper.
 
 ## Mirror location
 
@@ -256,8 +274,11 @@ targeted single-project run, queue only that project's tasks in Studio Looper.
 ## Source files
 
 - `studio/looper/CLAUDE.md` — project config (GID, prefix, preserve flag)
-- `.claude/skills/studio-looper/SKILL.md` — skill definition
-- `~/.claude/hooks/studio-task-looper-stop-hook.sh` — stop hook
+- `.claude/skills/studio-looper/SKILL.md` — skill definition (a trigger for the runner)
+- `studio/scripts/looper_runner.py` — the runner: queue, worktree, confined session, status
+- `studio/bot_worktree.py` — worktrees and the confined command line, shared with the webhook
+- `studio/scripts/looper_logic.py` — queue, mirror edits, outcome parsing (unit-tested)
+- `studio/tests/test_looper_runner.py` — temp-repo tests with a fake `claude`
 - `studio/sync.py` — `preserve_foreign_ids` flag in ProjectConfig
 
 ## See also

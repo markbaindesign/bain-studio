@@ -1,7 +1,7 @@
 ---
 tags: [utility, ops, asana, agents]
 god: hermes
-command: python3 studio/asana_webhook.py {watch|unwatch|status|serve|register|unregister|list|catchup}
+command: python3 studio/asana_webhook.py {watch|unwatch|status|session-start|session-end|serve|register|unregister|list|catchup|nightly|inbox}
 invoke: /project-watcher
 description: Asana webhook listener that has DevBot answer Mark's comments and assignments on a watched project within about a minute, each run in its own git worktree so it never touches the checkout Mark is working in
 ---
@@ -28,7 +28,8 @@ Asana ──HTTPS──> Tailscale Funnel ──> 127.0.0.1:$ASANA_WEBHOOK_PORT/
 
 ## Watching a project
 
-Nothing runs for a project until you watch it:
+Nothing runs for a project until it is watched. **Opening a Claude session in the project
+watches it**, with no command to remember. You can also watch one by hand:
 
 ```
 /project-watcher BD                          # or: python3 studio/asana_webhook.py watch BD
@@ -40,11 +41,33 @@ python3 studio/asana_webhook.py status
 any bot task whose latest comment from you has no reply yet, so what you said just before is
 not missed. Watch two or three projects at once if you like.
 
-Watching stops **30 minutes after your last activity** on the project's bot tasks: a comment
-from you or PmBot, or a task assigned to the bot. The bot's own replies do not count. If a run
-is still going, watching stops when it finishes. Slack says when it stops.
+While a Claude session is open in the project, it stays watched. Watching stops **30 minutes
+after the last session there closes or your last activity** on the project's bot tasks,
+whichever is later. Activity is a comment from you or PmBot, or a task assigned to the bot; the
+bot's own replies do not count. If a run is still going, watching stops when it finishes.
+Slack says when it stops.
 
-Events for an unwatched project are dropped, not saved: `watch` picks them up with its sweep.
+**A lapsed watch starts again on your comment.** A comment from you on a bot task in a
+project whose watch lapsed watches it again and queues that task; Slack says so. After
+`unwatch`, or in a project never watched, events are dropped, not saved: `watch` picks them
+up with its sweep. The [nightly sweep](#nightly-sweep) also answers them if you never watch the project.
+
+Sessions by bots never count: webhook runs (`BAIN_BOT_RUN`), looper sessions
+(`LOOPER_RUN_ID`) and anything working in a bot worktree.
+
+### Session hooks
+
+A `SessionStart` and a `SessionEnd` hook run `asana_webhook.py session-start` and
+`session-end`. Install them once per machine, from the checkout the listener runs from:
+
+```
+python3 studio/scripts/install-watch-hooks.py           # show what would change
+python3 studio/scripts/install-watch-hooks.py --apply   # ~/.claude and ~/.claude-kf
+```
+
+The hooks are async, print nothing and always exit 0. A session that ends without
+`SessionEnd` firing (a crash, a kill) is caught by the listener checking the session's Claude
+process every few seconds.
 
 ## Inbox poll: every project at once
 
@@ -148,6 +171,29 @@ the credential-file read denies. Nothing else widens.
 A project whose `.envrc` exports `CLAUDE_CONFIG_DIR` (KF) runs on that account
 ([ADR 017](../adr/017-per-client-looper-queues.md)).
 
+### Running code (sandbox)
+
+When `bwrap` and `socat` are installed, runs may also run `python3`, `pytest` and the
+project's test command (a `BOT_TEST_COMMAND: make test` line in its `CLAUDE.md`). Those run in
+Claude Code's OS sandbox: no network, writes only in the run's worktree, and credential files
+(`SECRET_FILES`, `~/.ssh`, `~/.claude/.credentials.json`, the listener's state dir) unreadable.
+git and the two `sync.py` calls run outside it, still held to the rules above. The run's
+environment never carries the listener's `studio/.env` keys (`run_env()`), sandbox or not. The sandbox is
+fail-closed (`failIfUnavailable`): if it cannot start, the run does not start either.
+
+Without socat (`sudo apt install socat`) Claude Code would otherwise run commands unsandboxed,
+so the listener keeps the old rules, logs `SANDBOX-OFF {PREFIX} {ID}` and tells the run its
+change is untested. Check the setup end to end with one short live run:
+
+```bash
+python3 studio/scripts/sandbox_probe.py               # exit 0 pass, 1 fail, 2 skipped (deps missing)
+python3 studio/scripts/sandbox_probe.py --task BSTD-896   # also checks sync.py --get-task
+python3 studio/scripts/sandbox_probe.py --read-only-dir /media/data/Dropbox/Work   # real Dropbox
+```
+
+Findings and the reasoning: [ADR 025](../adr/025-asana-webhooks-wake-project-agents.md),
+2026-11-19 addendum.
+
 ## Limits
 
 | Limit | Value |
@@ -177,7 +223,8 @@ ASANA_WEBHOOK_PORT=8787
    ```
    cp studio/scripts/systemd/asana-webhook* ~/.config/systemd/user/
    systemctl --user daemon-reload
-   systemctl --user enable --now asana-webhook.service asana-webhook-catchup.timer
+   systemctl --user enable --now asana-webhook.service asana-webhook-catchup.timer \
+     asana-webhook-nightly.timer
    ```
    User lingering must be on (`loginctl show-user $USER -p Linger`) for it to start at boot.
 3. `/project-watcher {PREFIX}` registers each project the first time you watch it. The
@@ -192,6 +239,37 @@ Any project in the studio registry can be watched; there is no per-project list 
 deactivated or deleted (Asana deletes one after 24 hours of failed deliveries), only for a
 project registered before. It never starts a run.
 
+## Nightly sweep
+
+A comment on a bot task in a project you are not watching would otherwise wait for a session
+or the looper. `asana-webhook-nightly.timer` runs `nightly` at 07:15, after the 02:00 looper
+window. It goes through every registered project that is not watched and has a git repository
+of its own (so not SL or SLT), and starts a run for each task the listener would have woken
+the bot on, had the project been watched:
+
+- your or PmBot's newest comment on a task assigned to the bot, with no reply from the bot
+  since and no run since;
+- a task you assigned to the bot, with nothing from the bot since (an assignment by bainbot
+  itself, from `sync.py --create-task`, does not count);
+- on a handed-back task, a newest comment that @-mentions the bot.
+
+Each run is exactly a listener run: its own worktree, one closing `Answer:`, `Review:` or
+`Blocked:` comment, and the same limits (2 per project, 3 at once, 3 per task per hour,
+1 hour each). On top of those:
+
+| Rule | Why |
+|---|---|
+| Only triggers from the last 7 days count | an old thread is not revived |
+| At most 6 runs a night; the rest wait for the next night, and Slack lists them | a backlog cannot use up the Max window |
+| Tasks with Looper Status `Queue` or `In Progress` are skipped | they are the looper's |
+| Never alongside the looper: it waits up to 2 hours while `/tmp/studio-looper/runner.lock` is held by a live process, and launches nothing more once a window starts | the two must not share the usage window or a repo. It only reads the lock: holding it would make the 02:00 runner exit |
+
+See what it would do, without starting anything:
+
+```
+python3 studio/asana_webhook.py nightly --dry-run
+```
+
 ## Files
 
 State lives outside the repo, under `$XDG_STATE_HOME/bain-studio/asana-webhook/`:
@@ -200,7 +278,8 @@ State lives outside the repo, under `$XDG_STATE_HOME/bain-studio/asana-webhook/`
 |---|---|
 | `webhook.log` | handshakes, rejections, watch changes, queues, launches, exits |
 | `runs/{PREFIX}-{LOCAL-ID}-{stamp}.log` | full output of each run |
-| `watch.json` | watched projects and their last activity |
+| `watch.json` | watched projects, their last activity and the Claude sessions open in them |
+| `lapsed.json` | projects whose watch lapsed, which a comment from you restarts |
 | `inbox.json` | whether the inbox poll is on, and when it last ran |
 | `secrets.json` (0600) | per-project webhook secret and webhook GID |
 | `history.json` | per-task run timestamps (rate cap) and last wake time (sweep) |
@@ -209,7 +288,7 @@ State lives outside the repo, under `$XDG_STATE_HOME/bain-studio/asana-webhook/`
 ## Troubleshooting
 
 - **Nothing happens on a comment:** `status` first: is the project watched and the listener
-  up? Then `webhook.log`. `IGNORED` means not watched. No `EVENTS` line means Asana isn't
+  up? Then `webhook.log`. `IGNORED` means not watched (and not lapsed, or not your comment on a bot task); `SESSION` lines show sessions starting and closing a watch, `REWATCH` a lapsed one restarted. No `EVENTS` line means Asana isn't
   reaching the listener; run `list` for `last_failure_at`, and `tailscale funnel status`.
 - **Nothing happens on a task the bot handed back to you:** it is assigned to you, not
   DevBot. @-mention DevBot in the comment, or assign the task to DevBot.
