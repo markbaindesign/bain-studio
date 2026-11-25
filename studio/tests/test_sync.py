@@ -2048,3 +2048,61 @@ def test_add_to_project_dry_run_posts_nothing():
          patch.object(sync, "_post") as post:
         assert sync.add_to_project("T1", _proj(), dry_run=True) is True
     post.assert_not_called()
+
+
+# --- @user:{gid} mentions ----------------------------------------------------
+
+USER_NOTE = "@user:111 @user:222 The site is up. || The password follows separately."
+
+
+def test_render_progress_mentions_each_user():
+    with patch.object(sync, "USER_GID", "999"):
+        html, wants = sync._render_progress(USER_NOTE)
+    assert wants is False
+    assert html.startswith('<body><a data-asana-gid="111"/> <a data-asana-gid="222"/> The site is up.')
+    assert "@user" not in html
+
+
+def test_render_progress_mark_then_users():
+    with patch.object(sync, "USER_GID", "999"):
+        html, wants = sync._render_progress("@mark @user:111 Review: look")
+    assert wants is True
+    assert html.startswith('<body><a data-asana-gid="999"/> <a data-asana-gid="111"/> Review: look')
+
+
+def test_progress_plain_strips_user_tokens():
+    assert sync._progress_plain(USER_NOTE) == "The site is up.\nThe password follows separately."
+
+
+def test_split_location_keeps_user_tokens_on_the_summary():
+    summary, where = sync.split_location("@user:111 The site is up. || Where: https://example.com")
+    assert summary == "@user:111 The site is up."
+    assert where == "Where: https://example.com"
+
+
+def test_comment_matches_allows_one_prefix_per_mention():
+    plain = sync._progress_plain(USER_NOTE)
+    rendered = "https://app.asana.com/0/111/list https://app.asana.com/0/222/list " + plain
+    assert sync._comment_matches(rendered, plain, sync._mention_count(USER_NOTE))
+
+
+def test_user_mentions_add_each_follower_then_post_once_after_one_wait():
+    calls, slept = [], []
+
+    def fake_post(path, payload):
+        calls.append(path.split("?")[0])
+        if "addFollowers" in path:
+            g = payload["data"]["followers"][0]
+            return {"data": {"followers": [{"gid": g, "name": "U" + g}]}}
+        return {"data": {"gid": "NEW1"}}
+
+    task = {"gid": "TASK1", "followers": []}
+    with patch.object(sync, "USER_GID", "999"), \
+         patch.object(sync, "_get", return_value={"data": {"followers": []}}), \
+         patch.object(sync, "_post", side_effect=fake_post), \
+         patch.object(sync.time, "sleep", side_effect=slept.append):
+        got = sync.leave_progress_comment("TASK1", USER_NOTE, task=task)
+    assert got == "NEW1"
+    assert calls == ["/tasks/TASK1/addFollowers", "/tasks/TASK1/addFollowers", "/tasks/TASK1/stories"]
+    assert slept == [sync.MENTION_FOLLOW_WAIT]
+    assert {f["gid"] for f in task["followers"]} == {"111", "222"}
