@@ -379,7 +379,7 @@ def test_handover_fragment_and_page(tmp_path):
 def test_cli_exit_status(tmp_path, monkeypatch):
     notes, z, comment, ev, mirror = build(tmp_path)
     monkeypatch.setattr(gate, "fetch", stub)
-    monkeypatch.setattr(gate.run_gate, "__defaults__", (stub,))
+    monkeypatch.setattr(gate.run_gate, "__defaults__", (stub, False))
     assert gate.main([str(notes), "--zip", str(z), "--mirror", str(mirror)]) == 0
     (ev / ("%s-msgfmt.json" % STEM)).unlink()
     assert gate.main([str(notes), "--zip", str(z), "--mirror", str(mirror)]) == 1
@@ -403,3 +403,70 @@ def test_handover_gate_item_fails_when_not_postable(tmp_path):
     new = json.loads(gate.HANDOVER_RE.search(page.read_text()).group(2))
     item = new["groups"][1]["items"][0]
     assert item["status"] == "fail" and "ready to post: no" in item["note"]
+
+
+# --- Pre-submission reviews (BSTD-916): the studio's own theme, no Trac ticket ---
+
+def test_pre_submission_posting_row_is_na_and_ready_to_submit(tmp_path):
+    notes, z, comment, ev, mirror = build(tmp_path, posting=False)
+    r = gate.run_gate(notes, z, comment, ev, mirror, get=stub, pre_submission=True)
+    row = [x for x in r["rows"] if x.group == "posting"][0]
+    assert row.na and row.ok and row.line().startswith("N/A ")
+    assert r["review"] == "full" and r["postable"]
+    assert gate.readiness(r) == "ready to submit"
+
+
+def test_pre_submission_leaves_every_other_row_alone(tmp_path):
+    notes, z, comment, ev, mirror = build(tmp_path, evidence=False)
+    normal = gate.run_gate(notes, z, comment, ev, mirror, get=stub)
+    pre = gate.run_gate(notes, z, comment, ev, mirror, get=stub, pre_submission=True)
+
+    def strip(res):
+        return [(x.group, x.name, x.ok) for x in res["rows"] if x.group != "posting"]
+
+    assert strip(normal) == strip(pre)
+    assert pre["review"] == "partial" and not pre["postable"]  # still claims full
+
+
+def test_pre_submission_handover_has_no_ticket(tmp_path):
+    notes, z, comment, ev, mirror = build(tmp_path, posting=False)
+    r = gate.run_gate(notes, z, comment, ev, mirror, get=stub, pre_submission=True)
+    frag = gate.handover_fragment(r)
+    assert frag["ticket"] == 0
+    posting = [i for i in frag["groups"][1]["items"] if i["label"] == "sign-off and posting task"][0]
+    assert posting["status"] == "na"
+    page = tmp_path / "page.html"
+    data = {"ticket": 4242, "groups": [{"name": "Workflow",
+                                        "items": [{"label": "Review gate run", "status": "na"}]}]}
+    page.write_text('<script type="application/json" id="handover-data">%s</script>' % json.dumps(data))
+    gate.write_handover(page, frag)
+    new = json.loads(gate.HANDOVER_RE.search(page.read_text()).group(2))
+    assert new["ticket"] == 0
+    assert "ready to submit: yes" in new["groups"][1]["items"][0]["note"]
+
+
+def test_normal_review_handover_keeps_its_ticket(tmp_path):
+    frag = gate.handover_fragment(run(tmp_path))
+    assert "ticket" not in frag and frag["readiness"] == "ready to post"
+
+
+def test_cli_pre_submission(tmp_path, monkeypatch, capsys):
+    notes, z, comment, ev, mirror = build(tmp_path, posting=False)
+    monkeypatch.setattr(gate.run_gate, "__defaults__", (stub, False))
+    assert gate.main([str(notes), "--zip", str(z), "--mirror", str(mirror)]) == 1
+    assert "ready to post: no" in capsys.readouterr().out
+    assert gate.main([str(notes), "--zip", str(z), "--mirror", str(mirror), "--pre-submission"]) == 0
+    out = capsys.readouterr().out
+    assert "ready to submit: yes" in out and "N/A   posting" in out
+
+
+def test_pre_submission_needs_no_trac_comment(tmp_path):
+    rows = gate.check_claims("", tmp_path / "missing-trac-comment.txt", "partial", pre_submission=True)
+    comment = [r for r in rows if r.name.startswith("comment claims")][0]
+    assert comment.na and comment.ok
+
+
+def test_a_missing_comment_still_fails_a_normal_review(tmp_path):
+    rows = gate.check_claims("", tmp_path / "missing-trac-comment.txt", "partial")
+    comment = [r for r in rows if r.name.startswith("comment claims")][0]
+    assert not comment.ok and not comment.na

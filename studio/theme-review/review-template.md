@@ -760,6 +760,21 @@ from `<reports>/evidence/<slug>-<version>-<check>.json` (and the screenshots as
 `<slug>-<version>-<view>-<width>.png` there), and it needs the sign-off and posting
 task to exist already. A comment is not posted until the gate says ready to post.
 
+The scripts beside this file write those results:
+
+- tier 2: `tier2.py <reports>/<slug>-<version>.md` writes all six from the zip;
+- tier 3: `cdp/cdp_check.py ... --long-title --json <reports>/evidence/<slug>-<version>-cdp.json`
+  and, for a block theme with the theme active,
+  `cdp/cdp_site_editor.py <site> <slug> --version <version> --json <reports>/evidence/<slug>-<version>-site-editor.json`.
+
+A tier 2 finding is still yours to judge: the gate checks that each check was run,
+and the findings go in the notes like any other.
+
+For a pre-submission review of the studio's own theme (installed with `theme-sweep.py
+install-zip` or `run-local`, no Trac ticket yet), run the gate with `--pre-submission`. The
+sign-off and posting row is then n/a, the verdict reads "ready to submit", and the handover
+page shows no ticket button. Every other check is the same.
+
 The notes stay the audit trail; the handover is the dashboard over them. The
 review type on the page is the one the five conditions under "How deep to go"
 allow, never a looser one.

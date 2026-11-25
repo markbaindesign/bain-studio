@@ -15,6 +15,8 @@ something a reviewer opens and judges.
 |---|---|
 | `theme-sweep.py` | Fetches and installs a submitted zip, restores the content baseline, crawls with `WP_DEBUG` on, runs Theme Check, checks the header, tags, prefixes, text domain, remote hosts, minified sources, screenshot and custom logo. Writes `<slug>-<version>-sweep.md`. |
 | `cdp/cdp_check.py` | Headless Chromium at 390 and 1440: overflow, a whole-page keyboard pass and the open-menu keyboard pass on every page, optionally again with a long site title. `--json` for the review gate. |
+| `tier2.py` | The six tier 2 structural checks from the zip (main landmark, local fonts, msgfmt, images, block delimiters, print stylesheet), one JSON result each for the review gate. No WordPress needed. |
+| `cdp/cdp_site_editor.py` | Signs headless Chromium in as an admin and runs the Site Editor's own block validator over every template, part and theme pattern; the gate's `site-editor.json`. |
 | `review-gate.py` | Checks a review's notes, zip, evidence and comment against the full-review definition, ends FULL or PARTIAL and ready to post or not, and fills the handover page. See [[theme-review-gate]]. |
 | `review-template.md` | The house format: full and partial review defined, order of checks, Trac status, the notes and comment skeletons, the handover page as the last step. |
 | `README.md` | Detail on each check and the licence notes. |
@@ -39,9 +41,30 @@ THEME_REVIEW_REPORTS=<reviews folder>/<theme> \
 python3 -I /home/bain/ops/bain-studio/studio/theme-review/cdp/cdp_check.py \
   https://<site> <slug> / /sample-page/ --long-title \
   --json <reviews folder>/<theme>/evidence/<slug>-<version>-cdp.json
+
+python3 -I /home/bain/ops/bain-studio/studio/theme-review/tier2.py \
+  <reviews folder>/<theme>/<slug>-<version>.md
+
+python3 -I /home/bain/ops/bain-studio/studio/theme-review/cdp/cdp_site_editor.py \
+  https://<site> <slug> --version <version> \
+  --json <reviews folder>/<theme>/evidence/<slug>-<version>-site-editor.json
+
+python3 -I /home/bain/ops/bain-studio/studio/theme-review/review-gate.py \
+  <reviews folder>/<theme>/<slug>-<version>.md --handover <handover page>
 ```
 
 `theme-sweep.py reset` puts the content baseline back after a theme has changed it.
+
+For a theme not on wordpress.org yet (the studio's own, before submission), install a local
+zip instead of downloading one, then gate it with `review-gate.py --pre-submission`:
+
+```bash
+THEME_REVIEW_REPORTS=<reviews folder>/<theme> \
+  python3 -I /home/bain/ops/bain-studio/studio/theme-review/theme-sweep.py run-local <path/to/theme.zip>
+```
+
+`install-zip <path> [--version X]` installs only. The slug is the zip's top folder and the
+version is read from its `style.css`.
 
 ## Tests
 
