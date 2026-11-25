@@ -15,6 +15,7 @@ something a reviewer opens and judges.
 |---|---|
 | `theme-sweep.py` | Fetches and installs a submitted zip, restores the content baseline, crawls with `WP_DEBUG` on, runs Theme Check, checks the header, tags, prefixes, text domain, remote hosts, minified sources, screenshot and custom logo. Writes `<slug>-<version>-sweep.md`. |
 | `cdp/cdp_check.py` | Headless Chromium at 390 and 1440: overflow, a whole-page keyboard pass and the open-menu keyboard pass on every page, optionally again with a long site title. `--json` for the review gate. |
+| `review-gate.py` | Checks a review's notes, zip, evidence and comment against the full-review definition, ends FULL or PARTIAL and ready to post or not, and fills the handover page. See [[theme-review-gate]]. |
 | `review-template.md` | The house format: full and partial review defined, order of checks, Trac status, the notes and comment skeletons, the handover page as the last step. |
 | `README.md` | Detail on each check and the licence notes. |
 
@@ -37,7 +38,7 @@ THEME_REVIEW_REPORTS=<reviews folder>/<theme> \
 
 python3 -I /home/bain/ops/bain-studio/studio/theme-review/cdp/cdp_check.py \
   https://<site> <slug> / /sample-page/ --long-title \
-  --json <reviews folder>/<theme>/<slug>-<version>-cdp.json
+  --json <reviews folder>/<theme>/evidence/<slug>-<version>-cdp.json
 ```
 
 `theme-sweep.py reset` puts the content baseline back after a theme has changed it.

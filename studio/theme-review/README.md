@@ -68,7 +68,7 @@ much use without the other.
 
 ```bash
 python3 -I cdp/cdp_check.py https://<site> <slug> / /sample-page/ --long-title \
-  --json <reports>/<slug>-<version>-cdp.json
+  --json <reports>/evidence/<slug>-<version>-cdp.json
 ```
 
 Headless Chromium over the DevTools protocol, at 390 and 1440 by default. For every
