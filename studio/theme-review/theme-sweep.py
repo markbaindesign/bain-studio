@@ -12,6 +12,11 @@ Usage:
     theme-sweep.py fetch <slug> <version>   download + install the zip
     theme-sweep.py check <slug>             activate, crawl, sweep, write report
     theme-sweep.py run <slug> <version>     fetch, reset, then check
+    theme-sweep.py install-zip <path> [--version X]
+                                            install a local zip (a theme not on
+                                            wordpress.org yet, e.g. the studio's own)
+    theme-sweep.py run-local <path> [--version X]
+                                            install-zip, reset, then check
     theme-sweep.py reset                    restore the baseline snapshot
     theme-sweep.py baseline                 take the baseline snapshot
 
@@ -98,7 +103,12 @@ def site_url(project):
 
 def parse_header(style_css):
     """Pull the style.css theme header into a dict."""
-    block = style_css.read_text(encoding="utf-8", errors="replace").split("*/", 1)[0]
+    return parse_header_text(style_css.read_text(encoding="utf-8", errors="replace"))
+
+
+def parse_header_text(text):
+    """The style.css theme header, from the file's text, as a dict."""
+    block = text.split("*/", 1)[0]
     header = {}
     for line in block.splitlines():
         m = re.match(r"\s*([A-Za-z][A-Za-z ]*?)\s*:\s*(.+?)\s*$", line)
@@ -499,7 +509,53 @@ def cmd_fetch(project, slug, version):
     print(f"downloading {url}")
     urllib.request.urlretrieve(url, target)
     print(f"saved {target} ({target.stat().st_size:,} bytes)")
+    install_zip(project, target, slug)
 
+
+def zip_identity(path, version=None):
+    """(slug, version) of a theme zip: the slug is its one top-level folder, the
+    version comes from that folder's style.css unless `version` is given."""
+    with zipfile.ZipFile(path) as z:
+        names = [n for n in z.namelist() if n and not n.startswith("__MACOSX/")]
+        tops = {n.split("/", 1)[0] for n in names}
+        if len(tops) != 1 or not any("/" in n for n in names):
+            raise ValueError(f"{path}: expected one top-level theme folder, found {sorted(tops)}")
+        slug = tops.pop()
+        if not version:
+            try:
+                css = z.read(f"{slug}/style.css").decode("utf-8", errors="replace")
+            except KeyError:
+                raise ValueError(f"{path}: no {slug}/style.css, so no version; pass --version")
+            version = parse_header_text(css).get("version")
+            if not version:
+                raise ValueError(f"{path}: {slug}/style.css has no Version header; pass --version")
+    return slug, version
+
+
+def cmd_install_zip(project, path, version=None):
+    """Install a local theme zip as `fetch` would install a downloaded one: copy it
+    into review-zips/ as <slug>.<version>.zip, then extract it into
+    wp-content/themes/<slug>. Returns the slug."""
+    path = Path(path).resolve()
+    if not path.is_file():
+        sys.exit(f"no zip at {path}")
+    try:
+        slug, version = zip_identity(path, version)
+    except (ValueError, zipfile.BadZipFile) as e:
+        sys.exit(str(e))
+    zips = project / "review-zips"
+    zips.mkdir(exist_ok=True)
+    target = zips / f"{slug}.{version}.zip"
+    if path != target.resolve():
+        shutil.copyfile(path, target)
+    print(f"saved {target} ({target.stat().st_size:,} bytes)")
+    install_zip(project, target, slug)
+    return slug
+
+
+def install_zip(project, target, slug):
+    """Extract a review zip into wp-content/themes/<slug>, replacing any copy there."""
+    zips = target.parent
     dest = project / "wp-content" / "themes" / slug
     if dest.exists():
         shutil.rmtree(dest)
@@ -697,6 +753,9 @@ def main():
     f = sub.add_parser("fetch"); f.add_argument("slug"); f.add_argument("version")
     c = sub.add_parser("check"); c.add_argument("slug")
     r = sub.add_parser("run"); r.add_argument("slug"); r.add_argument("version")
+    for name in ("install-zip", "run-local"):
+        z = sub.add_parser(name); z.add_argument("path")
+        z.add_argument("--version", help="override the version read from style.css")
     sub.add_parser("reset")
     sub.add_parser("baseline")
 
@@ -713,6 +772,12 @@ def main():
         cmd_fetch(project, args.slug, args.version)
         cmd_reset(project)
         cmd_check(project, args.slug)
+    elif args.cmd == "install-zip":
+        cmd_install_zip(project, args.path, args.version)
+    elif args.cmd == "run-local":
+        slug = cmd_install_zip(project, args.path, args.version)
+        cmd_reset(project)
+        cmd_check(project, slug)
     elif args.cmd == "reset":
         cmd_reset(project)
     elif args.cmd == "baseline":

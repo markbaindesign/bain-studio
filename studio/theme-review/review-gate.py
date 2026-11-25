@@ -29,7 +29,12 @@ Two questions, kept apart:
   found, and the sign-off and posting task exists. A partial review that says it is
   partial is postable; a review that calls itself full when it is not, is not.
 
-Exit status: 0 ready to post (FULL or PARTIAL), 1 not ready, 2 could not run.
+`--pre-submission` is for the studio's own theme, reviewed before it is submitted: there is
+no Trac ticket, so the sign-off and posting row is n/a, the verdict reads "ready to submit",
+and the handover fragment sets `ticket` to 0 so the page shows no ticket button.
+
+Exit status: 0 ready to post (FULL or PARTIAL), 1 not ready, 2 could not run. The same
+under --pre-submission, where 0 means ready to submit.
 
 Every check is an exact match against keys the review template prescribes: a
 handbook section by its number, an accessibility guideline by its URL slug, a ledger
@@ -96,11 +101,14 @@ NOTHING = re.compile(r"^\s*(nothing|none)\s*(?:\.|$)", re.I)
 # --------------------------------------------------------------------------
 
 class Row:
-    def __init__(self, group, name, ok, detail=""):
-        self.group, self.name, self.ok, self.detail = group, name, ok, detail
+    """One check. `na` marks a check that does not apply to this review: it counts
+    as passed, prints N/A and shows grey on the handover page."""
+    def __init__(self, group, name, ok, detail="", na=False):
+        self.group, self.name, self.ok, self.detail, self.na = group, name, ok or na, detail, na
 
     def line(self):
-        return "%s  %-11s %s%s" % ("PASS" if self.ok else "FAIL", self.group, self.name,
+        mark = "N/A " if self.na else ("PASS" if self.ok else "FAIL")
+        return "%s  %-11s %s%s" % (mark, self.group, self.name,
                                    " - " + self.detail if self.detail else "")
 
 
@@ -531,7 +539,12 @@ def check_claims(notes_text, comment_path, granted):
     return rows
 
 
-def check_posting(mirror, theme_name, version):
+def check_posting(mirror, theme_name, version, pre_submission=False):
+    if pre_submission:
+        # The studio's own theme, reviewed before it is submitted: there is no Trac
+        # ticket to post to, so no sign-off and posting task either.
+        return [Row("posting", "sign-off and posting task", True,
+                    "pre-submission review, no Trac ticket", na=True)]
     try:
         text = mirror.read_text()
     except FileNotFoundError:
@@ -550,7 +563,8 @@ def check_posting(mirror, theme_name, version):
 # Gate
 # --------------------------------------------------------------------------
 
-def run_gate(notes_path, zip_path, comment_path, evidence, mirror, get=fetch):
+def run_gate(notes_path, zip_path, comment_path, evidence, mirror, get=fetch,
+             pre_submission=False):
     notes_path = Path(notes_path)
     stem = notes_path.stem
     notes_text = notes_path.read_text()
@@ -572,7 +586,7 @@ def run_gate(notes_path, zip_path, comment_path, evidence, mirror, get=fetch):
     rows += check_notes(secs, a11y)
     granted = "full" if all(r.ok for r in rows) else "partial"
     rows += check_claims(notes_text, Path(comment_path), granted)
-    rows += check_posting(Path(mirror), header.get("theme name", ""), version)
+    rows += check_posting(Path(mirror), header.get("theme name", ""), version, pre_submission)
     postable = all(r.ok for r in rows if r.group in POSTING)
     return {
         "theme": header.get("theme name", ""),
@@ -581,13 +595,19 @@ def run_gate(notes_path, zip_path, comment_path, evidence, mirror, get=fetch):
         "accessibility_ready": a11y,
         "review": granted,
         "postable": postable,
+        "pre_submission": pre_submission,
         "rows": rows,
     }
 
 
+def readiness(result):
+    """The readiness line's wording: a pre-submission review is submitted, not posted."""
+    return "ready to submit" if result.get("pre_submission") else "ready to post"
+
+
 def handover_fragment(result):
-    def status(ok):
-        return "pass" if ok else "fail"
+    def status(ok, na=False):
+        return "na" if na else ("pass" if ok else "fail")
 
     gaps = [r for r in result["rows"] if not r.ok and r.group not in POSTING]
     definition = []
@@ -602,17 +622,22 @@ def handover_fragment(result):
         note = "Review gate: %d gap%s - %s." % (len(gaps), "" if len(gaps) == 1 else "s",
                                                "; ".join(r.name for r in gaps[:4]) +
                                                (" ..." if len(gaps) > 4 else ""))
-    return {
+    fragment = {
         "review": result["review"],
         "review_note": note,
         "postable": result["postable"],
+        "readiness": readiness(result),
         "groups": [
             {"name": "Full-review definition", "items": definition},
             {"name": "Review gate (%s)" % date.today().isoformat(),
-             "items": [{"label": r.name, "status": status(r.ok), "note": r.detail}
+             "items": [{"label": r.name, "status": status(r.ok, r.na), "note": r.detail}
                        for r in result["rows"]]},
         ],
     }
+    if result.get("pre_submission"):
+        # No ticket yet: 0 makes the page leave the ticket link and button out.
+        fragment["ticket"] = 0
+    return fragment
 
 
 HANDOVER_RE = re.compile(r'(<script type="application/json" id="handover-data">)(.*?)(</script>)', re.S)
@@ -626,14 +651,17 @@ def write_handover(page, fragment):
     data = json.loads(m.group(2))
     data["review"] = fragment["review"]  # "postable" is the gate's, not the page's
     data["review_note"] = fragment["review_note"]
+    if "ticket" in fragment:
+        data["ticket"] = fragment["ticket"]
     keep = [g for g in data.get("groups", [])
             if g.get("name") != "Full-review definition" and not g.get("name", "").startswith("Review gate")]
     for g in keep:
         for item in g.get("items", []):
             if item.get("label") == "Review gate run":
                 item["status"] = "pass" if fragment["postable"] else "fail"
-                item["note"] = "%s, ready to post: %s, %s" % (
-                    fragment["review"].upper(), "yes" if fragment["postable"] else "no",
+                item["note"] = "%s, %s: %s, %s" % (
+                    fragment["review"].upper(), fragment.get("readiness", "ready to post"),
+                    "yes" if fragment["postable"] else "no",
                     date.today().isoformat())
     data["groups"] = [fragment["groups"][0]] + keep + [fragment["groups"][1]]
     body = "\n" + json.dumps(data, indent=1, ensure_ascii=False) + "\n"
@@ -650,6 +678,9 @@ def main(argv=None):
     ap.add_argument("--mirror")
     ap.add_argument("--handover-json", help="write the handover JSON fragment here")
     ap.add_argument("--handover", help="update this handover page's data block in place")
+    ap.add_argument("--pre-submission", action="store_true",
+                    help="the studio's own theme, before submission: no Trac ticket, so the "
+                         "posting row is n/a and the verdict is 'ready to submit'")
     a = ap.parse_args(argv)
 
     notes = Path(a.notes)
@@ -668,7 +699,7 @@ def main(argv=None):
     evidence = Path(a.evidence) if a.evidence else reports / "evidence"
     mirror = Path(a.mirror) if a.mirror else project / "asana-mirror.md"
 
-    result = run_gate(notes, zip_path, comment, evidence, mirror)
+    result = run_gate(notes, zip_path, comment, evidence, mirror, pre_submission=a.pre_submission)
     print("review gate: %s %s (%s%s)" % (result["theme"], result["version"], result["shape"],
                                          ", accessibility-ready" if result["accessibility_ready"] else ""))
     for r in result["rows"]:
@@ -676,7 +707,7 @@ def main(argv=None):
     gaps = sum(1 for r in result["rows"] if not r.ok and r.group not in POSTING)
     print()
     print("%s%s" % (result["review"].upper(), " (%d gap%s)" % (gaps, "" if gaps == 1 else "s") if gaps else ""))
-    print("ready to post: %s" % ("yes" if result["postable"] else "no"))
+    print("%s: %s" % (readiness(result), "yes" if result["postable"] else "no"))
 
     fragment = handover_fragment(result)
     if a.handover_json:

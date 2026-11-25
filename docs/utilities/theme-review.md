@@ -43,6 +43,17 @@ python3 -I /home/bain/ops/bain-studio/studio/theme-review/cdp/cdp_check.py \
 
 `theme-sweep.py reset` puts the content baseline back after a theme has changed it.
 
+For a theme not on wordpress.org yet (the studio's own, before submission), install a local
+zip instead of downloading one, then gate it with `review-gate.py --pre-submission`:
+
+```bash
+THEME_REVIEW_REPORTS=<reviews folder>/<theme> \
+  python3 -I /home/bain/ops/bain-studio/studio/theme-review/theme-sweep.py run-local <path/to/theme.zip>
+```
+
+`install-zip <path> [--version X]` installs only. The slug is the zip's top folder and the
+version is read from its `style.css`.
+
 ## Tests
 
 ```bash

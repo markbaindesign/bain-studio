@@ -760,6 +760,11 @@ from `<reports>/evidence/<slug>-<version>-<check>.json` (and the screenshots as
 `<slug>-<version>-<view>-<width>.png` there), and it needs the sign-off and posting
 task to exist already. A comment is not posted until the gate says ready to post.
 
+For a pre-submission review of the studio's own theme (installed with `theme-sweep.py
+install-zip` or `run-local`, no Trac ticket yet), run the gate with `--pre-submission`. The
+sign-off and posting row is then n/a, the verdict reads "ready to submit", and the handover
+page shows no ticket button. Every other check is the same.
+
 The notes stay the audit trail; the handover is the dashboard over them. The
 review type on the page is the one the five conditions under "How deep to go"
 allow, never a looser one.
