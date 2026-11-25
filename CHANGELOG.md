@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-11-25
+
+### Added
+- **`sync.py` refuses task titles that open with a label.** `--create-task`, `--update-task --task-name` and `--create-subtask` refuse a title starting with a short run before `: ` or a `[...]` tag (`sync.py:`, `Question:`, a project name). A title is the task itself; group with project, section, tag, field, dependency or parent. ADR 022, 2026-11-25 addendum; see `docs/utilities/new-task.md`.
+
 ## [2.12.0] - 2026-11-25
 
 ### Changed
