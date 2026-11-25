@@ -549,6 +549,67 @@ def sweep_action_markers(dry_run=False) -> int:
     return cleared
 
 
+# Completing a task (--complete-task, since 2026-11-25). Mark's rule: Claude may
+# tick a task off when it is low impact (studio tooling, docs, Asana or client
+# housekeeping: nothing outside the studio sees it, easy to undo, not a
+# decision) and nothing is waiting on Mark. The judgement is the caller's; these
+# checks refuse the cases a script can see. Every completion leaves a silent
+# comment giving the reason, so it is on the record and --reopen-task undoes it.
+COMPLETE_NOTE = "Ticked off: {reason}"
+REOPEN_NOTE   = "Reopened: {reason}"
+
+
+def completion_blockers(task: dict, open_subtasks: list, action_tag: str) -> list:
+    """Why this task may not be ticked off by a bot, [] when it may."""
+    out = []
+    if task.get("completed"):
+        out.append("it is already completed")
+    if open_subtasks:
+        out.append(f"{len(open_subtasks)} subtask(s) are open "
+                   f"({', '.join(repr(n) for n in open_subtasks[:3])})")
+    if action_tag and any((t or {}).get("gid") == action_tag for t in task.get("tags") or []):
+        out.append(f"it is tagged '{ACTION_TAG_NAME}': an action is waiting on Mark")
+    return out
+
+
+def complete_task(task_gid: str, reason: str, dry_run=False) -> None:
+    """Tick a task off with a silent comment giving the reason. Raises ValueError
+    when it may not be (see completion_blockers) or the reason is missing."""
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValueError("--reason is required: say in one line why the task is done")
+    note = COMPLETE_NOTE.format(reason=reason)
+    bad = validate_progress_note(note)
+    if bad:
+        raise ValueError(bad)
+    task = _get(f"/tasks/{task_gid}", {"opt_fields": "name,completed,tags.gid"})["data"]
+    blockers = completion_blockers(task, open_subtask_names(task_gid), action_tag_gid(create=False))
+    if blockers:
+        raise ValueError("; ".join(blockers))
+    if dry_run:
+        log.info(f"  [DRY-RUN] Would complete {task.get('name')!r} with the note {note!r}")
+        return
+    _put(f"/tasks/{task_gid}", {"data": {"completed": True}})
+    leave_progress_comment(task_gid, note)
+    log.info(f"  Completed {task.get('name')!r}: {reason}")
+
+
+def reopen_task(task_gid: str, reason: str, dry_run=False) -> None:
+    """Undo a completion, with a silent comment giving the reason."""
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValueError("--reason is required: say in one line why it is reopened")
+    task = _get(f"/tasks/{task_gid}", {"opt_fields": "name,completed"})["data"]
+    if not task.get("completed"):
+        raise ValueError("it is not completed")
+    if dry_run:
+        log.info(f"  [DRY-RUN] Would reopen {task.get('name')!r}")
+        return
+    _put(f"/tasks/{task_gid}", {"data": {"completed": False}})
+    leave_progress_comment(task_gid, REOPEN_NOTE.format(reason=reason))
+    log.info(f"  Reopened {task.get('name')!r}: {reason}")
+
+
 def hand_back(task_gid: str, summary: str, task: dict = None, dry_run=False) -> bool:
     """Reassign a bot task to Mark when a Review or Done note goes out on it.
 
@@ -3327,6 +3388,14 @@ def main():
                              "from the mirror)")
 
 
+    parser.add_argument("--complete-task", metavar="TASK", default="",
+                        help="Tick a task off (local ID, GID or URL) with --reason; posts the "
+                             "reason as a silent comment. Refused with open subtasks or a "
+                             "'Waiting on Mark' tag")
+    parser.add_argument("--reopen-task", metavar="TASK", default="",
+                        help="Undo --complete-task (local ID, GID or URL) with --reason")
+    parser.add_argument("--reason", metavar="TEXT", default="",
+                        help="Why the task is done, or reopened: one line")
     parser.add_argument("--create-subtask", action="store_true",
                         help="Create subtasks under an existing task (use with --task-gid and --subtask-name)")
     parser.add_argument("--subtask-name", metavar="NAME", action="append", default=[],
@@ -3383,6 +3452,18 @@ def main():
                 continue
             add_to_project(gid, projects[0], dry_run=args.dry_run)
         sys.exit(1 if failed else 0)
+
+    if args.complete_task or args.reopen_task:
+        ref = args.complete_task or args.reopen_task
+        gid = resolve_task_ref(ref)
+        if not gid:
+            parser.error(f"cannot resolve {ref!r} to a task")
+        try:
+            (complete_task if args.complete_task else reopen_task)(gid, args.reason, dry_run=args.dry_run)
+        except ValueError as e:
+            log.error(f"Not {'completing' if args.complete_task else 'reopening'} {ref}: {e}")
+            sys.exit(1)
+        sys.exit(0)
 
     if args.update_task:
         if not args.task_gid:
