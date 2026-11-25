@@ -100,6 +100,7 @@ a file edit. Edit one in the mirror and the sync says so and names the fix:
 - **A genuinely wrong or misleading description** is rewritten with `--update-task`, which
   logs the change and goes through bainbot. It replaces the description wholesale, so read
   the current one first with `--get-task`.
+- A title that opens with a label (`sync.py:`, `Question:`, `[KF]`) is **refused**; see `docs/utilities/new-task.md`.
 - A description written through this script is **refused over 1,200 characters**. See
   [new-task](../../utilities/new-task.md).
 
