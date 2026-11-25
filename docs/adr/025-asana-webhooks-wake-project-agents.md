@@ -140,19 +140,6 @@ logged `IGNORED` and dropped with no reply and no Slack line.
   --apply`, run from the checkout the listener runs from, covering `~/.claude` and
   `~/.claude-kf`.
 
-## Addendum 2026-11-25: a second worktree for a factory product (BSTD-905)
-
-A run could edit only its own worktree of the project repo. The theme factory keeps each
-product in a separate repo, so a run on a factory task could decide but never build: on BTF-105
-it had to answer `Blocked:` instead of making the change Mark had chosen.
-
-**Decision:** when the project has a `products.json` and the task's Related Milestone names an
-`in-production` product, the run also gets a worktree of that product's repo, on its bot branch,
-with `Edit` and git `status/diff/log/show/add/commit` (via `git -C`) allowed there and nothing
-else widened. The product's main checkout and graduated products stay denied. `products.json`
-is read from the main checkout, never the run's worktree, so a run cannot widen its own next
-run. Covered by `studio/tests/test_asana_webhook.py`.
-
 ## Addendum 2026-11-19: nightly sweep of unwatched projects (BSTD-895)
 
 Opt-in watching left a gap: a comment on a bot task in a project nobody watched waited for a
@@ -219,3 +206,16 @@ capabilities from outside (`--read-only-dir` points it at the real Dropbox folde
 **Consequence.** Until `sudo apt install socat` is run on the listener's machine, nothing
 changes. After it, runs can test their own work. A user-local socat on `~/.local/bin` would
 also enable it, which is why the probe takes `--path-prefix` instead.
+
+## Addendum 2026-11-25: a second worktree for a factory product (BSTD-905)
+
+A run could edit only its own worktree of the project repo. The theme factory keeps each
+product in a separate repo, so a run on a factory task could decide but never build: on BTF-105
+it had to answer `Blocked:` instead of making the change Mark had chosen.
+
+**Decision:** when the project has a `products.json` and the task's Related Milestone names an
+`in-production` product, the run also gets a worktree of that product's repo, on its bot branch,
+with `Edit` and git `status/diff/log/show/add/commit` (via `git -C`) allowed there and nothing
+else widened. The product's main checkout and graduated products stay denied. `products.json`
+is read from the main checkout, never the run's worktree, so a run cannot widen its own next
+run. Covered by `studio/tests/test_asana_webhook.py`.
