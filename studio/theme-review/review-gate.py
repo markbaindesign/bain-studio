@@ -76,8 +76,8 @@ SECTIONS = [
 GUIDELINES_SECTION = "Accessibility guidelines"  # accessibility-ready themes only
 
 # Evidence contract. Every file is <evidence>/<slug>-<version>-<name>.json, so one
-# folder holds several versions without one standing in for another. The tier 2 names
-# are this gate's; the scripts that write them are to follow (see the docs page).
+# folder holds several versions without one standing in for another. tier2.py, beside
+# this file, writes the six tier 2 results; cdp/cdp_check.py the tier 3 one.
 TIER2 = {
     "main-landmark": "<main> in every template",
     "local-fonts": "font sources local",
@@ -464,11 +464,35 @@ def load_json(path):
         return None, "%s is not JSON (%s)" % (path.name, e)
 
 
-def check_tier2(evidence, stem):
+def has_block_markup(files):
+    """Any template, part or pattern in the zip. A classic theme without them has no
+    `wp:` delimiters to balance, so that check does not apply (BSTD-914)."""
+    return any(p.startswith(("templates/", "parts/", "patterns/")) and p.endswith((".html", ".php"))
+               for p in files)
+
+
+def check_tier2(evidence, stem, files=None):
+    """One row per tier 2 check: PASS when its result file exists, because the gate
+    asks whether the check was done; what it found is the reviewer's to judge.
+    A result written with "applicable": false (tier2.py does this for a print check
+    the readme makes no claim for) passes as n/a. block-delimiters is n/a for a theme
+    with no block markup at all, file or no file."""
     rows = []
     for name, label in TIER2.items():
+        row = "tier 2: %s" % label
+        if name == "block-delimiters" and files is not None and not has_block_markup(files):
+            rows.append(Row("tiers", row, True, "n/a: no templates, parts or patterns"))
+            continue
         data, err = load_json(evidence / ("%s-%s.json" % (stem, name)))
-        rows.append(Row("tiers", "tier 2: %s" % label, data is not None, err or ""))
+        if data is None:
+            rows.append(Row("tiers", row, False, err or ""))
+            continue
+        if isinstance(data, dict) and (data.get("applicable") is False or data.get("claimed") is False):
+            rows.append(Row("tiers", row, True, "n/a: %s" % (data.get("note") or "does not apply")))
+            continue
+        findings = data.get("findings") if isinstance(data, dict) else None
+        rows.append(Row("tiers", row, True,
+                        "done, %d finding(s) for the reviewer" % len(findings) if findings else ""))
     return rows
 
 
@@ -588,7 +612,7 @@ def run_gate(notes_path, zip_path, comment_path, evidence, mirror, get=fetch,
     rows += check_handbook(secs, get)
     if a11y:
         rows += check_guidelines(secs, get)
-    rows += check_tier2(Path(evidence), stem)
+    rows += check_tier2(Path(evidence), stem, files)
     rows += check_tier3(Path(evidence), stem, block)
     rows += check_notes(secs, a11y)
     granted = "full" if all(r.ok for r in rows) else "partial"
