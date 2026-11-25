@@ -18,6 +18,7 @@ $STUDIO_CONTENT_DIR/research/2026-11-06-asana-project-audit.md for why each one 
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -39,7 +40,9 @@ REQUIRED_SECTIONS = {
 QUEUE_PREFIXES = {"SL", "SLT", "SLK"}
 
 CANONICAL_PRIORITY_GID = sync.PRIORITY_FIELD_GID
-DUPLICATE_PRIORITY_GIDS = {"1206348378137579"}
+# Workspace Priority fields that duplicate the canonical one, comma-separated,
+# from ASANA_DUPLICATE_PRIORITY_GIDS in studio/.env (GIDs stay out of the repo).
+DUPLICATE_PRIORITY_GIDS = {g.strip() for g in os.getenv("ASANA_DUPLICATE_PRIORITY_GIDS", "").split(",") if g.strip()}
 
 # Enum options the template ships with. Any project still holding the full set
 # verbatim has never had its own scope or feature list authored.
