@@ -70,6 +70,7 @@ from asana_webhook_logic import (  # noqa: E402
     idle_expired,
     is_bot_session,
     mentions_user,
+    continued_branch,
     wakes_bot,
     launchable,
     over_rate_limit,
@@ -346,10 +347,23 @@ def resolve(item: dict) -> set:
     return out
 
 
-def ensure_worktree(proj, name: str) -> tuple:
-    """(worktree path, branch) for a task, created from the base branch on first
-    use and reused by every later run on the same task."""
-    return bot_worktree.ensure_worktree(proj.root, WORKTREES / proj.prefix / name, f"bot/{name}")
+def ensure_worktree(proj, name: str, start: str = "") -> tuple:
+    """(worktree path, branch) for a task, created on first use from `start` (the
+    looper branch its work is on) or the base branch, and reused by every later
+    run on the same task."""
+    return bot_worktree.ensure_worktree(proj.root, WORKTREES / proj.prefix / name,
+                                        f"bot/{name}", start)
+
+
+def task_start_branch(gid: str) -> str:
+    """The branch a reply on this task should continue: the one the bot's latest
+    note names (a looper run's Where: line). "" when none, or on any error."""
+    try:
+        stories = sync._get(f"/tasks/{gid}/stories",
+                            {"opt_fields": "text,created_by.gid,resource_subtype"})["data"]
+    except Exception:
+        return ""
+    return continued_branch(stories, BOT_GID)
 
 
 class ProductRepo:
@@ -610,7 +624,10 @@ class Worker:
 
         proj = project_map()[prefix]
         name = run_name(gid, local_ids(proj))
-        wt, branch = ensure_worktree(proj, name)
+        start = task_start_branch(gid)
+        wt, branch = ensure_worktree(proj, name, start)
+        if start:
+            log(f"CONTINUE {prefix} {name} from {start}")
         try:
             task = sync._get(f"/tasks/{gid}", {
                 "opt_fields": "name,custom_fields.name,custom_fields.display_value"})["data"]

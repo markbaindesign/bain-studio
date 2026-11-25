@@ -94,6 +94,24 @@ def task_is_for_bot(task: dict, bot_gid: str) -> bool:
     return (task.get("assignee") or {}).get("gid") == bot_gid
 
 
+CONTINUE_BRANCH_RE = re.compile(r"\b((?:looper|bot)/[\w.-]+)")
+
+
+def continued_branch(stories: list, bot_gid: str) -> str:
+    """The looper or bot branch named in the bot's latest comment that names
+    one, so a reply on the task continues that work instead of starting afresh
+    from develop. "" when no bot comment names a branch."""
+    for st in reversed(stories or []):
+        if st.get("resource_subtype") != "comment_added":
+            continue
+        if (st.get("created_by") or {}).get("gid") != bot_gid:
+            continue
+        m = CONTINUE_BRANCH_RE.search(st.get("text") or "")
+        if m:
+            return m.group(1)
+    return ""
+
+
 def mentions_user(html_text: str, user_gid: str) -> bool:
     """Does a comment's rich text @-mention this user? Asana renders a mention
     as <a data-asana-gid="..."> with the user's GID."""
@@ -104,9 +122,9 @@ def mentions_user(html_text: str, user_gid: str) -> bool:
 
 def wakes_bot(task: dict, bot_gid: str, mentioned: bool) -> bool:
     """An open task wakes the bot when it is assigned to the bot, or when the
-    comment @-mentions the bot. A Review or Done hands a task back to Mark, and
-    his comments on it then wake nothing unless he mentions the bot (his call,
-    2026-11-17)."""
+    comment @-mentions the bot. Since 2026-11-25 a bot keeps its own task through
+    Review and Blocked, so Mark's reply wakes it. A task handed to Mark before
+    then wakes the bot only when he mentions it."""
     if task.get("completed"):
         return False
     return task_is_for_bot(task, bot_gid) or mentioned

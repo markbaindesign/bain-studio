@@ -111,10 +111,13 @@ but stays silent. That is the whole signalling mechanism.
 
 **Except a handover.** A note opening `Review`, `Blocked`, `Done` or `Answer` is addressed to Mark by
 definition, so `split_location` gives it the mention whether or not the author wrote `@mark`,
-and it is then held to the same rules: no location in the summary. A `Review` or `Done` note
-on a task assigned to the bot also **reassigns the task to Mark** (`hand_back`), so it leaves
-the bot's queue for his. `Blocked` does not: the work is still the bot's, it only needs an
-answer. Both came in after PSK-022 and PSK-030 were handed over as `Done:` with no token,
+and it is then held to the same rules: no location in the summary.
+
+**The bot keeps its task** (since 2026-11-25). A `Review`, `Blocked` or `Done` note no longer
+reassigns the task to Mark: the mention and the "Waiting on Mark" tag reach him, and his reply
+on the task wakes the bot, which continues on the branch its last note named. Handing tasks
+over made his replies wake nothing and filled his Recently assigned list. `hand_back` remains
+behind `BOT_HAND_BACK=1` in `studio/.env`. Both came in after PSK-022 and PSK-030 were handed over as `Done:` with no token,
 2026-11-17, and reached nobody.
 
 **A bot's answer to a question carries no label.** It opens `@mark` and reads as a colleague's

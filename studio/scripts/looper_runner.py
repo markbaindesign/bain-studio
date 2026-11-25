@@ -329,7 +329,9 @@ def set_status(lid: str, status: str, to_mark: bool = False) -> bool:
     queue mirror and a sync, the same path the skill took by hand. True when
     sync.py reports the push."""
     fields = {"Looper Status": status}
-    if to_mark and USER_GID:
+    # The task stays the bot's (Mark, 2026-11-25): the @mark note and the
+    # "Waiting on Mark" tag reach him, and his reply wakes the bot on it.
+    if to_mark and USER_GID and os.getenv("BOT_HAND_BACK") == "1":
         fields["Assignee"] = f"Mark Bain ({USER_GID})"
     mirror = target_mirror()
     try:

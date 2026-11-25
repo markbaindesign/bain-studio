@@ -619,6 +619,12 @@ def hand_back(task_gid: str, summary: str, task: dict = None, dry_run=False) -> 
     not push the bot back as assignee. Never raises: the note is already
     posted, and a failed reassignment must not cost it.
     """
+    # Off since 2026-11-25 (Mark): a bot keeps its own task and asks him with an
+    # @mark comment, so his reply on the task wakes it. Handing the task to him
+    # made his replies wake nothing and filled his Recently assigned list.
+    # BOT_HAND_BACK=1 in studio/.env restores the old behaviour.
+    if os.getenv("BOT_HAND_BACK") != "1":
+        return False
     if not USER_GID or not BAINBOT_GID:
         return False
     if not HAND_BACK_RE.match(_progress_plain(summary)):
