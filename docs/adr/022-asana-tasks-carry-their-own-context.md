@@ -52,3 +52,13 @@ client, and Asana shows the project on the task wherever it is multi-homed, so a
 only repeats it. Write "Turn off debug logging", not "Acme Ltd: turn off debug logging". The
 title still names the page or site section. The description can name the client where that
 helps.
+
+## Addendum 2026-11-25: no prefix of any kind in task titles
+
+Mark's call. A title is the task itself, written as a plain sentence: no `Label:` in front of
+it, whether the label is a client, a tool (`sync.py:`), a component (`Looper runner:`), a
+workstream (`Theme review:`, `KF archive:`) or anything else. Write "Give tasks that arrive
+with a Local ID already in use a fresh one", not "sync.py: give a fresh Local ID to tasks…".
+Where the page, section or tool is needed to understand the task, it goes inside the
+sentence ("Stop the looper runner starting empty sessions"). Grouping belongs in tags,
+fields and the project, as rule 4 already says.
