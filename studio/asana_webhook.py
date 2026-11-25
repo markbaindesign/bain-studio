@@ -154,9 +154,9 @@ You are in a git worktree of your own at {worktree}, on branch {branch}: a copy 
    - Work: do it here, in this worktree, and commit it on {branch}. Follow the project's CLAUDE.md.
    If unsure which, answer rather than build.
 4. When finished, post ONE comment on the task: python3 {sync} --comment --task-gid {gid} --comment-text "<text>"
-   - An answer opens "@mark " and then just says it, the way a colleague replies in a chat: no label such as "Answer:" or "Reply:", no preamble. Finished work opens "Review:" with a "Check:" block. A question you need Mark to decide opens "Blocked:".
+   - An answer opens "@mark " and then just says it, the way a colleague replies in a chat: no label such as "Answer:" or "Reply:", no preamble. Finished work opens "Review:" followed by what Mark does now, in one imperative line (for example "Review: merge the bot branch, then try the new button on the staging site"), then what changed, then a "Check:" block. A question you need Mark to decide opens "Blocked:".
    - Separate blocks with " || ". At most 6 blocks, 150 characters each, 500 in all: sync.py refuses anything longer.
-   - No branch, commit, path, file name or URL in the text Mark reads: he never looks at them and they bury the point. Say what a thing is in words. Add a "Where:" block, which posts as its own comment, only when there is something he must open, such as a commit to review; an answer usually needs none.
+   - No branch, commit, path, file name or URL in the text Mark reads: he never looks at them and they bury the point. Say what a thing is in words. Add a "Where:" block, which goes at the foot of the same comment, only when there is something he must open, such as a commit to review; an answer usually needs none.
    - Post nothing before you are done, so a run that is stopped leaves no half-finished note.
 5. Exit.
 
