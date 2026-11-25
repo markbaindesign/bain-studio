@@ -59,6 +59,9 @@ Mark's call. A title is the task itself, written as a plain sentence: no `Label:
 it, whether the label is a client, a tool (`sync.py:`), a component (`Looper runner:`), a
 workstream (`Theme review:`, `KF archive:`) or anything else. Write "Give tasks that arrive
 with a Local ID already in use a fresh one", not "sync.py: give a fresh Local ID to tasks…".
-Where the page, section or tool is needed to understand the task, it goes inside the
-sentence ("Stop the looper runner starting empty sessions"). Grouping belongs in tags,
-fields and the project, as rule 4 already says.
+The same goes for the project's own name (`Theme review:` on a task in the Theme Review
+project) and for a kind (`Question:`, `Decision:`). A prefix makes a narrow list unscannable,
+since every row starts with the same words. Where the page, section or tool is needed to
+understand the task, it goes inside the sentence ("Stop the looper runner starting empty
+sessions"). Grouping uses Asana's own links: project, section, tag, custom field,
+dependency or parent. Mark never prefixes the tasks he writes; agents match them.
