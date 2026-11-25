@@ -460,7 +460,11 @@ def launch_sandbox(proj, wt: Path, dropbox: str, cfg: str, path: str, prefix: st
         return [], [], EXEC_OFF
     claude_md = proj.root / "CLAUDE.md"
     test_cmd = bot_test_command(claude_md.read_text() if claude_md.exists() else "")
-    extra = [STATE, Path(cfg) / ".credentials.json" if cfg else ""]
+    # The listener's own studio/.env (Asana, Harvest, Slack...) sits under no
+    # project root when the listener runs from the ops checkout, so the secret
+    # globs miss it: hide it by path, and the one beside the sync.py a run calls.
+    extra = [STATE, STUDIO_ENV, SYNC_PY.parent / ".env",
+             Path(cfg) / ".credentials.json" if cfg else ""]
     settings = sandbox_settings([proj.root, wt, *extra_roots], [REGISTRY_DIR, dropbox], Path.home(), SYNC_PY,
                                 extra_secrets=extra)
     return (["--settings", json.dumps(settings)], exec_allow_rules(test_cmd),
