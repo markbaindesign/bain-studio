@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.16.0] - 2026-11-25
+
+### Added
+- **Looper tasks work in their own confined worktree** (BSTD-893): `studio/bot_worktree.py` is shared by the webhook and the looper runner, with orphan recovery at window start and `--target`, `--until`, `--stop-at-pct` on the runner.
+- **A Claude session holds a project's watch** (BSTD-894): SessionStart/SessionEnd hooks, and a lapsed watch restarts on Mark's comment. Install the hooks with `studio/scripts/install-watch-hooks.py --apply`.
+- **Nightly sweep of unwatched projects** (BSTD-895): `asana_webhook.py nightly`, with a systemd timer in `studio/scripts/systemd/` (not installed).
+- **Bot runs can execute code inside the OS sandbox** (BSTD-896), only when `bwrap` and `socat` are both installed; runs no longer inherit `studio/.env` keys. `studio/scripts/sandbox_probe.py` is the live test.
+
 ## [2.15.0] - 2026-11-25
 
 ### Added
