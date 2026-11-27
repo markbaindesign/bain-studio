@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.21.0] - 2026-11-27
+
+### Changed
+- **A handover's first label says where the task stands.** `Done:` finished, `Review:` finished once Mark does the one thing named, `Blocked:` not finished. What changed is a plain line; unfinished or untested work goes under `Gaps:`. `sync.py` refuses any other label in a handover (`Changed:`, `Not done:`), and webhook bots point Mark at the local site rather than staging. See `docs/utilities/asana-comments.md`.
+
 ## [2.20.0] - 2026-11-25
 
 ### Changed
