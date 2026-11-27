@@ -1299,6 +1299,24 @@ def test_validate_passes_heartbeats_and_short_free_form_notes():
         "Blocked: Gravity Forms licence key missing.") == ""
 
 
+def test_validate_rejects_a_made_up_label_in_a_handover():
+    # The KF-WEB note that left Mark unable to tell whether the task was done.
+    note = ("@mark Review: open a story to edit and view it || Changed: the body is "
+            "rich text || Not done: duplicate rows remain || Check: a story renders")
+    assert "'Changed'" in sync.validate_progress_note(note)
+    note = "@mark Review: open a story || The body is rich text || Not done: rows remain"
+    assert "'Not done'" in sync.validate_progress_note(note)
+
+
+def test_validate_passes_the_handover_labels_and_leaves_other_notes_alone():
+    note = ("@mark Review: open a story on the local site || The body is rich text "
+            "|| Check: || 1. A legacy story shows its paragraphs || Gaps: untested")
+    assert sync.validate_progress_note(note) == ""
+    assert sync.validate_progress_note("Done: shipped || Subtasks: all ticked") == ""
+    # A note that is not a handover keeps whatever shape its tool gives it.
+    assert sync.validate_progress_note("QA pass: 12 of 12 || Next: deploy") == ""
+
+
 def test_validate_rejects_too_many_blocks():
     note = "@mark Review: x || " + " || ".join(
         f"{i}. do a thing" for i in range(1, 7))
