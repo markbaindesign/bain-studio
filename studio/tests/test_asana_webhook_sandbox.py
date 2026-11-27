@@ -90,3 +90,13 @@ def test_bot_test_command_from_claude_md():
     assert bot_test_command("x\nBOT_TEST_COMMAND: make test  \ny") == "make test"
     assert bot_test_command("no line here") == ""
     assert bot_test_command("") == ""
+
+
+def test_launch_sandbox_hides_the_listeners_studio_env(tmp_path, monkeypatch):
+    import json
+    import asana_webhook as w
+    monkeypatch.setattr(w, "sandbox_missing", lambda which: [])
+    proj = type("P", (), {"root": tmp_path, "prefix": "TEST"})()
+    args, _rules, _note = w.launch_sandbox(proj, tmp_path / "wt", "", "", "/usr/bin", "TEST", "T-1")
+    deny = json.loads(args[1])["sandbox"]["filesystem"]["denyRead"]
+    assert str(w.STUDIO_ENV) in deny and str(w.SYNC_PY.parent / ".env") in deny
