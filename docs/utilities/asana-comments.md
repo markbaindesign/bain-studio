@@ -48,6 +48,14 @@ words: "Review: merge the overnight branch, restart the listener, then ask for a
 on a factory task". What changed comes second. Mark reads the first line to know whether and
 how to act; a list of changes he has to translate into an action buried it (2026-11-25).
 
+**The opening label says where the task stands** (2026-11-27). `Done:` it is finished and
+nothing waits on Mark; `Review:` it is finished once he does the one thing named; `Blocked:` it
+is not finished. "What changed" is a plain line with no label. A handover (`HANDOVER_RE`) may
+carry no labels but those in the table below plus `Answer:` (`HANDOVER_LABELS`); a made-up
+heading such as `Changed:` or `Not done:` is refused, because it left Mark unable to tell from
+a KF-WEB note whether the task was done. Work left undone, untested work included, goes under
+`Gaps:`. Notes that are not handovers keep whatever format their tool gives them.
+
 **One comment, not two** (since 2026-11-25). `fold_location` moves every `Where:` block to the
 foot of the note, and `post_note` posts it all as one comment, the `Where:` line a blank line
 below the summary. Before that it posted as a separate silent comment, and Mark had to find

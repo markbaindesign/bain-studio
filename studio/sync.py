@@ -401,6 +401,13 @@ SUBTASKS_RE = re.compile(r"^subtasks\s*:", re.IGNORECASE)
 HANDOVER_RE = re.compile(r"^(?:review|blocked|done|answer)\b", re.IGNORECASE)
 # Review and Done hand the task back: it leaves the bot's queue for Mark's.
 HAND_BACK_RE = re.compile(r"^(?:review|done)\b", re.IGNORECASE)
+# The only labels a handover may carry. The opening one says where the task stands
+# (Done: finished; Review: finished once Mark does one thing; Blocked: not finished,
+# needs him), and the rest are the fixed blocks of docs/utilities/asana-comments.md.
+# Anything else ("Changed:", "Not done:", "Tried:") is a made-up heading Mark has to
+# decode, and was how a KF-WEB note left him unable to tell whether the task was done.
+HANDOVER_LABELS = {"review", "blocked", "done", "answer", "check", "gaps", "subtasks", "where"}
+LABEL_RE = re.compile(r"^([A-Z][A-Za-z]*(?: [A-Za-z]+){0,2})\s*:(?:\s|$)")
 
 
 def split_location(text: str) -> tuple:
@@ -710,6 +717,13 @@ def validate_progress_note(text: str) -> str:
         if loc:
             return (f"the summary names a location ({loc.group(0)!r}) — branches, commits, "
                     f"paths and URLs go in the Where: block, which posts as its own comment")
+    if HANDOVER_RE.match(MENTION_RE.sub("", plain, count=1)):
+        for b in blocks:
+            m = LABEL_RE.match(MENTION_RE.sub("", b, count=1))
+            if m and m.group(1).lower() not in HANDOVER_LABELS:
+                return (f"the note has a {m.group(1)!r}: block. A handover uses only "
+                        f"Review/Blocked/Done, Check, Gaps, Subtasks and Where: say what "
+                        f"changed as a plain line, and put work left undone under Gaps:")
     if len(plain) > NOTE_MAX_CHARS:
         return (f"{len(plain)} chars exceeds the {NOTE_MAX_CHARS}-char limit — "
                 f"the reasoning belongs in the commit message, not the comment")

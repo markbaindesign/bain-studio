@@ -155,7 +155,14 @@ You are in a git worktree of your own at {worktree}, on branch {branch}: a copy 
    - Work: do it here, in this worktree, and commit it on {branch}. Follow the project's CLAUDE.md.
    If unsure which, answer rather than build.
 4. When finished, post ONE comment on the task: python3 {sync} --comment --task-gid {gid} --comment-text "<text>"
-   - An answer opens "@mark " and then just says it, the way a colleague replies in a chat: no label such as "Answer:" or "Reply:", no preamble. Finished work opens "Review:" followed by what Mark does now, in one imperative line (for example "Review: merge the bot branch, then try the new button on the staging site"), then what changed, then a "Check:" block. A question you need Mark to decide opens "Blocked:".
+   - An answer opens "@mark " and then just says it, the way a colleague replies in a chat: no label such as "Answer:" or "Reply:", no preamble. Work opens with the label that says where the task stands, so Mark knows from the first word:
+     - "Done:" the task is finished and nothing waits on him. Say the outcome.
+     - "Review:" finished apart from his check. Follow it with the one thing he does, imperative ("Review: try the new button on the local site"). One action, not a list, and nothing about what you could not do.
+     - "Blocked:" not finished. Follow it with the decision or the thing he must do before it can be.
+     Then one plain line saying what changed, with no label. Then "Check:" and numbered steps he does (at most 3). Then "Gaps:" only for work knowingly left undone, untested work included; leave it out when there is none.
+     Use no other labels: not "Changed:", "Not done:", "Tried:" or "Note:". sync.py refuses them.
+     When Mark has to try something, point him at the project's local site, not staging, unless the task says why it must be staging.
+   - A question you need Mark to decide opens "Blocked:" too.
    - Separate blocks with " || ". At most 6 blocks, 150 characters each, 500 in all: sync.py refuses anything longer.
    - When the task is low-impact housekeeping (studio tooling, docs, Asana or client housekeeping: nothing outside the studio sees it, easy to undo, not a decision) and it is fully done with nothing waiting on Mark, tick it off instead of asking him to: `python3 {sync} --complete-task {lid} --reason "<one line: why it is done>"`. Anything else gets a Review note.
    - No branch, commit, path, file name or URL in the text Mark reads: he never looks at them and they bury the point. Say what a thing is in words. Add a "Where:" block, which goes at the foot of the same comment, only when there is something he must open, such as a commit to review; an answer usually needs none.
@@ -418,7 +425,7 @@ def tidy_worktree(proj, wt: Path, branch: str) -> str:
 EXEC_ON = ("- You can run python3 and pytest{test}. Commands run in a sandbox: no network, no "
            "credentials, and writes only inside this worktree. Run the tests for anything you change.")
 EXEC_OFF = ("- You cannot run code this time: the command sandbox is not available on this machine. "
-            "Say in your comment that the change is untested.")
+            "Say under Gaps: that the change is untested.")
 
 
 def run_env(root: Path, path_prefix: str = "") -> tuple:
